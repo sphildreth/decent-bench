@@ -4,7 +4,8 @@
 
 Decent Bench is a cross-platform desktop app (Flutter) for power users who need
 to **open DecentDB files**, **import data into DecentDB**, **inspect schema**,
-run fast **SELECT-style queries**, and **export shaped results**.
+run the full **pinned DecentDB SQL reference surface**, and **export shaped
+results**.
 
 ## Project status
 
@@ -51,6 +52,7 @@ The current MVP is intentionally narrower than the long-term product vision.
   - multiple tabs
   - per-tab results
   - run/stop query
+  - execution aligned to the full pinned DecentDB SQL reference
   - schema-aware autocomplete
   - snippets
   - deterministic formatter
@@ -103,6 +105,7 @@ See:
 - `design/SPEC.md` for behavior and structure
 - `design/adr/0001-decentdb-flutter-binding-strategy.md`
 - `design/adr/0002-results-paging-and-streaming-contract.md`
+- `design/adr/0003-pinned-decentdb-sql-capability-baseline.md`
 
 ## Onboarding for contributors
 

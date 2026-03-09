@@ -98,7 +98,7 @@ Prefer concrete language over aspirational wording.
 For meaningful architectural or product-impacting work:
 
 - create the ADR before or alongside implementation
-- keep `docs/PRD.md` and `docs/SPEC.md` aligned with accepted ADRs
+- keep `design/PRD.md` and `design/SPEC.md` aligned with accepted ADRs
 - update references when an ADR supersedes an earlier decision
 
 If accepted ADRs and product docs diverge, contributors should treat that as a

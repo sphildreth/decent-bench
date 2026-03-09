@@ -4,8 +4,8 @@
 **Type:** Cross-platform desktop SQL-style app (Flutter)  
 **License:** Apache 2.0  
 **Primary purpose:** Help power users **import data from common sources into
-DecentDB**, then **inspect schema** and **run fast SELECT-style queries** to
-shape and export data.
+DecentDB**, then **inspect schema** and **run the full pinned DecentDB SQL
+reference surface** to shape and export data.
 
 **Critical initial task:** Users can **drag and drop a file** (Excel, SQLite,
 DecentDB, or supported SQL dump) onto Decent Bench.
@@ -28,7 +28,7 @@ in the shape they need.
 Decent Bench solves this by being a **DecentDB-first import + query workbench**:
 - Import from supported sources into a **DecentDB file**
 - Quickly inspect schema and data
-- Run queries, optimized for **SELECT-style workflows**
+- Run SQL against the full pinned DecentDB engine surface
 - Export shaped results
 
 ---
@@ -58,6 +58,9 @@ general-purpose database administration tool. Its core workflow is:
    - Data stays on the user’s machine by default.
 5. **Scope discipline**
    - MVP prioritizes a reliable import → query → export loop over breadth.
+6. **Pinned-engine fidelity**
+   - Decent Bench should preserve the SQL capabilities of the pinned DecentDB
+     engine version instead of inventing a smaller app-specific SQL subset.
 
 ---
 
@@ -87,14 +90,17 @@ general-purpose database administration tool. Its core workflow is:
        destabilizing MVP scope
 
 4. **Fast schema inspection**
-   - Browse DecentDB objects required for core query workflows in the pinned
-     DecentDB version.
-   - Prioritize tables, views, columns, and indexes first.
+   - Browse the schema objects exposed by the pinned DecentDB engine version,
+     with dedicated UI coverage expanding over time.
+   - Prioritize tables, views, columns, indexes, triggers, constraints, and
+     generated-column metadata as the metadata layer matures.
 
 5. **Fast query workflow**
    - Multi-tab SQL editor
    - Run and stop query
    - Per-tab results pane
+   - Execute the full SQL surface documented for the pinned DecentDB engine
+     version
    - Responsive results backed by paging/streaming
 
 6. **Export shaped results**
@@ -153,8 +159,8 @@ These are important, but not required for MVP:
      immediately so I can write queries."
 
 3. **Run queries quickly**
-   - "When I’m iterating on a SELECT query, I want to run it repeatedly and see
-     results quickly without friction."
+   - "When I’m iterating on SQL, I want to run statements repeatedly and see
+     results or errors quickly without friction."
 
 4. **Export shaped results**
    - "When I get the data into the right shape via SQL, I want to export it
@@ -266,12 +272,15 @@ testable slice that does not destabilize the import workflow. If not, they move
 to post-MVP.
 
 ### 8.5 Schema browser
-- Show schema information needed for core query workflows
+- Show schema information for the pinned DecentDB engine surface rather than
+  only a hand-picked query subset
 - MVP priority objects:
   - tables
-  - views, if supported by the pinned DecentDB version
+  - views
   - columns
   - indexes
+  - triggers and constraints where exposed through the adapter
+  - generated-column metadata where available
 - Search / filter schema items
 - Preview top rows for a selected table
 
@@ -280,6 +289,13 @@ to post-MVP.
 - Per-tab results pane
 - Syntax highlighting
 - Run / stop query
+- Execute the pinned DecentDB SQL reference surface, including:
+  - DDL for tables, temp objects, indexes, views, and triggers
+  - DML and query forms such as `INSERT`, `SELECT`, `UPDATE`, `DELETE`, and
+    `ANALYZE`
+  - query features such as joins, CTEs, set operations, scalar functions,
+    aggregate functions, window functions, table-valued functions, generated
+    columns, transactions, `EXPLAIN`, `EXPLAIN ANALYZE`, and parameters
 - Basic keyboard shortcuts:
   - Run: `Ctrl/Cmd+Enter`
   - New tab: `Ctrl/Cmd+T`
@@ -345,6 +361,11 @@ MVP. The project should not introduce a custom C shim or alternative binding
 layer unless the upstream bindings prove insufficient for required capability or
 performance.
 
+The official SQL reference for the pinned DecentDB engine version is the
+normative contract for SQL behavior in Decent Bench. The app may phase UI
+affordances and metadata browsing over time, but it should not intentionally
+restrict users to a smaller SQL subset than the pinned engine supports.
+
 ### 10.2 Query results model
 MVP uses a **cursor-based paging / streaming** model for query results:
 - query execution opens a cursor
@@ -373,7 +394,7 @@ Heavy work must not run on the UI thread. This includes:
 | Postgres plain `.sql` import | No | Candidate |
 | Postgres custom backup import | No | Candidate |
 | Live external DB querying | No | Candidate |
-| Schema browser | Yes, core query objects first | Broader object coverage |
+| Schema browser | Yes, phased toward pinned-engine object coverage | Broader UX polish |
 | Multi-tab SQL editor | Yes | — |
 | Schema-aware autocomplete | Yes | Further refinement |
 | Snippets | Yes | Further refinement |
@@ -399,8 +420,8 @@ Heavy work must not run on the UI thread. This includes:
 
 ### 12.2 Open questions to resolve before or during implementation
 1. What is the canonical DecentDB file extension for desktop UX?
-2. What exact DecentDB object classes are in scope for the first schema browser
-   slice?
+2. What is the exact landing order for schema-browser metadata beyond the Phase
+   1 tables/columns slice, while preserving the full pinned-engine contract?
 3. Do basic computed columns remain in MVP, or should they move to post-MVP to
    keep the import workflow smaller and more reliable?
 4. What is the exact configuration file location and schema per OS?
@@ -422,8 +443,9 @@ A user can:
    common `CREATE TABLE` and `INSERT INTO` statements
 6. Rename columns and override types before import
 7. See imported tables and columns in the schema browser
-8. Open at least one SQL tab, run a SELECT query, and view results in a
-   responsive paged grid
+8. Open at least one SQL tab, execute representative pinned-engine SQL
+   statements such as DDL, DML, CTEs, view/index creation, or `EXPLAIN`, and
+   view result sets in a responsive paged grid where applicable
 9. Stop a running query with best-effort cancellation semantics
 10. Export query results to CSV
 11. Perform the above without noticeable UI hangs on typical development

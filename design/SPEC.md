@@ -5,7 +5,7 @@
 **License:** Apache 2.0  
 **Primary purpose:** Drag-and-drop import into **DecentDB**, then inspect
 schema, run fast queries, and export shaped results.  
-**PRD reference:** `docs/PRD.md`
+**PRD reference:** `design/PRD.md`
 
 ---
 
@@ -80,10 +80,12 @@ formatter, JSON/Parquet/Excel export, and multi-tab editing.
   version used by Decent Bench
 - MVP object classes:
   - tables
-  - views, if exposed by the chosen binding and engine version
+  - views
+  - temp tables/views where exposed by the engine and adapter
   - columns
-  - indexes, if exposed
-  - constraints/triggers, if exposed
+  - indexes, including richer index metadata where exposed
+  - constraints/triggers, where exposed
+  - generated-column metadata where exposed
 - Unsupported object kinds must degrade gracefully and must not block the rest
   of schema browsing
 
@@ -91,6 +93,9 @@ formatter, JSON/Parquet/Excel export, and multi-tab editing.
 - Multi-tab editor with per-tab results panes
 - Keyboard navigation between tabs and focus between editor/results
 - Run/stop query with best-effort cancellation
+- Execute the full SQL surface documented by the pinned DecentDB engine
+  reference, even when dedicated UI affordances for some engine features arrive
+  later
 - Schema-aware autocomplete
 - User-editable snippets
 - Deterministic SQL formatter
@@ -267,6 +272,7 @@ Selecting an object shows details such as:
 - constraints
 - indexes
 - triggers, where exposed
+- generated-column metadata and temp-object details where exposed
 
 Search/filter should be responsive and operate on an in-memory metadata model
 derived from the latest loaded schema snapshot.
@@ -323,13 +329,35 @@ The effective minimum capabilities required from the adapter and underlying
 bindings are:
 
 - open/close DB by file path
-- execute non-query SQL
+- execute arbitrary SQL statements supported by the pinned engine version
+- bind positional parameters
 - query SQL with page-based retrieval
-- schema introspection
+- schema introspection across supported object kinds
 - best-effort cancellation
 - structured error reporting where available
 
-### 5.4 Threading model
+### 5.4 Pinned SQL capability baseline
+
+The pinned DecentDB engine version and its official SQL reference are the
+normative source of truth for SQL capability in Decent Bench.
+
+For the pinned engine version, Decent Bench should preserve support for the
+documented categories below rather than introducing an app-specific reduced SQL
+subset:
+
+- DDL: tables, temp tables/views, indexes, view lifecycle, trigger lifecycle,
+  generated columns, and supported constraints
+- DML: `INSERT`, `SELECT`, `UPDATE`, `DELETE`, `ANALYZE`
+- Query features: `WHERE`, scalar functions, common table expressions
+  including recursive CTEs, set operations, joins, aggregate functions, window
+  functions, transactions, `EXPLAIN`, `EXPLAIN ANALYZE`, table-valued
+  functions, and positional parameters
+
+If the pinned engine reference documents a limitation or unsupported feature,
+that behavior should be treated as an engine limitation rather than papered
+over by Decent Bench documentation.
+
+### 5.5 Threading model
 
 All heavy work must be off the UI thread.
 
@@ -557,13 +585,18 @@ slice.
 Sources:
 
 - schema metadata cache
-- DecentDB keywords/functions list
+- full pinned-engine DecentDB keywords/functions/operator list
 
 Context-aware behavior should support at least:
 
 - after `FROM` -> tables/views
 - after alias + `.` -> columns
 - function suggestion contexts
+
+Autocomplete coverage should track the pinned engine reference for SQL keywords,
+DDL/DML verbs, joins, CTEs, scalar functions, aggregate functions, window
+functions, table-valued functions, transaction keywords, and `EXPLAIN`
+variants.
 
 ### 9.2 Snippets
 
@@ -760,8 +793,8 @@ CI should run these as soon as the project becomes runnable.
 
 To reduce scope drift:
 
-1. `docs/SPEC.md` is the implementation scope source of truth
-2. `docs/PRD.md` describes product intent and user value
+1. `design/SPEC.md` is the implementation scope source of truth
+2. `design/PRD.md` describes product intent and user value
 3. Accepted ADRs govern architectural decisions
 4. If an accepted ADR changes implementation expectations, the SPEC must be
    updated in the same change or immediately afterward

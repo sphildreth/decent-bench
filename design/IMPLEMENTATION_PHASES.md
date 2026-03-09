@@ -2,7 +2,7 @@
 
 **Status:** Draft  
 **Last updated:** 2026-03-09  
-**Primary references:** `docs/PRD.md`, `docs/SPEC.md`, `design/adr/`
+**Primary references:** `design/PRD.md`, `design/SPEC.md`, `design/adr/`
 
 This document defines the recommended delivery sequence for Decent Bench.
 
@@ -33,6 +33,10 @@ to land the entire product in one step.
 5. **Prefer vertical slices**
    - Each phase should produce demonstrable user value or architectural
      certainty.
+6. **Pinned engine surface is normative**
+   - The official SQL reference for the pinned DecentDB engine version defines
+     the SQL surface Decent Bench must preserve. Delivery phases may stage UI
+     affordances, but they must not invent a narrower SQL dialect.
 
 ---
 
@@ -67,7 +71,8 @@ scope drift before coding accelerates.
 
 ### Objective
 Land the smallest runnable Decent Bench slice that proves the app shell,
-DecentDB integration, query execution, paging, cancellation, and CSV export.
+DecentDB integration, representative query execution, paging, cancellation, and
+CSV export.
 
 ### In scope
 - Flutter desktop scaffold under `apps/decent-bench/`
@@ -77,7 +82,8 @@ DecentDB integration, query execution, paging, cancellation, and CSV export.
 - Schema browser for:
   - tables
   - columns
-- Single SQL editor tab
+- Single SQL editor tab capable of executing the pinned DecentDB SQL reference
+  surface, even though dedicated UI coverage remains narrow in Phase 1
 - Run query
 - Best-effort cancel query
 - Cursor-based paging/streaming integration
@@ -104,6 +110,8 @@ DecentDB integration, query execution, paging, cancellation, and CSV export.
 ### Why this phase comes first
 This phase proves the highest-risk architectural assumptions:
 - the upstream DecentDB bindings work for the app
+- the app can preserve pinned-engine SQL behavior without introducing its own
+  reduced SQL subset
 - paging can drive the grid without full materialization
 - cancellation can be expressed in a usable UI model
 - background work and app state management are viable
@@ -113,18 +121,20 @@ This phase proves the highest-risk architectural assumptions:
 2. Add local DecentDB adapter over upstream bindings
 3. Implement open/create DB workflow
 4. Load schema metadata for tables/columns
-5. Add single-tab query execution
+5. Add single-tab query execution over the pinned engine SQL surface
 6. Add cursor paging and result state machine
 7. Add cancel behavior and stale-event protection
-8. Add CSV export over paged results
-9. Add tests and CI
+8. Add representative engine smoke tests for parameters, views/indexes, CTEs,
+   and EXPLAIN/ANALYZE behavior
+9. Add CSV export over paged results
+10. Add tests and CI
 
 ### Exit criteria
 A contributor can:
 1. run the app
 2. open or create a DecentDB file
 3. inspect tables and columns
-4. execute a query
+4. execute representative pinned-engine SQL statements from the editor
 5. receive paged results
 6. cancel a running query
 7. export results to CSV
@@ -143,9 +153,10 @@ Expand the query workflow into a more realistic daily-use workbench.
 - Query tab execution state model
 - Keyboard navigation between tabs and panes
 - Improved schema browser details:
-  - views, if available
-  - indexes, if available
-  - additional supported object metadata where practical
+  - views
+  - indexes
+  - triggers and constraints where exposed
+  - generated-column and temp-object metadata where practical
 - Better workspace persistence:
   - recent files
   - reopening behavior as defined later
@@ -333,7 +344,7 @@ packaging, testing, and documentation.
 - whether any stretch work should be promoted to MVP or deferred
 
 ### Exit criteria
-- MVP acceptance criteria in `docs/SPEC.md` are satisfied
+- MVP acceptance criteria in `design/SPEC.md` are satisfied
 - tests are passing
 - analyzer is clean
 - major workflows are documented
