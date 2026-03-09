@@ -1,7 +1,8 @@
 # AGENTS.md — Decent Bench (Flutter) Coding Agent Instructions
 
-> Applies to Copilot CLI, OpenCode (Claude Opus 4.6), and Gemini 3.1 Pro Preview.
-> This file is the *source of truth* for agent behavior in this repo.
+> Applies to coding agents working in this repository.
+> This file is the source of truth for agent workflow, validation, and repo conventions.
+> `/docs/PRD.md` and `/docs/SPEC.md` are the source of truth for product requirements and implementation scope.
 
 ## 0) What we're building
 
@@ -19,10 +20,18 @@ Decent Bench is a cross-platform Flutter desktop app that is **DecentDB-first**:
 
 If anything you implement risks changing product scope, record an ADR.
 
+## Instruction precedence
+
+When instructions conflict, follow this order:
+1. Explicit user instructions for the current task, unless they conflict with repository safety or approval rules in this file.
+2. `/docs/SPEC.md`
+3. `/docs/PRD.md`
+4. This file for workflow, validation, and repo conventions.
+
 ## 1) Golden rules (must follow)
 
 1. **No scope drift**  
-   Implement only what is required by PRD/SPEC. If uncertain, create an ADR or a short TODO note in the relevant doc.
+   Implement only what is required by PRD/SPEC. If uncertain, state the assumption, note the relevant gap, and create an ADR or a short TODO note in the relevant doc when needed.
 
 2. **Performance-first UI**  
    No long work on the UI thread. Use isolates / background threads for heavy work (imports, exports, queries, paging).
@@ -31,13 +40,13 @@ If anything you implement risks changing product scope, record an ADR.
    Never load full query results into memory by default. Results grids must page/stream.
 
 4. **Licensing**  
-   All new dependencies must be compatible with Apache 2.0 distribution. Add to THIRD_PARTY_NOTICES if needed.
+   All new dependencies must be compatible with Apache 2.0 distribution. Verify the license before adding the dependency and add it to `THIRD_PARTY_NOTICES` when required by the package license or repo policy.
 
 5. **ADRs are mandatory**  
-   Any decision with lasting impact must have an ADR: binding strategy, paging model, import type rules, export libs, etc.
+   Create an ADR for decisions with lasting architectural or product impact, such as binding strategy, paging model, import/export rules, major dependency choices, or user-visible workflow changes. ADRs are not required for local refactors, bug fixes that preserve intended behavior, test-only changes, or minor implementation details.
 
 6. **Small PRs, testable slices**  
-   Prefer incremental commits with working states over “big bang” changes.
+   Prefer small, reviewable, testable changes over “big bang” edits.
 
 7. **Never commit without explicit user approval**  
    Do NOT run `git commit`, `git push`, or create pull requests unless the
@@ -61,6 +70,7 @@ If anything you implement risks changing product scope, record an ADR.
 - Keep it concise and decision-focused.
 
 ### 2.3 Code structure (recommended)
+Use this structure by default unless the existing code in a feature area already establishes a different local convention.
 - Flutter app under `/apps/decent-bench/`
 - Native binding under `/apps/decent-bench/native/`
 - Shared UI components in `/apps/decent-bench/lib/shared/`
@@ -69,7 +79,8 @@ If anything you implement risks changing product scope, record an ADR.
 ## 3) How to work (agent workflow)
 
 ### Step A — Understand
-- Read `/docs/PRD.md` and `/docs/SPEC.md` (or their latest versions).
+- Read the relevant portions of `/docs/PRD.md` and `/docs/SPEC.md` (or their latest versions) before implementation.
+- For larger or ambiguous tasks, review both documents in full or the latest relevant sections.
 - Identify the exact requirement(s) for the task.
 
 ### Step B — Plan
@@ -81,11 +92,14 @@ If anything you implement risks changing product scope, record an ADR.
 - Add tests (unit/integration) for anything non-trivial.
 
 ### Step D — Validate
-Run (or provide commands to run):
+Run these commands when the environment supports it:
 - `flutter analyze`
 - `flutter test`
 - If integration tests exist: `flutter test integration_test`
-- Any demo steps (manual verification checklist)
+
+If a command cannot be run, explicitly state why and provide the exact command for the user to run.
+
+Include demo steps or a short manual verification checklist for behavior-sensitive changes, especially around responsiveness, loading states, cancellation, and large datasets.
 
 ## 4) Definition of Done (DoD)
 
@@ -94,6 +108,7 @@ A change is “done” when:
 - No analyzer warnings/errors
 - Tests added/updated and passing
 - No UI jank introduced
+- Manual verification is documented for behavior-sensitive UI changes
 - ADR created if a meaningful decision was made
 - Docs updated if behavior changes
 
@@ -102,6 +117,7 @@ A change is “done” when:
 When responding in PRs/issues:
 - Be brief, concrete, and cite files/lines changed.
 - For trade-offs, summarize and link to ADR.
+- If requirements are unclear, state assumptions explicitly and note any relevant PRD/SPEC gap.
 
 ## 6) Known hard parts (be careful)
 
@@ -111,4 +127,4 @@ When responding in PRs/issues:
 - Autocomplete correctness and performance
 - Parquet/Excel export library choices and type mapping
 
-_Last updated: 2026-02-27_
+_Last updated: 2026-03-09_
