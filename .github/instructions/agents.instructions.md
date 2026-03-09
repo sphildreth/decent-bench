@@ -576,7 +576,7 @@ IMPORTANT:
 - Project: "${projectName}"
 - Base path: "projects/${projectName}"
 - Input: "projects/${projectName}/src/"
-- Output: "projects/${projectName}/docs/"
+- Output: "projects/${projectName}/design/"
 
 Task:
 1. Read source files under the input path.

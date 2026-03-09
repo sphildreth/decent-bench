@@ -2,7 +2,7 @@
 
 > Applies to coding agents working in this repository.
 > This file is the source of truth for agent workflow, validation, and repo conventions.
-> `/docs/PRD.md` and `/docs/SPEC.md` are the source of truth for product requirements and implementation scope.
+> `/design/PRD.md` and `/design/SPEC.md` are the source of truth for product requirements and implementation scope.
 
 ## 0) What we're building
 
@@ -24,8 +24,8 @@ If anything you implement risks changing product scope, record an ADR.
 
 When instructions conflict, follow this order:
 1. Explicit user instructions for the current task, unless they conflict with repository safety or approval rules in this file.
-2. `/docs/SPEC.md`
-3. `/docs/PRD.md`
+2. `/design/SPEC.md`
+3. `/design/PRD.md`
 4. This file for workflow, validation, and repo conventions.
 
 ## 1) Golden rules (must follow)
@@ -59,8 +59,8 @@ When instructions conflict, follow this order:
 ## 2) Repo conventions
 
 ### 2.1 Documents (expected)
-- `/docs/PRD.md` — product requirements
-- `/docs/SPEC.md` — implementable spec
+- `/design/PRD.md` — product requirements
+- `/design/SPEC.md` — implementable spec
 - `/design/adr/` — ADRs (see README + template)
 
 ### 2.2 ADR process (required)
@@ -79,7 +79,7 @@ Use this structure by default unless the existing code in a feature area already
 ## 3) How to work (agent workflow)
 
 ### Step A — Understand
-- Read the relevant portions of `/docs/PRD.md` and `/docs/SPEC.md` (or their latest versions) before implementation.
+- Read the relevant portions of `/design/PRD.md` and `/design/SPEC.md` (or their latest versions) before implementation.
 - For larger or ambiguous tasks, review both documents in full or the latest relevant sections.
 - Identify the exact requirement(s) for the task.
 
