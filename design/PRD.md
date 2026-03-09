@@ -7,6 +7,8 @@
 DecentDB**, then **inspect schema** and **run the full pinned DecentDB SQL
 reference surface** to shape and export data.
 
+**Pinned engine capability baseline:** DecentDB v1.6.0
+
 **Critical initial task:** Users can **drag and drop a file** (Excel, SQLite,
 DecentDB, or supported SQL dump) onto Decent Bench.
 - If it is a **DecentDB** file, Decent Bench opens it immediately.
@@ -60,7 +62,8 @@ general-purpose database administration tool. Its core workflow is:
    - MVP prioritizes a reliable import → query → export loop over breadth.
 6. **Pinned-engine fidelity**
    - Decent Bench should preserve the SQL capabilities of the pinned DecentDB
-     engine version instead of inventing a smaller app-specific SQL subset.
+     engine version (`v1.6.0`) instead of inventing a smaller app-specific SQL
+     subset.
 
 ---
 
@@ -361,7 +364,7 @@ MVP. The project should not introduce a custom C shim or alternative binding
 layer unless the upstream bindings prove insufficient for required capability or
 performance.
 
-The official SQL reference for the pinned DecentDB engine version is the
+The official SQL reference for the pinned DecentDB engine version (`v1.6.0`) is the
 normative contract for SQL behavior in Decent Bench. The app may phase UI
 affordances and metadata browsing over time, but it should not intentionally
 restrict users to a smaller SQL subset than the pinned engine supports.

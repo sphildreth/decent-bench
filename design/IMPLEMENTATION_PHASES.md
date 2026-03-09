@@ -34,9 +34,10 @@ to land the entire product in one step.
    - Each phase should produce demonstrable user value or architectural
      certainty.
 6. **Pinned engine surface is normative**
-   - The official SQL reference for the pinned DecentDB engine version defines
-     the SQL surface Decent Bench must preserve. Delivery phases may stage UI
-     affordances, but they must not invent a narrower SQL dialect.
+   - The official SQL reference for the pinned DecentDB engine version
+     (`v1.6.0`) defines the SQL surface Decent Bench must preserve. Delivery
+     phases may stage UI affordances, but they must not invent a narrower SQL
+     dialect.
 
 ---
 
@@ -124,10 +125,15 @@ This phase proves the highest-risk architectural assumptions:
 5. Add single-tab query execution over the pinned engine SQL surface
 6. Add cursor paging and result state machine
 7. Add cancel behavior and stale-event protection
-8. Add representative engine smoke tests for parameters, views/indexes, CTEs,
-   and EXPLAIN/ANALYZE behavior
+8. Add and pass the Phase 1 representative engine smoke-test matrix from
+   `design/SPEC.md`
 9. Add CSV export over paged results
 10. Add tests and CI
+
+### Phase 1 representative engine smoke-test matrix
+
+Use the matrix in `design/SPEC.md` as the minimum representative `v1.6.0`
+engine-coverage gate for Phase 1.
 
 ### Exit criteria
 A contributor can:
@@ -138,7 +144,8 @@ A contributor can:
 5. receive paged results
 6. cancel a running query
 7. export results to CSV
-8. run analyzer and tests successfully
+8. pass the Phase 1 representative engine smoke-test matrix
+9. run analyzer and tests successfully
 
 ---
 

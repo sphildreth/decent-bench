@@ -14,6 +14,8 @@ requirements, specification, ADRs, and an initial placeholder app directory.
 The Flutter app folder exists under `apps/decent-bench/`, but there is **not
 yet a runnable Flutter project scaffold**.
 
+Current engine capability baseline: **DecentDB v1.6.0**.
+
 Current source-of-truth documents:
 
 - Product requirements: `design/PRD.md`

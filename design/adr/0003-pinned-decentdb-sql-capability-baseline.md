@@ -7,6 +7,8 @@
 Decent Bench treats the official SQL reference for the pinned DecentDB engine
 version as the normative SQL capability contract.
 
+Current project pin: **DecentDB v1.6.0**.
+
 The app may phase dedicated UI affordances and schema-browser coverage over
 time, but it should not intentionally narrow the SQL surface below what the
 pinned engine documents as supported. This applies in particular to:
@@ -18,6 +20,9 @@ pinned engine documents as supported. This applies in particular to:
 - query features such as CTEs, joins, set operations, scalar/aggregate/window
   functions, transactions, `EXPLAIN`, `EXPLAIN ANALYZE`, table-valued
   functions, and positional parameters
+
+Any future engine-version upgrade must update this ADR, the PRD/SPEC wording,
+and the representative smoke-test matrix in the same change.
 
 ### Rationale
 

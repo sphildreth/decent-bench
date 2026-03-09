@@ -4,8 +4,10 @@
 **Type:** Cross-platform desktop SQL-style app (Flutter)  
 **License:** Apache 2.0  
 **Primary purpose:** Drag-and-drop import into **DecentDB**, then inspect
-schema, run fast queries, and export shaped results.  
+schema, run the pinned DecentDB SQL surface, and export shaped results.
 **PRD reference:** `design/PRD.md`
+
+**Pinned engine capability baseline:** DecentDB v1.6.0
 
 ---
 
@@ -338,7 +340,7 @@ bindings are:
 
 ### 5.4 Pinned SQL capability baseline
 
-The pinned DecentDB engine version and its official SQL reference are the
+The pinned DecentDB engine version (`v1.6.0`) and its official SQL reference are the
 normative source of truth for SQL capability in Decent Bench.
 
 For the pinned engine version, Decent Bench should preserve support for the
@@ -749,6 +751,25 @@ Integration tests:
 - cancel a query
 - load schema metadata
 
+### 13.1.1 Phase 1 representative engine smoke-test matrix
+
+The Phase 1 smoke suite should validate a representative slice of the pinned
+DecentDB `v1.6.0` SQL surface. It is not a full compatibility suite, but it
+must cover each major engine category that the app intends to preserve.
+
+| Area | Representative operation | Minimum assertion |
+|---|---|---|
+| Parameters + paging | Create a table, insert/query with `$1`/`$2`, fetch via paged cursor | Parameter binding works and paged retrieval returns expected rows |
+| Views + indexes | `CREATE VIEW`, `CREATE INDEX`, query the view, inspect schema metadata | SQL executes successfully and adapter metadata does not regress |
+| Recursive CTEs | `WITH RECURSIVE` sequence or hierarchy query | Recursive result set is correct and cancellable through the normal query path |
+| Constraints + generated columns | `CHECK`, `UNIQUE`, `DEFAULT`, `GENERATED ALWAYS AS ... STORED` | Valid rows succeed, invalid rows fail, generated values persist correctly |
+| Window + aggregate functions | `ROW_NUMBER() OVER (...)` plus grouped aggregates | Result ordering and aggregate values match expectations |
+| Table-valued JSON functions | `json_each(...)` and `json_tree(...)` in `FROM` | Returned row shape and representative values match expectations |
+| Transactions + savepoints | `BEGIN`, `SAVEPOINT`, `ROLLBACK TO SAVEPOINT`, `COMMIT` | Only committed rows remain visible after rollback paths |
+| Triggers + temp objects | `CREATE TRIGGER`, `CREATE TEMP TABLE/VIEW`, run trigger-producing DML | Trigger side effects occur and temp objects remain connection-scoped |
+| Planner introspection | `EXPLAIN` and `EXPLAIN ANALYZE` on representative queries | Non-empty plan output is returned without UI hangs |
+| Statistics collection | `ANALYZE table_name` outside explicit transaction | Command succeeds and leaves the database usable for subsequent queries |
+
 UI/integration tests:
 
 - open workspace
@@ -811,11 +832,12 @@ A contributor can:
 1. launch a runnable Flutter desktop app
 2. open or create a DecentDB file
 3. see tables and columns in the schema browser
-4. run a query in a single tab
+4. run representative pinned-engine SQL statements in a single tab
 5. receive paged results without full materialization
 6. cancel a running query and recover the UI
 7. export visible query results to CSV
-8. run analyzer and tests successfully
+8. pass the Phase 1 representative engine smoke-test matrix
+9. run analyzer and tests successfully
 
 ### 16.2 MVP acceptance
 
