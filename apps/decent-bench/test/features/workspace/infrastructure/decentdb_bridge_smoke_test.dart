@@ -236,6 +236,31 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
       return sourcePath;
     }
 
+    String resolveExcelFixturePackPath() {
+      final candidates = <String>[
+        p.normalize(
+          p.join(
+            Directory.current.path,
+            '..',
+            '..',
+            'test-data',
+            'excel-test-pack',
+          ),
+        ),
+        p.normalize(
+          p.join(Directory.current.path, 'test-data', 'excel-test-pack'),
+        ),
+      ];
+      for (final candidate in candidates) {
+        if (Directory(candidate).existsSync()) {
+          return candidate;
+        }
+      }
+      throw StateError(
+        'Could not locate test-data/excel-test-pack from ${Directory.current.path}',
+      );
+    }
+
     setUp(() async {
       tempDir = await Directory.systemTemp.createTemp('decent-bench-phase1-');
       dbPath = p.join(tempDir.path, 'phase1.ddb');
@@ -819,6 +844,102 @@ ORDER BY n.id
         expect(peopleRows.first['name'], 'Ada');
         expect(peopleRows.first['active'], true);
         expect(metricRows.first['formula_text'], '=SUM(B2)');
+      },
+    );
+
+    test(
+      'imports every workbook from the checked-in Excel fixture pack',
+      skip: skipReason,
+      () async {
+        final fixturePackPath = resolveExcelFixturePackPath();
+        final workbookFiles =
+            Directory(fixturePackPath)
+                .listSync()
+                .whereType<File>()
+                .where((file) {
+                  final extension = p.extension(file.path).toLowerCase();
+                  return extension == '.xls' || extension == '.xlsx';
+                })
+                .toList(growable: false)
+              ..sort((left, right) => left.path.compareTo(right.path));
+
+        expect(workbookFiles, isNotEmpty);
+
+        for (final workbookFile in workbookFiles) {
+          final inspection = await bridge.inspectExcelSource(
+            sourcePath: workbookFile.path,
+            headerRow: true,
+          );
+          final request = ExcelImportRequest(
+            jobId: 'fixture-${p.basenameWithoutExtension(workbookFile.path)}',
+            sourcePath: workbookFile.path,
+            targetPath: p.join(
+              tempDir.path,
+              '${p.basenameWithoutExtension(workbookFile.path)}.ddb',
+            ),
+            importIntoExistingTarget: false,
+            replaceExistingTarget: true,
+            headerRow: true,
+            sheets: inspection.sheets,
+          );
+
+          expect(
+            request.selectedSheets,
+            isNotEmpty,
+            reason:
+                'Expected at least one selected sheet for ${p.basename(workbookFile.path)}',
+          );
+
+          final updates = await bridge.importExcel(request: request).toList();
+          final terminal = updates.last;
+
+          expect(
+            terminal.kind,
+            ExcelImportUpdateKind.completed,
+            reason: 'Import failed for ${p.basename(workbookFile.path)}',
+          );
+          expect(
+            File(request.targetPath).existsSync(),
+            isTrue,
+            reason:
+                'Expected DecentDB file for ${p.basename(workbookFile.path)}',
+          );
+
+          await bridge.openDatabase(request.targetPath);
+          final schema = await bridge.loadSchema();
+          final importedTables =
+              terminal.summary?.importedTables ?? const <String>[];
+          final schemaTableNames = schema.tables
+              .map((table) => table.name.toLowerCase())
+              .toList(growable: false);
+
+          expect(
+            importedTables,
+            isNotEmpty,
+            reason:
+                'Expected imported tables for ${p.basename(workbookFile.path)}',
+          );
+          expect(
+            schemaTableNames,
+            containsAll(
+              importedTables.map((tableName) => tableName.toLowerCase()),
+            ),
+            reason:
+                'Schema missing imported tables for ${p.basename(workbookFile.path)}',
+          );
+
+          if (p.extension(workbookFile.path).toLowerCase() == '.xls') {
+            expect(
+              <String>[
+                ...inspection.warnings,
+                ...(terminal.summary?.warnings ?? const <String>[]),
+              ].join('\n'),
+              contains('converted to temporary `.xlsx`'),
+              reason:
+                  'Expected conversion warning for ${p.basename(workbookFile.path)}',
+            );
+          }
+        }
       },
     );
 

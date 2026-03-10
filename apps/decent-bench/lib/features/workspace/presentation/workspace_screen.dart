@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../app/app_metadata.dart';
+import '../../../app/startup_launch_options.dart';
 import '../application/menu_command_registry.dart';
 import '../application/workspace_controller.dart';
 import '../application/workspace_shell_controller.dart';
@@ -39,10 +40,12 @@ class WorkspaceScreen extends StatefulWidget {
     super.key,
     required this.controller,
     this.appLifecycleService = const FlutterAppLifecycleService(),
+    this.startupLaunchOptions = const StartupLaunchOptions(),
   });
 
   final WorkspaceController controller;
   final AppLifecycleService appLifecycleService;
+  final StartupLaunchOptions startupLaunchOptions;
 
   @override
   State<WorkspaceScreen> createState() => _WorkspaceScreenState();
@@ -100,6 +103,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   String? _selectedSchemaNodeId;
   bool _nativeMenuAvailable = false;
   bool _didCheckNativeMenuAvailability = false;
+  bool _didProcessStartupLaunchOptions = false;
   final Map<String, ResultsGridInteractionState> _resultsStateByTabId =
       <String, ResultsGridInteractionState>{};
 
@@ -168,6 +172,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       builder: (context, _) {
         final controller = widget.controller;
         _hydrateShellPreferencesIfReady(controller);
+        _scheduleStartupLaunchIfReady(controller);
         final activeTab = controller.activeTab;
         _syncControllers(controller, activeTab);
 
@@ -342,6 +347,23 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     }
     _shellController.replacePreferences(controller.config.shellPreferences);
     _didHydrateShellPreferences = true;
+  }
+
+  void _scheduleStartupLaunchIfReady(WorkspaceController controller) {
+    if (_didProcessStartupLaunchOptions || controller.isInitializing) {
+      return;
+    }
+    _didProcessStartupLaunchOptions = true;
+    if (!widget.startupLaunchOptions.hasPendingAction) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        return;
+      }
+      await _handleStartupLaunchOptions(widget.startupLaunchOptions);
+    });
   }
 
   void _syncControllers(
@@ -1578,6 +1600,49 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         );
       },
     );
+  }
+
+  Future<void> _handleStartupLaunchOptions(
+    StartupLaunchOptions launchOptions,
+  ) async {
+    final startupNotice = launchOptions.startupNotice?.trim();
+    if (startupNotice != null && startupNotice.isNotEmpty) {
+      await _showPlaceholderNotice('Command-line import', startupNotice);
+      return;
+    }
+
+    final importSourcePath = launchOptions.importSourcePath?.trim();
+    if (importSourcePath == null || importSourcePath.isEmpty) {
+      return;
+    }
+
+    await _startImportFromPath(importSourcePath);
+  }
+
+  Future<void> _startImportFromPath(String path) async {
+    switch (detectWorkspaceIncomingFileKind(path)) {
+      case WorkspaceIncomingFileKind.sqlite:
+        await _showSqliteImportDialog(sourcePath: path);
+        break;
+      case WorkspaceIncomingFileKind.excel:
+        await _showExcelImportDialog(sourcePath: path);
+        break;
+      case WorkspaceIncomingFileKind.sqlDump:
+        await _showSqlDumpImportDialog(sourcePath: path);
+        break;
+      case WorkspaceIncomingFileKind.decentDb:
+        await _showPlaceholderNotice(
+          'Command-line import',
+          '`--import` expects an import source such as SQLite, Excel, or SQL dump. Open DecentDB files without `--import`.',
+        );
+        break;
+      case WorkspaceIncomingFileKind.unknown:
+        await _showPlaceholderNotice(
+          'Command-line import',
+          'Supported import sources are `.db`/`.sqlite`/`.sqlite3`, `.xls`/`.xlsx`, and `.sql`.',
+        );
+        break;
+    }
   }
 
   Future<void> _showCsvExportDialog() async {

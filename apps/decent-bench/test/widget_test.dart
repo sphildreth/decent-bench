@@ -1,4 +1,5 @@
 import 'package:decent_bench/app/app.dart';
+import 'package:decent_bench/app/startup_launch_options.dart';
 import 'package:decent_bench/features/workspace/application/workspace_controller.dart';
 import 'package:decent_bench/features/workspace/domain/app_config.dart';
 import 'package:decent_bench/features/workspace/presentation/shell/status_bar.dart';
@@ -143,5 +144,35 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('SQLite Import Wizard'), findsOneWidget);
+  });
+
+  testWidgets('startup --import opens the matching import wizard', (
+    tester,
+  ) async {
+    final controller = WorkspaceController(
+      gateway: FakeWorkspaceGateway(),
+      configStore: InMemoryConfigStore(),
+      workspaceStateStore: InMemoryWorkspaceStateStore(),
+    );
+
+    _configureDesktopViewport(tester);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+      controller.dispose();
+    });
+    await controller.initialize();
+    await tester.pumpWidget(
+      DecentBenchApp(
+        controller: controller,
+        autoInitialize: false,
+        startupLaunchOptions: const StartupLaunchOptions(
+          importSourcePath: '/tmp/source.xlsx',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Excel Import Wizard'), findsOneWidget);
   });
 }

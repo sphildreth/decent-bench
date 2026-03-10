@@ -24,6 +24,10 @@ void main() {
 
   test('classifies future import types and unknown files', () {
     expect(
+      detectWorkspaceIncomingFileKind('/tmp/workbook.xls'),
+      WorkspaceIncomingFileKind.excel,
+    );
+    expect(
       detectWorkspaceIncomingFileKind('/tmp/workbook.xlsx'),
       WorkspaceIncomingFileKind.excel,
     );

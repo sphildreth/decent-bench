@@ -126,7 +126,7 @@ class _ExcelImportDialogState extends State<ExcelImportDialog> {
                 controller: _sourcePathController,
                 decoration: const InputDecoration(
                   labelText: 'Excel source path',
-                  hintText: '/tmp/source.xlsx',
+                  hintText: '/tmp/source.xlsx or /tmp/source.xls',
                 ),
               ),
             ),
@@ -172,7 +172,7 @@ class _ExcelImportDialogState extends State<ExcelImportDialog> {
               ? const _DialogEmptyState(
                   title: 'No workbook loaded yet',
                   message:
-                      'Choose an `.xlsx` file to inspect worksheets, infer column types, and preview sample rows.',
+                      'Choose an `.xls` or `.xlsx` file to inspect worksheets, infer column types, and preview sample rows.',
                 )
               : DecoratedBox(
                   decoration: BoxDecoration(

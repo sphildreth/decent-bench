@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 
 import '../domain/excel_import_models.dart';
 import '../domain/workspace_models.dart';
+import 'excel_source_preparer.dart';
 
 const int _excelPreviewRowLimit = 8;
 const int _excelProgressBatchSize = 200;
@@ -30,32 +31,30 @@ ExcelImportInspection inspectExcelSourceFile(
   if (!file.existsSync()) {
     throw BridgeFailure('Excel source file does not exist: $sourcePath');
   }
-  if (p.extension(sourcePath).toLowerCase() == '.xls') {
-    throw const BridgeFailure(
-      'Legacy `.xls` workbooks are not supported by the current parser yet. Save the workbook as `.xlsx` and retry.',
-    );
-  }
+  final loadedWorkbook = _loadWorkbookFromSource(sourcePath);
+  try {
+    final warnings = <String>[...loadedWorkbook.warnings];
+    final sheets = <ExcelImportSheetDraft>[];
+    for (final entry in loadedWorkbook.workbook.tables.entries) {
+      sheets.add(
+        _inspectSheet(
+          entry.key,
+          entry.value,
+          headerRow: headerRow,
+          warnings: warnings,
+        ),
+      );
+    }
 
-  final workbook = xls.Excel.decodeBytes(file.readAsBytesSync());
-  final warnings = <String>[];
-  final sheets = <ExcelImportSheetDraft>[];
-  for (final entry in workbook.tables.entries) {
-    sheets.add(
-      _inspectSheet(
-        entry.key,
-        entry.value,
-        headerRow: headerRow,
-        warnings: warnings,
-      ),
+    return ExcelImportInspection(
+      sourcePath: sourcePath,
+      headerRow: headerRow,
+      sheets: sheets,
+      warnings: warnings,
     );
+  } finally {
+    loadedWorkbook.dispose();
   }
-
-  return ExcelImportInspection(
-    sourcePath: sourcePath,
-    headerRow: headerRow,
-    sheets: sheets,
-    warnings: warnings,
-  );
 }
 
 @pragma('vm:entry-point')
@@ -160,119 +159,123 @@ Future<ExcelImportSummary> _runExcelImport({
     }
   }
 
-  final workbook = _openWorkbook(request.sourcePath);
-  final target = Database.open(request.targetPath, libraryPath: libraryPath);
-  var transactionOpen = false;
-  final rowsCopied = <String, int>{};
-  final warnings = <String>[];
-
+  final loadedWorkbook = _loadWorkbookFromSource(request.sourcePath);
   try {
-    final existingTables = target.schema.listTables().toSet();
-    final colliding = request.selectedSheets
-        .map((sheet) => sheet.targetName)
-        .where(existingTables.contains)
-        .toList();
-    if (colliding.isNotEmpty) {
-      throw BridgeFailure(
-        'Target already contains table(s): ${colliding.join(", ")}. Rename them or choose another DecentDB file.',
-      );
-    }
+    final target = Database.open(request.targetPath, libraryPath: libraryPath);
+    var transactionOpen = false;
+    final rowsCopied = <String, int>{};
+    final warnings = <String>[...loadedWorkbook.warnings];
 
-    target.begin();
-    transactionOpen = true;
-
-    for (var i = 0; i < request.selectedSheets.length; i++) {
-      final sheet = request.selectedSheets[i];
-      _throwIfCancelled(isCancelled);
-      target.execute(_buildCreateTableSql(sheet));
-      sendUpdate(
-        ExcelImportUpdate(
-          kind: ExcelImportUpdateKind.progress,
-          jobId: request.jobId,
-          progress: ExcelImportProgress(
-            jobId: request.jobId,
-            currentSheet: sheet.targetName,
-            completedSheets: i,
-            totalSheets: request.selectedSheets.length,
-            currentSheetRowsCopied: 0,
-            currentSheetRowCount: sheet.rowCount,
-            totalRowsCopied: rowsCopied.values.fold<int>(
-              0,
-              (sum, value) => sum + value,
-            ),
-            message: 'Created table ${sheet.targetName}.',
-          ),
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
-    }
-
-    for (var i = 0; i < request.selectedSheets.length; i++) {
-      final sheet = request.selectedSheets[i];
-      final copied = await _copySheetData(
-        workbook: workbook,
-        target: target,
-        request: request,
-        sheet: sheet,
-        completedSheets: i,
-        totalSheets: request.selectedSheets.length,
-        priorRowsCopied: rowsCopied.values.fold<int>(
-          0,
-          (sum, value) => sum + value,
-        ),
-        sendUpdate: sendUpdate,
-        isCancelled: isCancelled,
-        warnings: warnings,
-      );
-      rowsCopied[sheet.targetName] = copied;
-    }
-
-    target.commit();
-    transactionOpen = false;
-
-    return ExcelImportSummary(
-      jobId: request.jobId,
-      sourcePath: request.sourcePath,
-      targetPath: request.targetPath,
-      importedTables: request.selectedSheets
+    try {
+      final existingTables = target.schema.listTables().toSet();
+      final colliding = request.selectedSheets
           .map((sheet) => sheet.targetName)
-          .toList(),
-      rowsCopiedByTable: rowsCopied,
-      warnings: warnings,
-      statusMessage:
-          'Imported ${rowsCopied.values.fold<int>(0, (sum, value) => sum + value)} rows from ${request.selectedSheets.length} workbook sheet${request.selectedSheets.length == 1 ? '' : 's'}.',
-      rolledBack: false,
-    );
-  } on _ExcelImportCancelledSignal {
-    if (transactionOpen) {
-      try {
-        target.rollback();
-      } catch (_) {
-        // Best-effort rollback for cancellation.
+          .where(existingTables.contains)
+          .toList();
+      if (colliding.isNotEmpty) {
+        throw BridgeFailure(
+          'Target already contains table(s): ${colliding.join(", ")}. Rename them or choose another DecentDB file.',
+        );
       }
-    }
-    final summary = ExcelImportSummary(
-      jobId: request.jobId,
-      sourcePath: request.sourcePath,
-      targetPath: request.targetPath,
-      importedTables: rowsCopied.keys.toList(),
-      rowsCopiedByTable: rowsCopied,
-      warnings: warnings,
-      statusMessage: 'Excel import cancelled and rolled back.',
-      rolledBack: true,
-    );
-    throw _ExcelImportCancelled(summary);
-  } catch (_) {
-    if (transactionOpen) {
-      try {
-        target.rollback();
-      } catch (_) {
-        // Best-effort rollback on failure.
+
+      target.begin();
+      transactionOpen = true;
+
+      for (var i = 0; i < request.selectedSheets.length; i++) {
+        final sheet = request.selectedSheets[i];
+        _throwIfCancelled(isCancelled);
+        target.execute(_buildCreateTableSql(sheet));
+        sendUpdate(
+          ExcelImportUpdate(
+            kind: ExcelImportUpdateKind.progress,
+            jobId: request.jobId,
+            progress: ExcelImportProgress(
+              jobId: request.jobId,
+              currentSheet: sheet.targetName,
+              completedSheets: i,
+              totalSheets: request.selectedSheets.length,
+              currentSheetRowsCopied: 0,
+              currentSheetRowCount: sheet.rowCount,
+              totalRowsCopied: rowsCopied.values.fold<int>(
+                0,
+                (sum, value) => sum + value,
+              ),
+              message: 'Created table ${sheet.targetName}.',
+            ),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
       }
+
+      for (var i = 0; i < request.selectedSheets.length; i++) {
+        final sheet = request.selectedSheets[i];
+        final copied = await _copySheetData(
+          workbook: loadedWorkbook.workbook,
+          target: target,
+          request: request,
+          sheet: sheet,
+          completedSheets: i,
+          totalSheets: request.selectedSheets.length,
+          priorRowsCopied: rowsCopied.values.fold<int>(
+            0,
+            (sum, value) => sum + value,
+          ),
+          sendUpdate: sendUpdate,
+          isCancelled: isCancelled,
+          warnings: warnings,
+        );
+        rowsCopied[sheet.targetName] = copied;
+      }
+
+      target.commit();
+      transactionOpen = false;
+
+      return ExcelImportSummary(
+        jobId: request.jobId,
+        sourcePath: request.sourcePath,
+        targetPath: request.targetPath,
+        importedTables: request.selectedSheets
+            .map((sheet) => sheet.targetName)
+            .toList(),
+        rowsCopiedByTable: rowsCopied,
+        warnings: warnings,
+        statusMessage:
+            'Imported ${rowsCopied.values.fold<int>(0, (sum, value) => sum + value)} rows from ${request.selectedSheets.length} workbook sheet${request.selectedSheets.length == 1 ? '' : 's'}.',
+        rolledBack: false,
+      );
+    } on _ExcelImportCancelledSignal {
+      if (transactionOpen) {
+        try {
+          target.rollback();
+        } catch (_) {
+          // Best-effort rollback for cancellation.
+        }
+      }
+      final summary = ExcelImportSummary(
+        jobId: request.jobId,
+        sourcePath: request.sourcePath,
+        targetPath: request.targetPath,
+        importedTables: rowsCopied.keys.toList(),
+        rowsCopiedByTable: rowsCopied,
+        warnings: warnings,
+        statusMessage: 'Excel import cancelled and rolled back.',
+        rolledBack: true,
+      );
+      throw _ExcelImportCancelled(summary);
+    } catch (_) {
+      if (transactionOpen) {
+        try {
+          target.rollback();
+        } catch (_) {
+          // Best-effort rollback on failure.
+        }
+      }
+      rethrow;
+    } finally {
+      target.close();
     }
-    rethrow;
   } finally {
-    target.close();
+    loadedWorkbook.dispose();
   }
 }
 
@@ -711,13 +714,38 @@ bool _isUuidType(String targetType) {
   return targetType == 'UUID';
 }
 
-xls.Excel _openWorkbook(String sourcePath) {
-  if (p.extension(sourcePath).toLowerCase() == '.xls') {
-    throw const BridgeFailure(
-      'Legacy `.xls` workbooks are not supported by the current parser yet. Save the workbook as `.xlsx` and retry.',
+_LoadedWorkbook _loadWorkbookFromSource(String sourcePath) {
+  final preparedSource = prepareExcelWorkbookSource(sourcePath);
+  try {
+    final workbook = xls.Excel.decodeBytes(
+      File(preparedSource.resolvedPath).readAsBytesSync(),
     );
+    return _LoadedWorkbook(
+      workbook: workbook,
+      warnings: preparedSource.warnings,
+      dispose: preparedSource.dispose,
+    );
+  } catch (error) {
+    preparedSource.dispose();
+    if (p.extension(sourcePath).toLowerCase() != '.xlsx') {
+      rethrow;
+    }
+
+    final normalizedSource = normalizeExcelWorkbookSource(sourcePath);
+    try {
+      final workbook = xls.Excel.decodeBytes(
+        File(normalizedSource.resolvedPath).readAsBytesSync(),
+      );
+      return _LoadedWorkbook(
+        workbook: workbook,
+        warnings: normalizedSource.warnings,
+        dispose: normalizedSource.dispose,
+      );
+    } catch (_) {
+      normalizedSource.dispose();
+      rethrow;
+    }
   }
-  return xls.Excel.decodeBytes(File(sourcePath).readAsBytesSync());
 }
 
 void _throwIfCancelled(bool Function() isCancelled) {
@@ -811,4 +839,18 @@ class _ExcelImportCancelled implements Exception {
 
 class _ExcelImportCancelledSignal implements Exception {
   const _ExcelImportCancelledSignal();
+}
+
+class _LoadedWorkbook {
+  const _LoadedWorkbook({
+    required this.workbook,
+    required this.warnings,
+    required void Function() dispose,
+  }) : _dispose = dispose;
+
+  final xls.Excel workbook;
+  final List<String> warnings;
+  final void Function() _dispose;
+
+  void dispose() => _dispose();
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_metadata.dart';
+import 'startup_launch_options.dart';
 import '../features/workspace/application/workspace_controller.dart';
 import '../features/workspace/infrastructure/app_lifecycle_service.dart';
 import '../features/workspace/presentation/workspace_screen.dart';
@@ -12,11 +13,13 @@ class DecentBenchApp extends StatefulWidget {
     this.controller,
     this.appLifecycleService = const FlutterAppLifecycleService(),
     this.autoInitialize = true,
+    this.startupLaunchOptions = const StartupLaunchOptions(),
   });
 
   final WorkspaceController? controller;
   final AppLifecycleService appLifecycleService;
   final bool autoInitialize;
+  final StartupLaunchOptions startupLaunchOptions;
 
   @override
   State<DecentBenchApp> createState() => _DecentBenchAppState();
@@ -51,6 +54,7 @@ class _DecentBenchAppState extends State<DecentBenchApp> {
       home: WorkspaceScreen(
         controller: _controller,
         appLifecycleService: widget.appLifecycleService,
+        startupLaunchOptions: widget.startupLaunchOptions,
       ),
     );
   }

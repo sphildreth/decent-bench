@@ -64,6 +64,8 @@ formatter, JSON/Parquet/Excel export, and multi-tab editing.
 - Drag-and-drop a file onto the app window:
   - If DecentDB, open immediately
   - Otherwise, launch Import Wizard based on file type
+- Desktop launch may also accept `dbench --import <path>` to open the matching
+  import wizard on startup for a supported import source
 - Single-file drop for MVP
 - If multiple files are dropped, import the first and show a warning dialog
 
@@ -216,6 +218,11 @@ concerns is required.
   - Load schema browser immediately
 - Otherwise:
   - Launch import wizard with source file preselected
+- If launched with `--import <path>`:
+  - detect the source type using the same file-kind rules as drag-and-drop
+  - open the matching import wizard after app initialization completes
+  - show a clear notice when the supplied path is missing or not an importable
+    source type
 
 **Multi-drop:**
 - If more than one file is dropped:
@@ -487,6 +494,9 @@ Capabilities:
 - type inference with override
 - preview sample rows
 - import into target table(s)
+- accept `.xlsx` directly and normalize legacy `.xls` or parser-rejected
+  workbooks through local background conversion when a compatible office CLI is
+  available
 
 Edge cases:
 
@@ -494,6 +504,12 @@ Edge cases:
 - mixed-type columns
 - large sheets requiring streaming reads
 - date/time columns requiring explicit mapping behavior
+- legacy `.xls` workbooks must either import through temporary local conversion
+  or fail with a clear dependency message
+- `.xlsx` workbooks that the direct parser rejects may be retried through the
+  same temporary normalization path
+- formula cells are imported as formula text with warnings; formula evaluation
+  and computed-column transforms remain deferred
 
 ### 7.3 SQLite import
 
