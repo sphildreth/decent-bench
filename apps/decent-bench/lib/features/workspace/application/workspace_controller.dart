@@ -644,6 +644,75 @@ class WorkspaceController extends ChangeNotifier {
     );
   }
 
+  Future<void> updateAutocompleteEnabled(bool value) async {
+    config = config.copyWith(
+      editorSettings: config.editorSettings.copyWith(
+        autocompleteEnabled: value,
+      ),
+    );
+    await _persistConfig(
+      value ? 'SQL autocomplete enabled.' : 'SQL autocomplete disabled.',
+    );
+  }
+
+  Future<void> updateAutocompleteMaxSuggestions(String rawValue) async {
+    final parsed = int.tryParse(rawValue.trim());
+    if (parsed == null || parsed <= 0) {
+      _setWorkspaceError(
+        'Autocomplete suggestions must be a positive integer.',
+      );
+      return;
+    }
+    config = config.copyWith(
+      editorSettings: config.editorSettings.copyWith(
+        autocompleteMaxSuggestions: parsed,
+      ),
+    );
+    await _persistConfig('Updated autocomplete suggestion limit.');
+  }
+
+  Future<void> updateFormatterUppercaseKeywords(bool value) async {
+    config = config.copyWith(
+      editorSettings: config.editorSettings.copyWith(
+        formatUppercaseKeywords: value,
+      ),
+    );
+    await _persistConfig(
+      value
+          ? 'Formatter will uppercase SQL keywords.'
+          : 'Formatter will preserve keyword casing.',
+    );
+  }
+
+  Future<void> updateEditorIndentSpaces(String rawValue) async {
+    final parsed = int.tryParse(rawValue.trim());
+    if (parsed == null || parsed <= 0) {
+      _setWorkspaceError('Indent spaces must be a positive integer.');
+      return;
+    }
+    config = config.copyWith(
+      editorSettings: config.editorSettings.copyWith(indentSpaces: parsed),
+    );
+    await _persistConfig('Updated SQL formatter indentation.');
+  }
+
+  Future<void> saveSnippet(SqlSnippet snippet) async {
+    config = config.upsertSnippet(snippet);
+    await _persistConfig('Saved snippet "${snippet.name}".');
+  }
+
+  Future<void> deleteSnippet(String snippetId) async {
+    final existing = config.snippets.where((item) => item.id == snippetId);
+    if (existing.isEmpty) {
+      return;
+    }
+    config = config.removeSnippet(snippetId);
+    await _persistConfig('Deleted snippet "${existing.first.name}".');
+  }
+
+  String createSnippetId() =>
+      'snippet-${DateTime.now().microsecondsSinceEpoch.toString()}';
+
   String suggestExportPath([String? tabId]) {
     final tab = tabId == null ? activeTab : tabById(tabId) ?? activeTab;
     return _suggestExportPathForTitle(tab.title);

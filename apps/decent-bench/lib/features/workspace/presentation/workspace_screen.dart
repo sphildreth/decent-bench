@@ -5,6 +5,9 @@ import 'package:flutter/services.dart';
 
 import '../../../shared/widgets/panel_card.dart';
 import '../application/workspace_controller.dart';
+import '../domain/app_config.dart';
+import '../domain/sql_autocomplete.dart';
+import '../domain/sql_formatter.dart';
 import '../domain/workspace_models.dart';
 
 class WorkspaceScreen extends StatefulWidget {
@@ -33,6 +36,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   late final ScrollController _resultsHorizontalController = ScrollController();
   late final FocusNode _sqlFocusNode = FocusNode(debugLabel: 'sql-editor');
   late final FocusNode _resultsFocusNode = FocusNode(debugLabel: 'results');
+  final SqlAutocompleteEngine _autocompleteEngine =
+      const SqlAutocompleteEngine();
+  final SqlFormatter _sqlFormatter = const SqlFormatter();
 
   String? _selectedSchemaObjectName;
   String? _syncedTabId;
@@ -81,6 +87,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           _schemaFilterController.text,
         );
         final selectedObject = _selectedObjectFor(filteredObjects);
+        final autocompleteResult = _autocompleteFor(controller);
 
         return Shortcuts(
           shortcuts: const <ShortcutActivator, Intent>{
@@ -144,7 +151,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                             children: <Widget>[
                               Expanded(
                                 flex: 4,
-                                child: _buildSqlPane(controller.activeTab),
+                                child: _buildSqlPane(
+                                  controller.activeTab,
+                                  autocompleteResult,
+                                ),
                               ),
                               const SizedBox(height: 16),
                               Expanded(
@@ -546,12 +556,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
-  Widget _buildSqlPane(QueryTabState activeTab) {
+  Widget _buildSqlPane(
+    QueryTabState activeTab,
+    AutocompleteResult autocompleteResult,
+  ) {
     final controller = widget.controller;
     return PanelCard(
       title: 'SQL Workspace',
       subtitle:
-          'Phase 2 adds multi-tab editing, per-tab results ownership, and persisted tab drafts when reopening the same database.',
+          'Phase 3 adds schema-aware autocomplete, user-editable snippets, deterministic formatting, and persisted editor settings on top of the tabbed query workspace.',
       actions: <Widget>[
         FilledButton.icon(
           onPressed: controller.canRunActiveTab
@@ -578,6 +591,62 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               child: Column(
                 children: <Widget>[
                   _buildTabStrip(controller, activeTab),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: <Widget>[
+                        OutlinedButton.icon(
+                          onPressed: _formatActiveSql,
+                          icon: const Icon(Icons.auto_fix_high_rounded),
+                          label: const Text('Format SQL'),
+                        ),
+                        PopupMenuButton<SqlSnippet>(
+                          onSelected: _insertSnippet,
+                          itemBuilder: (context) {
+                            return <PopupMenuEntry<SqlSnippet>>[
+                              for (final snippet in controller.config.snippets)
+                                PopupMenuItem<SqlSnippet>(
+                                  value: snippet,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Text(snippet.name),
+                                      Text(
+                                        snippet.trigger,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodySmall,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ];
+                          },
+                          child: IgnorePointer(
+                            child: OutlinedButton.icon(
+                              onPressed: () {},
+                              icon: const Icon(Icons.code_rounded),
+                              label: const Text('Insert Snippet'),
+                            ),
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _showSnippetManager,
+                          icon: const Icon(Icons.library_books_rounded),
+                          label: const Text('Manage Snippets'),
+                        ),
+                        IconButton(
+                          tooltip: 'Editor settings',
+                          onPressed: _showEditorSettingsDialog,
+                          icon: const Icon(Icons.tune_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   Row(
                     children: <Widget>[
@@ -630,6 +699,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                       ),
                     ),
                   ),
+                  if (!autocompleteResult.isEmpty) ...<Widget>[
+                    const SizedBox(height: 12),
+                    _buildAutocompletePanel(autocompleteResult),
+                  ],
                   const SizedBox(height: 12),
                   Align(
                     alignment: Alignment.centerLeft,
@@ -919,6 +992,451 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
+  AutocompleteResult _autocompleteFor(WorkspaceController controller) {
+    final selection = _sqlController.selection;
+    final offset = selection.isValid && selection.baseOffset >= 0
+        ? selection.baseOffset
+        : _sqlController.text.length;
+    return _autocompleteEngine.suggest(
+      sql: _sqlController.text,
+      cursorOffset: offset,
+      schema: controller.schema,
+      config: controller.config,
+    );
+  }
+
+  Widget _buildAutocompletePanel(AutocompleteResult autocompleteResult) {
+    return SizedBox(
+      height: 148,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+              child: Text(
+                'Autocomplete',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                itemCount: autocompleteResult.suggestions.length,
+                itemBuilder: (context, index) {
+                  final suggestion = autocompleteResult.suggestions[index];
+                  return ListTile(
+                    dense: true,
+                    onTap: () => _applyAutocompleteSuggestion(
+                      autocompleteResult,
+                      suggestion,
+                    ),
+                    leading: Icon(_suggestionIcon(suggestion.kind)),
+                    title: Text(suggestion.label),
+                    subtitle: Text(suggestion.detail),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _suggestionIcon(AutocompleteSuggestionKind kind) {
+    return switch (kind) {
+      AutocompleteSuggestionKind.object => Icons.table_rows_rounded,
+      AutocompleteSuggestionKind.column => Icons.view_column_rounded,
+      AutocompleteSuggestionKind.function => Icons.functions_rounded,
+      AutocompleteSuggestionKind.keyword => Icons.key_rounded,
+      AutocompleteSuggestionKind.snippet => Icons.code_rounded,
+    };
+  }
+
+  void _applyAutocompleteSuggestion(
+    AutocompleteResult result,
+    AutocompleteSuggestion suggestion,
+  ) {
+    final current = _sqlController.text;
+    final updated =
+        current.substring(0, result.replaceStart) +
+        suggestion.insertText +
+        current.substring(result.replaceEnd);
+    final offset = result.replaceStart + suggestion.insertText.length;
+    _sqlController.value = TextEditingValue(
+      text: updated,
+      selection: TextSelection.collapsed(offset: offset),
+    );
+    widget.controller.updateActiveSql(updated);
+    _sqlFocusNode.requestFocus();
+  }
+
+  void _insertSnippet(SqlSnippet snippet) {
+    _insertTextAtSelection(snippet.body);
+  }
+
+  void _insertTextAtSelection(String text) {
+    final selection = _sqlController.selection;
+    final start = selection.isValid && selection.start >= 0
+        ? math.min(selection.start, selection.end)
+        : _sqlController.text.length;
+    final end = selection.isValid && selection.end >= 0
+        ? math.max(selection.start, selection.end)
+        : _sqlController.text.length;
+    final updated = _sqlController.text.replaceRange(start, end, text);
+    final offset = start + text.length;
+    _sqlController.value = TextEditingValue(
+      text: updated,
+      selection: TextSelection.collapsed(offset: offset),
+    );
+    widget.controller.updateActiveSql(updated);
+    _sqlFocusNode.requestFocus();
+  }
+
+  void _formatActiveSql() {
+    final source = _sqlController.text;
+    if (source.trim().isEmpty) {
+      return;
+    }
+
+    final selection = _sqlController.selection;
+    final useSelection = selection.isValid && !selection.isCollapsed;
+    final start = useSelection ? selection.start : 0;
+    final end = useSelection ? selection.end : source.length;
+    final formatted = _sqlFormatter.format(
+      source.substring(start, end),
+      settings: widget.controller.config.editorSettings,
+    );
+    final updated = source.replaceRange(start, end, formatted);
+    _sqlController.value = TextEditingValue(
+      text: updated,
+      selection: TextSelection.collapsed(offset: start + formatted.length),
+    );
+    widget.controller.updateActiveSql(updated);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          useSelection ? 'Formatted selected SQL.' : 'Formatted SQL document.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showSnippetManager() async {
+    final controller = widget.controller;
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final snippets = controller.config.snippets;
+            return AlertDialog(
+              title: const Text('SQL Snippets'),
+              content: SizedBox(
+                width: 720,
+                height: 420,
+                child: snippets.isEmpty
+                    ? const _CompactEmptyState(
+                        title: 'No snippets',
+                        message: 'Add one to start inserting reusable SQL.',
+                      )
+                    : ListView.separated(
+                        itemCount: snippets.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final snippet = snippets[index];
+                          return ListTile(
+                            title: Text(snippet.name),
+                            subtitle: Text(
+                              '${snippet.trigger} | ${snippet.description.isEmpty ? "No description" : snippet.description}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: Wrap(
+                              spacing: 8,
+                              children: <Widget>[
+                                IconButton(
+                                  tooltip: 'Insert',
+                                  onPressed: () {
+                                    Navigator.of(context).pop();
+                                    _insertSnippet(snippet);
+                                  },
+                                  icon: const Icon(Icons.north_west_rounded),
+                                ),
+                                IconButton(
+                                  tooltip: 'Edit',
+                                  onPressed: () async {
+                                    final edited =
+                                        await _showSnippetEditorDialog(
+                                          initial: snippet,
+                                        );
+                                    if (edited == null) {
+                                      return;
+                                    }
+                                    await controller.saveSnippet(edited);
+                                    setDialogState(() {});
+                                  },
+                                  icon: const Icon(Icons.edit_rounded),
+                                ),
+                                IconButton(
+                                  tooltip: 'Delete',
+                                  onPressed: () async {
+                                    await controller.deleteSnippet(snippet.id);
+                                    setDialogState(() {});
+                                  },
+                                  icon: const Icon(
+                                    Icons.delete_outline_rounded,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () async {
+                    final created = await _showSnippetEditorDialog();
+                    if (created == null) {
+                      return;
+                    }
+                    await controller.saveSnippet(created);
+                    setDialogState(() {});
+                  },
+                  child: const Text('Add Snippet'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<SqlSnippet?> _showSnippetEditorDialog({SqlSnippet? initial}) async {
+    final nameController = TextEditingController(text: initial?.name ?? '');
+    final triggerController = TextEditingController(
+      text: initial?.trigger ?? '',
+    );
+    final descriptionController = TextEditingController(
+      text: initial?.description ?? '',
+    );
+    final bodyController = TextEditingController(text: initial?.body ?? '');
+    String? validationMessage;
+
+    final result = await showDialog<SqlSnippet>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(initial == null ? 'New Snippet' : 'Edit Snippet'),
+              content: SizedBox(
+                width: 640,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(labelText: 'Name'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: triggerController,
+                      decoration: const InputDecoration(labelText: 'Trigger'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: descriptionController,
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: bodyController,
+                      minLines: 6,
+                      maxLines: 12,
+                      decoration: const InputDecoration(
+                        alignLabelWithHint: true,
+                        labelText: 'SQL Body',
+                      ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(fontFamily: 'monospace'),
+                    ),
+                    if (validationMessage != null) ...<Widget>[
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          validationMessage!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    if (nameController.text.trim().isEmpty ||
+                        triggerController.text.trim().isEmpty ||
+                        bodyController.text.trim().isEmpty) {
+                      setDialogState(() {
+                        validationMessage =
+                            'Name, trigger, and SQL body are required.';
+                      });
+                      return;
+                    }
+                    Navigator.of(context).pop(
+                      SqlSnippet(
+                        id: initial?.id ?? widget.controller.createSnippetId(),
+                        name: nameController.text.trim(),
+                        trigger: triggerController.text.trim(),
+                        description: descriptionController.text.trim(),
+                        body: bodyController.text,
+                      ),
+                    );
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    nameController.dispose();
+    triggerController.dispose();
+    descriptionController.dispose();
+    bodyController.dispose();
+    return result;
+  }
+
+  Future<void> _showEditorSettingsDialog() async {
+    final controller = widget.controller;
+    final suggestionLimitController = TextEditingController(
+      text: controller.config.editorSettings.autocompleteMaxSuggestions
+          .toString(),
+    );
+    final indentController = TextEditingController(
+      text: controller.config.editorSettings.indentSpaces.toString(),
+    );
+    var autocompleteEnabled =
+        controller.config.editorSettings.autocompleteEnabled;
+    var uppercaseKeywords =
+        controller.config.editorSettings.formatUppercaseKeywords;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        final navigator = Navigator.of(context);
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Editor Settings'),
+              content: SizedBox(
+                width: 520,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: autocompleteEnabled,
+                      onChanged: (value) {
+                        setDialogState(() {
+                          autocompleteEnabled = value;
+                        });
+                      },
+                      title: const Text('Enable autocomplete'),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: uppercaseKeywords,
+                      onChanged: (value) {
+                        setDialogState(() {
+                          uppercaseKeywords = value;
+                        });
+                      },
+                      title: const Text('Uppercase SQL keywords on format'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: suggestionLimitController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Max autocomplete suggestions',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: indentController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Formatter indent spaces',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    await controller.updateAutocompleteEnabled(
+                      autocompleteEnabled,
+                    );
+                    await controller.updateFormatterUppercaseKeywords(
+                      uppercaseKeywords,
+                    );
+                    await controller.updateAutocompleteMaxSuggestions(
+                      suggestionLimitController.text,
+                    );
+                    await controller.updateEditorIndentSpaces(
+                      indentController.text,
+                    );
+                    if (mounted) {
+                      navigator.pop();
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    suggestionLimitController.dispose();
+    indentController.dispose();
+  }
+
   Future<void> _copyActiveErrorDetails(QueryTabState tab) async {
     final details = widget.controller.errorDetailsForTab(tab.id);
     if (details == null) {
@@ -1083,7 +1601,7 @@ class _Header extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Phase 2 workspace: reopen a DecentDB file, restore query tabs, inspect richer schema details, and iterate between tabbed queries and paged results.',
+                    'Phase 3 workspace: reopen a DecentDB file, restore query tabs, author SQL with autocomplete and snippets, format queries deterministically, and iterate through paged results.',
                     style: theme.textTheme.bodyMedium,
                   ),
                 ],

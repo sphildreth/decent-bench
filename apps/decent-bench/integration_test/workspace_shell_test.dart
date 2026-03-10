@@ -19,7 +19,9 @@ Finder _fieldWithLabel(String label) {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('renders the phase 2 workspace shell', (tester) async {
+  testWidgets('renders the phase 3 workspace shell and editor tools', (
+    tester,
+  ) async {
     final controller = WorkspaceController(
       gateway: FakeWorkspaceGateway(),
       configStore: InMemoryConfigStore(),
@@ -45,9 +47,18 @@ void main() {
     expect(find.text('SQL Workspace'), findsOneWidget);
     expect(find.text('Results'), findsOneWidget);
     expect(find.text('New Tab'), findsOneWidget);
+    expect(find.text('Format SQL'), findsOneWidget);
+    expect(find.text('Insert Snippet'), findsOneWidget);
+    expect(find.text('Manage Snippets'), findsOneWidget);
+
+    await tester.enterText(_fieldWithLabel('SQL'), 'SELECT cou');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Autocomplete'), findsOneWidget);
+    expect(find.text('COUNT'), findsOneWidget);
   });
 
-  testWidgets('creates a workspace, uses multiple tabs, and exports CSV', (
+  testWidgets('creates a workspace, formats SQL, uses tabs, and exports CSV', (
     tester,
   ) async {
     final gateway = FakeWorkspaceGateway();
@@ -57,8 +68,8 @@ void main() {
       workspaceStateStore: InMemoryWorkspaceStateStore(),
     );
     final tempDir = await Directory.systemTemp.createTemp('decent-bench-it-');
-    final dbPath = p.join(tempDir.path, 'phase2.ddb');
-    final exportPath = p.join(tempDir.path, 'phase2.csv');
+    final dbPath = p.join(tempDir.path, 'phase3.ddb');
+    final exportPath = p.join(tempDir.path, 'phase3.csv');
 
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1600, 1000);
@@ -92,8 +103,15 @@ void main() {
 
     await tester.enterText(
       _fieldWithLabel('SQL'),
-      'SELECT id, title FROM tasks ORDER BY id',
+      "select id, title from tasks where title = 'Ship phase 1' and id = 1",
     );
+    final formatButton = find.widgetWithText(OutlinedButton, 'Format SQL');
+    await tester.ensureVisible(formatButton);
+    await tester.tap(formatButton);
+    await tester.pumpAndSettle();
+    expect(controller.activeTab.sql, contains('SELECT id, title'));
+    expect(controller.activeTab.sql, contains('\nFROM tasks'));
+
     final runSqlButton = find.widgetWithText(FilledButton, 'Run SQL');
     await tester.ensureVisible(runSqlButton);
     await tester.tap(runSqlButton);
@@ -112,7 +130,7 @@ void main() {
     await tester.ensureVisible(runSqlButton);
     await tester.tap(runSqlButton);
     await tester.pumpAndSettle();
-    expect(controller.activeTab.resultRows.single['name'], 'Phase 2');
+    expect(controller.activeTab.resultRows.single['name'], 'Phase 3');
 
     await tester.tap(find.text('Query 1'));
     await tester.pumpAndSettle();

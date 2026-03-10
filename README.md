@@ -9,12 +9,12 @@ term product also includes drag-and-drop imports from common source formats.
 
 ## Project status
 
-**Pre-alpha / active implementation.** Phase 2 is implemented and runnable
+**Pre-alpha / active implementation.** Phase 3 is implemented and runnable
 under `apps/decent-bench/`.
 
 Current engine capability baseline: **DecentDB v1.6.x**.
 
-### Implemented now (Phase 2)
+### Implemented now (Phase 3)
 
 - open an existing DecentDB file or create a new one
 - inspect schema metadata loaded through the DecentDB adapter for tables, views,
@@ -23,19 +23,24 @@ Current engine capability baseline: **DecentDB v1.6.x**.
 - keep per-tab results, errors, and CSV export state isolated
 - restore query tabs when reopening the same DecentDB file
 - switch tabs and move between editor/results with keyboard shortcuts
+- author SQL with schema-aware autocomplete for objects, columns, functions,
+  keywords, and snippets
+- manage user-editable SQL snippets with default DecentDB-oriented starters
+- format selected SQL or whole documents deterministically while preserving
+  comments and string literals
 - page large result sets instead of materializing everything by default
 - best-effort query cancellation
 - export query results to CSV
-- persist recent files, default page size, and CSV defaults in TOML
+- persist recent files, export defaults, editor settings, and SQL snippets in
+  TOML
 - persist workspace tab drafts separately from global config
-- run unit, smoke, widget, and integration tests for the Phase 2 workflow
+- run unit, smoke, widget, and integration tests for the Phase 3 workflow
 
 ### Not implemented yet
 
 - drag-and-drop open/import flow
 - Import Wizard
 - Excel, SQLite, and SQL dump imports
-- autocomplete, snippets, and SQL formatting
 - JSON, Parquet, and Excel export
 
 For the full planned product scope, read:
@@ -153,6 +158,10 @@ Global config is stored as TOML at:
 - Linux: `~/.config/decent-bench/config.toml`
 - macOS: `~/Library/Application Support/Decent Bench/config.toml`
 - Windows: `%APPDATA%\Decent Bench\config.toml`
+
+`config.toml` currently stores recent files, CSV defaults, editor settings, and
+SQL snippets. See
+[design/adr/0005-editor-config-and-snippet-persistence.md](/home/steven/source/decent-bench/design/adr/0005-editor-config-and-snippet-persistence.md).
 
 Per-database workspace state is stored separately under:
 

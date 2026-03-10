@@ -1,43 +1,155 @@
 import 'dart:convert';
 
+class SqlSnippet {
+  const SqlSnippet({
+    required this.id,
+    required this.name,
+    required this.trigger,
+    required this.body,
+    this.description = '',
+  });
+
+  final String id;
+  final String name;
+  final String trigger;
+  final String description;
+  final String body;
+
+  SqlSnippet copyWith({
+    String? id,
+    String? name,
+    String? trigger,
+    String? description,
+    String? body,
+  }) {
+    return SqlSnippet(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      trigger: trigger ?? this.trigger,
+      description: description ?? this.description,
+      body: body ?? this.body,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'id': id,
+      'name': name,
+      'trigger': trigger,
+      'description': description,
+      'body': body,
+    };
+  }
+
+  factory SqlSnippet.fromJson(Map<String, Object?> map) {
+    return SqlSnippet(
+      id: map['id']! as String,
+      name: map['name']! as String,
+      trigger: map['trigger']! as String,
+      description: map['description'] as String? ?? '',
+      body: map['body']! as String,
+    );
+  }
+}
+
+class EditorSettings {
+  static const bool defaultAutocompleteEnabled = true;
+  static const int defaultAutocompleteMaxSuggestions = 12;
+  static const bool defaultFormatUppercaseKeywords = true;
+  static const int defaultIndentSpaces = 2;
+
+  const EditorSettings({
+    required this.autocompleteEnabled,
+    required this.autocompleteMaxSuggestions,
+    required this.formatUppercaseKeywords,
+    required this.indentSpaces,
+  });
+
+  final bool autocompleteEnabled;
+  final int autocompleteMaxSuggestions;
+  final bool formatUppercaseKeywords;
+  final int indentSpaces;
+
+  factory EditorSettings.defaults() {
+    return const EditorSettings(
+      autocompleteEnabled: defaultAutocompleteEnabled,
+      autocompleteMaxSuggestions: defaultAutocompleteMaxSuggestions,
+      formatUppercaseKeywords: defaultFormatUppercaseKeywords,
+      indentSpaces: defaultIndentSpaces,
+    );
+  }
+
+  EditorSettings copyWith({
+    bool? autocompleteEnabled,
+    int? autocompleteMaxSuggestions,
+    bool? formatUppercaseKeywords,
+    int? indentSpaces,
+  }) {
+    return EditorSettings(
+      autocompleteEnabled: autocompleteEnabled ?? this.autocompleteEnabled,
+      autocompleteMaxSuggestions:
+          autocompleteMaxSuggestions ?? this.autocompleteMaxSuggestions,
+      formatUppercaseKeywords:
+          formatUppercaseKeywords ?? this.formatUppercaseKeywords,
+      indentSpaces: indentSpaces ?? this.indentSpaces,
+    );
+  }
+}
+
 class AppConfig {
+  static const int currentConfigVersion = 1;
   static const int defaultPageSizeValue = 1000;
   static const String defaultCsvDelimiter = ',';
   static const bool defaultCsvIncludeHeaders = true;
   static const int maxRecentFiles = 8;
 
+  final int configVersion;
   final List<String> recentFiles;
   final int defaultPageSize;
   final String csvDelimiter;
   final bool csvIncludeHeaders;
+  final EditorSettings editorSettings;
+  final List<SqlSnippet> snippets;
 
   const AppConfig({
+    required this.configVersion,
     required this.recentFiles,
     required this.defaultPageSize,
     required this.csvDelimiter,
     required this.csvIncludeHeaders,
+    required this.editorSettings,
+    required this.snippets,
   });
 
   factory AppConfig.defaults() {
-    return const AppConfig(
-      recentFiles: <String>[],
+    return AppConfig(
+      configVersion: currentConfigVersion,
+      recentFiles: const <String>[],
       defaultPageSize: defaultPageSizeValue,
       csvDelimiter: defaultCsvDelimiter,
       csvIncludeHeaders: defaultCsvIncludeHeaders,
+      editorSettings: EditorSettings.defaults(),
+      snippets: defaultSnippets(),
     );
   }
 
   AppConfig copyWith({
+    int? configVersion,
     List<String>? recentFiles,
     int? defaultPageSize,
     String? csvDelimiter,
     bool? csvIncludeHeaders,
+    EditorSettings? editorSettings,
+    List<SqlSnippet>? snippets,
   }) {
     return AppConfig(
+      configVersion: configVersion ?? this.configVersion,
       recentFiles: recentFiles ?? this.recentFiles,
       defaultPageSize: defaultPageSize ?? this.defaultPageSize,
       csvDelimiter: csvDelimiter ?? this.csvDelimiter,
       csvIncludeHeaders: csvIncludeHeaders ?? this.csvIncludeHeaders,
+      editorSettings: editorSettings ?? this.editorSettings,
+      snippets: snippets ?? this.snippets,
     );
   }
 
@@ -49,21 +161,86 @@ class AppConfig {
     return copyWith(recentFiles: updated.take(maxRecentFiles).toList());
   }
 
+  AppConfig upsertSnippet(SqlSnippet snippet) {
+    final existingIndex = snippets.indexWhere((item) => item.id == snippet.id);
+    final updated = <SqlSnippet>[...snippets];
+    if (existingIndex >= 0) {
+      updated[existingIndex] = snippet;
+    } else {
+      updated.add(snippet);
+    }
+    updated.sort((left, right) => left.name.compareTo(right.name));
+    return copyWith(snippets: updated);
+  }
+
+  AppConfig removeSnippet(String snippetId) {
+    return copyWith(
+      snippets: snippets.where((item) => item.id != snippetId).toList(),
+    );
+  }
+
   String toToml() {
     final buffer = StringBuffer()
-      ..writeln('# Decent Bench phase 1 configuration')
+      ..writeln('# Decent Bench configuration')
+      ..writeln('config_version = $configVersion')
       ..writeln('default_page_size = $defaultPageSize')
       ..writeln('csv_delimiter = ${jsonEncode(csvDelimiter)}')
       ..writeln('csv_include_headers = $csvIncludeHeaders')
-      ..writeln('recent_files = ${jsonEncode(recentFiles)}');
+      ..writeln('recent_files = ${jsonEncode(recentFiles)}')
+      ..writeln(
+        'editor_autocomplete_enabled = ${editorSettings.autocompleteEnabled}',
+      )
+      ..writeln(
+        'editor_autocomplete_max_suggestions = ${editorSettings.autocompleteMaxSuggestions}',
+      )
+      ..writeln(
+        'editor_format_uppercase_keywords = ${editorSettings.formatUppercaseKeywords}',
+      )
+      ..writeln('editor_indent_spaces = ${editorSettings.indentSpaces}')
+      ..writeln('editor_snippet_count = ${snippets.length}');
+
+    for (final snippet in snippets) {
+      buffer
+        ..writeln()
+        ..writeln('[[editor_snippets]]')
+        ..writeln('id = ${jsonEncode(snippet.id)}')
+        ..writeln('name = ${jsonEncode(snippet.name)}')
+        ..writeln('trigger = ${jsonEncode(snippet.trigger)}')
+        ..writeln('description = ${jsonEncode(snippet.description)}')
+        ..writeln('body = ${jsonEncode(snippet.body)}');
+    }
     return buffer.toString();
   }
 
   static AppConfig fromToml(String source) {
     var config = AppConfig.defaults();
+    final parsedSnippets = <SqlSnippet>[];
+    Map<String, Object?>? pendingSnippet;
+    int? declaredSnippetCount;
+
+    void flushSnippet() {
+      if (pendingSnippet == null) {
+        return;
+      }
+      try {
+        parsedSnippets.add(SqlSnippet.fromJson(pendingSnippet!));
+      } catch (_) {
+        // Ignore malformed snippet entries and keep loading the rest.
+      }
+      pendingSnippet = null;
+    }
+
     for (final rawLine in const LineSplitter().convert(source)) {
-      final commentFree = rawLine.split('#').first.trim();
-      if (commentFree.isEmpty || !commentFree.contains('=')) {
+      final commentFree = _stripTomlComment(rawLine).trim();
+      if (commentFree.isEmpty) {
+        continue;
+      }
+      if (commentFree == '[[editor_snippets]]') {
+        flushSnippet();
+        pendingSnippet = <String, Object?>{};
+        continue;
+      }
+      if (!commentFree.contains('=')) {
         continue;
       }
 
@@ -71,7 +248,28 @@ class AppConfig {
       final key = commentFree.substring(0, separatorIndex).trim();
       final value = commentFree.substring(separatorIndex + 1).trim();
 
+      if (pendingSnippet != null) {
+        final parsed = _decodeJsonString(value);
+        if (parsed != null &&
+            const <String>{
+              'id',
+              'name',
+              'trigger',
+              'description',
+              'body',
+            }.contains(key)) {
+          pendingSnippet![key] = parsed;
+        }
+        continue;
+      }
+
       switch (key) {
+        case 'config_version':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed >= 0) {
+            config = config.copyWith(configVersion: parsed);
+          }
+          break;
         case 'default_page_size':
           final parsed = int.tryParse(value);
           if (parsed != null && parsed > 0) {
@@ -98,10 +296,123 @@ class AppConfig {
             );
           }
           break;
+        case 'editor_autocomplete_enabled':
+          final parsed = _parseBool(value);
+          if (parsed != null) {
+            config = config.copyWith(
+              editorSettings: config.editorSettings.copyWith(
+                autocompleteEnabled: parsed,
+              ),
+            );
+          }
+          break;
+        case 'editor_autocomplete_max_suggestions':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed > 0) {
+            config = config.copyWith(
+              editorSettings: config.editorSettings.copyWith(
+                autocompleteMaxSuggestions: parsed,
+              ),
+            );
+          }
+          break;
+        case 'editor_format_uppercase_keywords':
+          final parsed = _parseBool(value);
+          if (parsed != null) {
+            config = config.copyWith(
+              editorSettings: config.editorSettings.copyWith(
+                formatUppercaseKeywords: parsed,
+              ),
+            );
+          }
+          break;
+        case 'editor_indent_spaces':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed > 0) {
+            config = config.copyWith(
+              editorSettings: config.editorSettings.copyWith(
+                indentSpaces: parsed,
+              ),
+            );
+          }
+          break;
+        case 'editor_snippet_count':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed >= 0) {
+            declaredSnippetCount = parsed;
+          }
+          break;
+        case 'editor_snippets':
+          final parsed = _decodeSnippetList(value);
+          if (parsed != null) {
+            config = config.copyWith(snippets: parsed);
+          }
+          break;
       }
     }
 
-    return config;
+    flushSnippet();
+    if (declaredSnippetCount != null || parsedSnippets.isNotEmpty) {
+      config = config.copyWith(snippets: parsedSnippets);
+    }
+
+    return config.copyWith(
+      configVersion: config.configVersion == 0
+          ? currentConfigVersion
+          : config.configVersion,
+    );
+  }
+
+  static List<SqlSnippet> defaultSnippets() {
+    return const <SqlSnippet>[
+      SqlSnippet(
+        id: 'cte',
+        name: 'Recursive CTE',
+        trigger: 'cte',
+        description: 'Start a WITH RECURSIVE query.',
+        body:
+            'WITH RECURSIVE seed AS (\n'
+            '  SELECT 1 AS id\n'
+            '  UNION ALL\n'
+            '  SELECT id + 1\n'
+            '  FROM seed\n'
+            '  WHERE id < 10\n'
+            ')\n'
+            'SELECT *\n'
+            'FROM seed;',
+      ),
+      SqlSnippet(
+        id: 'window',
+        name: 'Window Function',
+        trigger: 'window',
+        description: 'Add a ROW_NUMBER window expression.',
+        body:
+            'SELECT\n'
+            '  *,\n'
+            '  ROW_NUMBER() OVER (PARTITION BY category ORDER BY id) AS row_num\n'
+            'FROM your_table;',
+      ),
+      SqlSnippet(
+        id: 'json_each',
+        name: 'JSON Each',
+        trigger: 'json',
+        description: 'Use json_each as a table-valued function.',
+        body:
+            'SELECT entry.key, entry.value\n'
+            'FROM json_each(\'{"name":"decent","type":"bench"}\') AS entry;',
+      ),
+      SqlSnippet(
+        id: 'explain',
+        name: 'Explain Analyze',
+        trigger: 'explain',
+        description: 'Profile a query plan.',
+        body:
+            'EXPLAIN ANALYZE\n'
+            'SELECT *\n'
+            'FROM your_table\n'
+            'WHERE id = \$1;',
+      ),
+    ];
   }
 
   static String? _decodeJsonString(String raw) {
@@ -125,6 +436,25 @@ class AppConfig {
     }
   }
 
+  static List<SqlSnippet>? _decodeSnippetList(String raw) {
+    try {
+      final parsed = jsonDecode(raw);
+      if (parsed is! List) {
+        return null;
+      }
+      return parsed
+          .whereType<Map>()
+          .map(
+            (item) => SqlSnippet.fromJson(
+              item.map((key, value) => MapEntry(key as String, value)),
+            ),
+          )
+          .toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
   static bool? _parseBool(String raw) {
     if (raw == 'true') {
       return true;
@@ -133,5 +463,36 @@ class AppConfig {
       return false;
     }
     return null;
+  }
+
+  static String _stripTomlComment(String rawLine) {
+    final buffer = StringBuffer();
+    var insideString = false;
+    var escaping = false;
+    for (var i = 0; i < rawLine.length; i++) {
+      final char = rawLine[i];
+      if (escaping) {
+        buffer.write(char);
+        escaping = false;
+        continue;
+      }
+      if (char == r'\') {
+        buffer.write(char);
+        if (insideString) {
+          escaping = true;
+        }
+        continue;
+      }
+      if (char == '"') {
+        insideString = !insideString;
+        buffer.write(char);
+        continue;
+      }
+      if (char == '#' && !insideString) {
+        break;
+      }
+      buffer.write(char);
+    }
+    return buffer.toString();
   }
 }

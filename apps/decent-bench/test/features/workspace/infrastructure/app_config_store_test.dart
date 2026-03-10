@@ -2,20 +2,81 @@ import 'package:decent_bench/features/workspace/domain/app_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('AppConfig round-trips to TOML', () {
+  test('AppConfig round-trips editor settings and snippets to TOML', () {
     final config = AppConfig.defaults().copyWith(
       recentFiles: const <String>['/tmp/a.ddb', '/tmp/b.ddb'],
       defaultPageSize: 250,
       csvDelimiter: ';',
       csvIncludeHeaders: false,
+      editorSettings: const EditorSettings(
+        autocompleteEnabled: false,
+        autocompleteMaxSuggestions: 20,
+        formatUppercaseKeywords: false,
+        indentSpaces: 4,
+      ),
+      snippets: const <SqlSnippet>[
+        SqlSnippet(
+          id: 'custom',
+          name: 'Custom',
+          trigger: 'custom',
+          description: 'A custom snippet',
+          body: 'SELECT * FROM custom_table;',
+        ),
+      ],
     );
 
-    final parsed = AppConfig.fromToml(config.toToml());
+    final toml = config.toToml();
+    final parsed = AppConfig.fromToml(toml);
 
+    expect(toml, contains('editor_snippet_count = 1'));
+    expect(toml, contains('[[editor_snippets]]'));
+    expect(parsed.configVersion, AppConfig.currentConfigVersion);
     expect(parsed.recentFiles, config.recentFiles);
     expect(parsed.defaultPageSize, 250);
     expect(parsed.csvDelimiter, ';');
     expect(parsed.csvIncludeHeaders, isFalse);
+    expect(parsed.editorSettings.autocompleteEnabled, isFalse);
+    expect(parsed.editorSettings.autocompleteMaxSuggestions, 20);
+    expect(parsed.editorSettings.formatUppercaseKeywords, isFalse);
+    expect(parsed.editorSettings.indentSpaces, 4);
+    expect(parsed.snippets.single.trigger, 'custom');
+  });
+
+  test('empty snippet lists persist without reintroducing defaults', () {
+    final config = AppConfig.defaults().copyWith(
+      snippets: const <SqlSnippet>[],
+    );
+
+    final parsed = AppConfig.fromToml(config.toToml());
+
+    expect(parsed.snippets, isEmpty);
+  });
+
+  test('legacy config without version loads Phase 3 defaults', () {
+    const legacyToml = '''
+default_page_size = 500
+csv_delimiter = ","
+csv_include_headers = true
+recent_files = ["/tmp/example.ddb"]
+''';
+
+    final parsed = AppConfig.fromToml(legacyToml);
+
+    expect(parsed.configVersion, AppConfig.currentConfigVersion);
+    expect(parsed.defaultPageSize, 500);
+    expect(parsed.editorSettings.autocompleteEnabled, isTrue);
+    expect(parsed.snippets, isNotEmpty);
+  });
+
+  test('legacy inline snippet payload still loads', () {
+    const legacyToml = '''
+editor_snippets = [{"id":"custom","name":"Custom","trigger":"custom","description":"Legacy","body":"SELECT 1;"}]
+''';
+
+    final parsed = AppConfig.fromToml(legacyToml);
+
+    expect(parsed.snippets.single.id, 'custom');
+    expect(parsed.snippets.single.description, 'Legacy');
   });
 
   test('pushRecentFile keeps unique ordering and trims the list', () {
@@ -29,5 +90,35 @@ void main() {
     expect(config.recentFiles.first, '/tmp/3.ddb');
     expect(config.recentFiles.length, AppConfig.maxRecentFiles);
     expect(config.recentFiles.where((item) => item == '/tmp/3.ddb').length, 1);
+  });
+
+  test('snippet helpers update and remove snippets deterministically', () {
+    final original = AppConfig.defaults();
+    final inserted = original.upsertSnippet(
+      const SqlSnippet(
+        id: 'ad-hoc',
+        name: 'Ad Hoc',
+        trigger: 'adhoc',
+        body: 'SELECT 1;',
+      ),
+    );
+    final updated = inserted.upsertSnippet(
+      const SqlSnippet(
+        id: 'ad-hoc',
+        name: 'Ad Hoc',
+        trigger: 'adhoc',
+        description: 'Updated',
+        body: 'SELECT 2;',
+      ),
+    );
+
+    expect(
+      updated.snippets.where((snippet) => snippet.id == 'ad-hoc').single.body,
+      'SELECT 2;',
+    );
+    expect(
+      updated.removeSnippet('ad-hoc').snippets.any((s) => s.id == 'ad-hoc'),
+      isFalse,
+    );
   });
 }

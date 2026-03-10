@@ -60,7 +60,7 @@ void main() {
     controller.createTab();
     controller.updateActiveSql('SELECT id, name FROM projects ORDER BY id');
     await controller.runActiveTab();
-    expect(controller.activeTab.resultRows.single['name'], 'Phase 2');
+    expect(controller.activeTab.resultRows.single['name'], 'Phase 3');
     expect(controller.activeTab.phase, QueryPhase.running);
 
     final secondTabId = controller.activeTabId;

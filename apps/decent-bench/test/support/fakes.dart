@@ -211,7 +211,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
         cursorId: 'cursor-projects',
         columns: const <String>['id', 'name'],
         rows: const <Map<String, Object?>>[
-          <String, Object?>{'id': 10, 'name': 'Phase 2'},
+          <String, Object?>{'id': 10, 'name': 'Phase 3'},
         ],
         done: false,
         rowsAffected: null,
