@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:decent_bench/features/workspace/application/workspace_controller.dart';
+import 'package:decent_bench/features/workspace/domain/sqlite_import_models.dart';
 import 'package:decent_bench/features/workspace/domain/workspace_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -117,5 +118,81 @@ void main() {
     expect(secondController.activeTab.exportPath, '/tmp/projects.csv');
     secondController.previousTab();
     expect(secondController.activeTab.parameterJson, '[1]');
+  });
+
+  test(
+    'sqlite import inspection loads tables, previews, and import summary',
+    () async {
+      final gateway = FakeWorkspaceGateway();
+      final controller = WorkspaceController(
+        gateway: gateway,
+        configStore: InMemoryConfigStore(),
+        workspaceStateStore: InMemoryWorkspaceStateStore(),
+      );
+      await controller.initialize();
+
+      controller.beginSqliteImport();
+      await controller.loadSqliteImportSource('/tmp/phase4-source.sqlite');
+
+      final session = controller.sqliteImportSession;
+      expect(session, isNotNull);
+      expect(session!.phase, SqliteImportJobPhase.ready);
+      expect(
+        session.tables.map((table) => table.sourceName),
+        contains('users'),
+      );
+      expect(session.focusedTableDraft?.previewLoaded, isTrue);
+      expect(
+        session.focusedTableDraft?.previewRows.first['name'],
+        anyOf('Ada', isNull),
+      );
+
+      controller.setSqliteImportStep(SqliteImportWizardStep.transforms);
+      controller.renameSqliteImportTable('users', 'imported_users');
+      controller.renameSqliteImportColumn('users', 'name', 'display_name');
+      await controller.runSqliteImport();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(gateway.lastSqliteImportRequest, isNotNull);
+      expect(
+        gateway.lastSqliteImportRequest!.selectedTables.first.targetName,
+        'imported_users',
+      );
+      expect(
+        controller.sqliteImportSession?.phase,
+        SqliteImportJobPhase.completed,
+      );
+      expect(
+        controller.sqliteImportSession?.summary?.importedTables,
+        contains('imported_users'),
+      );
+    },
+  );
+
+  test('sqlite import cancellation updates session state', () async {
+    final gateway = FakeWorkspaceGateway()..holdImportOpen = true;
+    final controller = WorkspaceController(
+      gateway: gateway,
+      configStore: InMemoryConfigStore(),
+      workspaceStateStore: InMemoryWorkspaceStateStore(),
+    );
+    await controller.initialize();
+    controller.beginSqliteImport();
+    await controller.loadSqliteImportSource('/tmp/phase4-cancel.sqlite');
+
+    await controller.runSqliteImport();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(controller.sqliteImportSession?.phase, SqliteImportJobPhase.running);
+
+    final jobId = controller.sqliteImportSession?.jobId;
+    await controller.cancelSqliteImport();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(gateway.lastCancelledImportJobId, jobId);
+    expect(
+      controller.sqliteImportSession?.phase,
+      SqliteImportJobPhase.cancelled,
+    );
+    expect(controller.sqliteImportSession?.summary?.rolledBack, isTrue);
   });
 }

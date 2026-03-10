@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:decent_bench/features/workspace/domain/app_config.dart';
+import 'package:decent_bench/features/workspace/domain/sqlite_import_models.dart';
 import 'package:decent_bench/features/workspace/domain/workspace_models.dart';
 import 'package:decent_bench/features/workspace/domain/workspace_state.dart';
 import 'package:decent_bench/features/workspace/infrastructure/app_config_store.dart';
@@ -43,11 +45,25 @@ class InMemoryWorkspaceStateStore implements WorkspaceStateStore {
 }
 
 class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
+  FakeWorkspaceGateway({
+    SqliteImportInspection? sqliteInspection,
+    Map<String, SqliteImportPreview>? sqlitePreviews,
+  }) : sqliteInspection =
+           sqliteInspection ?? _defaultSqliteInspection('/tmp/source.sqlite'),
+       sqlitePreviews = sqlitePreviews ?? _defaultSqlitePreviews();
+
   @override
   String? resolvedLibraryPath = '/tmp/libc_api.so';
 
   int cancelCount = 0;
   String? lastExportPath;
+  SqliteImportInspection sqliteInspection;
+  Map<String, SqliteImportPreview> sqlitePreviews;
+  SqliteImportRequest? lastSqliteImportRequest;
+  String? lastCancelledImportJobId;
+  bool holdImportOpen = false;
+  bool failNextImport = false;
+  StreamController<SqliteImportUpdate>? _importController;
 
   SchemaSnapshot snapshot = SchemaSnapshot(
     objects: <SchemaObjectSummary>[
@@ -127,7 +143,28 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   }
 
   @override
-  Future<void> dispose() async {}
+  Future<void> cancelImport(String jobId) async {
+    lastCancelledImportJobId = jobId;
+    final controller = _importController;
+    if (controller == null || controller.isClosed) {
+      return;
+    }
+    controller.add(
+      SqliteImportUpdate(
+        kind: SqliteImportUpdateKind.cancelled,
+        jobId: jobId,
+        summary: _buildCancelledSummary(jobId),
+      ),
+    );
+    await controller.close();
+    _importController = null;
+  }
+
+  @override
+  Future<void> dispose() async {
+    await _importController?.close();
+    _importController = null;
+  }
 
   @override
   Future<CsvExportResult> exportCsv({
@@ -175,7 +212,103 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   Future<String> initialize() async => resolvedLibraryPath!;
 
   @override
+  Stream<SqliteImportUpdate> importSqlite({
+    required SqliteImportRequest request,
+  }) async* {
+    lastSqliteImportRequest = request;
+    if (holdImportOpen) {
+      final controller = StreamController<SqliteImportUpdate>();
+      _importController = controller;
+      Future<void>.microtask(() {
+        if (controller.isClosed) {
+          return;
+        }
+        controller.add(
+          SqliteImportUpdate(
+            kind: SqliteImportUpdateKind.progress,
+            jobId: request.jobId,
+            progress: SqliteImportProgress(
+              jobId: request.jobId,
+              currentTable: request.selectedTables.first.targetName,
+              completedTables: 0,
+              totalTables: request.selectedTables.length,
+              currentTableRowsCopied: 0,
+              currentTableRowCount: request.selectedTables.first.rowCount,
+              totalRowsCopied: 0,
+              message: 'Preparing SQLite import...',
+            ),
+          ),
+        );
+      });
+      yield* controller.stream;
+      return;
+    }
+
+    yield SqliteImportUpdate(
+      kind: SqliteImportUpdateKind.progress,
+      jobId: request.jobId,
+      progress: SqliteImportProgress(
+        jobId: request.jobId,
+        currentTable: request.selectedTables.first.targetName,
+        completedTables: 0,
+        totalTables: request.selectedTables.length,
+        currentTableRowsCopied: request.selectedTables.first.rowCount,
+        currentTableRowCount: request.selectedTables.first.rowCount,
+        totalRowsCopied: request.selectedTables.first.rowCount,
+        message: 'Copying ${request.selectedTables.first.targetName}...',
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    if (failNextImport) {
+      failNextImport = false;
+      yield SqliteImportUpdate(
+        kind: SqliteImportUpdateKind.failed,
+        jobId: request.jobId,
+        message: 'SQLite import failed in the fake gateway.',
+      );
+      return;
+    }
+
+    final targetFile = File(request.targetPath);
+    await targetFile.parent.create(recursive: true);
+    if (!await targetFile.exists()) {
+      await targetFile.writeAsString('');
+    }
+
+    yield SqliteImportUpdate(
+      kind: SqliteImportUpdateKind.completed,
+      jobId: request.jobId,
+      summary: _buildCompletedSummary(request),
+    );
+  }
+
+  @override
+  Future<SqliteImportInspection> inspectSqliteSource({
+    required String sourcePath,
+  }) async {
+    return SqliteImportInspection(
+      sourcePath: sourcePath,
+      tables: sqliteInspection.tables,
+      warnings: sqliteInspection.warnings,
+    );
+  }
+
+  @override
   Future<SchemaSnapshot> loadSchema() async => snapshot;
+
+  @override
+  Future<SqliteImportPreview> loadSqlitePreview({
+    required String sourcePath,
+    required String tableName,
+    int limit = 8,
+  }) async {
+    return sqlitePreviews[tableName] ??
+        SqliteImportPreview(
+          tableName: tableName,
+          rows: const <Map<String, Object?>>[],
+        );
+  }
 
   @override
   Future<DatabaseSession> openDatabase(String path) async {
@@ -229,4 +362,185 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
       elapsed: const Duration(milliseconds: 5),
     );
   }
+
+  SqliteImportSummary _buildCompletedSummary(SqliteImportRequest request) {
+    return SqliteImportSummary(
+      jobId: request.jobId,
+      sourcePath: request.sourcePath,
+      targetPath: request.targetPath,
+      importedTables: request.selectedTables
+          .map((table) => table.targetName)
+          .toList(),
+      rowsCopiedByTable: <String, int>{
+        for (final table in request.selectedTables)
+          table.targetName: table.rowCount,
+      },
+      indexesCreated: <String>[
+        for (final table in request.selectedTables)
+          for (final index in table.indexes) index.name,
+      ],
+      skippedItems: <SqliteImportSkippedItem>[
+        for (final table in request.selectedTables) ...table.skippedItems,
+      ],
+      warnings: sqliteInspection.warnings,
+      statusMessage:
+          'Imported ${request.selectedTables.fold<int>(0, (sum, table) => sum + table.rowCount)} rows from ${request.selectedTables.length} SQLite table${request.selectedTables.length == 1 ? '' : 's'}.',
+      rolledBack: false,
+    );
+  }
+
+  SqliteImportSummary _buildCancelledSummary(String jobId) {
+    final request = lastSqliteImportRequest;
+    if (request == null) {
+      return SqliteImportSummary(
+        jobId: jobId,
+        sourcePath: sqliteInspection.sourcePath,
+        targetPath: '/tmp/import-cancelled.ddb',
+        importedTables: const <String>[],
+        rowsCopiedByTable: const <String, int>{},
+        indexesCreated: const <String>[],
+        skippedItems: const <SqliteImportSkippedItem>[],
+        warnings: const <String>[],
+        statusMessage: 'SQLite import cancelled and rolled back.',
+        rolledBack: true,
+      );
+    }
+    return SqliteImportSummary(
+      jobId: jobId,
+      sourcePath: request.sourcePath,
+      targetPath: request.targetPath,
+      importedTables: const <String>[],
+      rowsCopiedByTable: const <String, int>{},
+      indexesCreated: const <String>[],
+      skippedItems: const <SqliteImportSkippedItem>[],
+      warnings: sqliteInspection.warnings,
+      statusMessage: 'SQLite import cancelled and rolled back.',
+      rolledBack: true,
+    );
+  }
+}
+
+SqliteImportInspection _defaultSqliteInspection(String sourcePath) {
+  return SqliteImportInspection(
+    sourcePath: sourcePath,
+    warnings: const <String>[
+      'audit_log uses WITHOUT ROWID in SQLite; Decent Bench preserves data and keys but not WITHOUT ROWID storage semantics.',
+    ],
+    tables: const <SqliteImportTableDraft>[
+      SqliteImportTableDraft(
+        sourceName: 'users',
+        targetName: 'users',
+        selected: true,
+        rowCount: 2,
+        strict: false,
+        withoutRowId: false,
+        columns: <SqliteImportColumnDraft>[
+          SqliteImportColumnDraft(
+            sourceName: 'id',
+            targetName: 'id',
+            declaredType: 'INTEGER',
+            inferredTargetType: 'INTEGER',
+            targetType: 'INTEGER',
+            notNull: true,
+            primaryKey: true,
+            unique: true,
+          ),
+          SqliteImportColumnDraft(
+            sourceName: 'name',
+            targetName: 'name',
+            declaredType: 'TEXT',
+            inferredTargetType: 'TEXT',
+            targetType: 'TEXT',
+            notNull: true,
+            primaryKey: false,
+            unique: false,
+          ),
+        ],
+        foreignKeys: <SqliteImportForeignKey>[],
+        indexes: <SqliteImportIndex>[
+          SqliteImportIndex(
+            name: 'idx_users_name',
+            column: 'name',
+            unique: false,
+          ),
+        ],
+        skippedItems: <SqliteImportSkippedItem>[],
+        previewRows: <Map<String, Object?>>[],
+        previewLoaded: false,
+      ),
+      SqliteImportTableDraft(
+        sourceName: 'audit_log',
+        targetName: 'audit_log',
+        selected: true,
+        rowCount: 1,
+        strict: false,
+        withoutRowId: true,
+        columns: <SqliteImportColumnDraft>[
+          SqliteImportColumnDraft(
+            sourceName: 'entry_id',
+            targetName: 'entry_id',
+            declaredType: 'INTEGER',
+            inferredTargetType: 'INTEGER',
+            targetType: 'INTEGER',
+            notNull: true,
+            primaryKey: true,
+            unique: true,
+          ),
+          SqliteImportColumnDraft(
+            sourceName: 'actor_id',
+            targetName: 'actor_id',
+            declaredType: 'INTEGER',
+            inferredTargetType: 'INTEGER',
+            targetType: 'INTEGER',
+            notNull: true,
+            primaryKey: false,
+            unique: false,
+          ),
+          SqliteImportColumnDraft(
+            sourceName: 'created_at',
+            targetName: 'created_at',
+            declaredType: 'TEXT',
+            inferredTargetType: 'TEXT',
+            targetType: 'TEXT',
+            notNull: false,
+            primaryKey: false,
+            unique: false,
+          ),
+        ],
+        foreignKeys: <SqliteImportForeignKey>[
+          SqliteImportForeignKey(
+            fromColumn: 'actor_id',
+            toTable: 'users',
+            toColumn: 'id',
+          ),
+        ],
+        indexes: <SqliteImportIndex>[],
+        skippedItems: <SqliteImportSkippedItem>[],
+        previewRows: <Map<String, Object?>>[],
+        previewLoaded: false,
+      ),
+    ],
+  );
+}
+
+Map<String, SqliteImportPreview> _defaultSqlitePreviews() {
+  return <String, SqliteImportPreview>{
+    'users': const SqliteImportPreview(
+      tableName: 'users',
+      rows: <Map<String, Object?>>[
+        <String, Object?>{'id': 1, 'name': 'Ada'},
+        <String, Object?>{'id': 2, 'name': 'Grace'},
+      ],
+    ),
+    'audit_log': const SqliteImportPreview(
+      tableName: 'audit_log',
+      rows: <Map<String, Object?>>[
+        <String, Object?>{
+          'entry_id': 1,
+          'actor_id': 1,
+          'created_at': '2026-03-10T12:00:00Z',
+        },
+      ],
+    ),
+  };
 }

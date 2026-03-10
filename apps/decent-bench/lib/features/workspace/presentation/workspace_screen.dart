@@ -1,14 +1,18 @@
 import 'dart:math' as math;
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
 
 import '../../../shared/widgets/panel_card.dart';
 import '../application/workspace_controller.dart';
 import '../domain/app_config.dart';
 import '../domain/sql_autocomplete.dart';
 import '../domain/sql_formatter.dart';
+import '../domain/workspace_file_entry.dart';
 import '../domain/workspace_models.dart';
+import 'sqlite_import_dialog.dart';
 
 class WorkspaceScreen extends StatefulWidget {
   const WorkspaceScreen({super.key, required this.controller});
@@ -42,6 +46,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   String? _selectedSchemaObjectName;
   String? _syncedTabId;
+  bool _isDropTargetActive = false;
 
   @override
   void dispose() {
@@ -89,82 +94,112 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         final selectedObject = _selectedObjectFor(filteredObjects);
         final autocompleteResult = _autocompleteFor(controller);
 
-        return Shortcuts(
-          shortcuts: const <ShortcutActivator, Intent>{
-            SingleActivator(LogicalKeyboardKey.enter, control: true):
-                _RunQueryIntent(),
-            SingleActivator(LogicalKeyboardKey.enter, meta: true):
-                _RunQueryIntent(),
-            SingleActivator(LogicalKeyboardKey.keyT, control: true):
-                _NewTabIntent(),
-            SingleActivator(LogicalKeyboardKey.keyT, meta: true):
-                _NewTabIntent(),
-            SingleActivator(LogicalKeyboardKey.tab, control: true):
-                _NextTabIntent(),
-            SingleActivator(LogicalKeyboardKey.tab, meta: true):
-                _NextTabIntent(),
-            SingleActivator(LogicalKeyboardKey.tab, control: true, shift: true):
-                _PreviousTabIntent(),
-            SingleActivator(LogicalKeyboardKey.tab, meta: true, shift: true):
-                _PreviousTabIntent(),
+        return DropTarget(
+          enable: !controller.hasSqliteImportSession,
+          onDragEntered: (_) {
+            setState(() {
+              _isDropTargetActive = true;
+            });
           },
-          child: Actions(
-            actions: <Type, Action<Intent>>{
-              _RunQueryIntent: CallbackAction<_RunQueryIntent>(
-                onInvoke: (_) => controller.runActiveTab(),
-              ),
-              _NewTabIntent: CallbackAction<_NewTabIntent>(
-                onInvoke: (_) => controller.createTab(),
-              ),
-              _NextTabIntent: CallbackAction<_NextTabIntent>(
-                onInvoke: (_) => controller.nextTab(),
-              ),
-              _PreviousTabIntent: CallbackAction<_PreviousTabIntent>(
-                onInvoke: (_) => controller.previousTab(),
-              ),
+          onDragExited: (_) {
+            setState(() {
+              _isDropTargetActive = false;
+            });
+          },
+          onDragDone: (details) async {
+            setState(() {
+              _isDropTargetActive = false;
+            });
+            await _handleIncomingFiles(details.files.map((file) => file.path));
+          },
+          child: Shortcuts(
+            shortcuts: const <ShortcutActivator, Intent>{
+              SingleActivator(LogicalKeyboardKey.enter, control: true):
+                  _RunQueryIntent(),
+              SingleActivator(LogicalKeyboardKey.enter, meta: true):
+                  _RunQueryIntent(),
+              SingleActivator(LogicalKeyboardKey.keyT, control: true):
+                  _NewTabIntent(),
+              SingleActivator(LogicalKeyboardKey.keyT, meta: true):
+                  _NewTabIntent(),
+              SingleActivator(LogicalKeyboardKey.tab, control: true):
+                  _NextTabIntent(),
+              SingleActivator(LogicalKeyboardKey.tab, meta: true):
+                  _NextTabIntent(),
+              SingleActivator(
+                LogicalKeyboardKey.tab,
+                control: true,
+                shift: true,
+              ): _PreviousTabIntent(),
+              SingleActivator(LogicalKeyboardKey.tab, meta: true, shift: true):
+                  _PreviousTabIntent(),
             },
-            child: Scaffold(
-              body: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
+            child: Actions(
+              actions: <Type, Action<Intent>>{
+                _RunQueryIntent: CallbackAction<_RunQueryIntent>(
+                  onInvoke: (_) => controller.runActiveTab(),
+                ),
+                _NewTabIntent: CallbackAction<_NewTabIntent>(
+                  onInvoke: (_) => controller.createTab(),
+                ),
+                _NextTabIntent: CallbackAction<_NextTabIntent>(
+                  onInvoke: (_) => controller.nextTab(),
+                ),
+                _PreviousTabIntent: CallbackAction<_PreviousTabIntent>(
+                  onInvoke: (_) => controller.previousTab(),
+                ),
+              },
+              child: Scaffold(
+                body: SafeArea(
+                  child: Stack(
                     children: <Widget>[
-                      _Header(controller: controller),
-                      const SizedBox(height: 20),
-                      Expanded(
-                        child: _WorkspaceBody(
-                          sidebar: Column(
-                            children: <Widget>[
-                              Expanded(child: _buildConnectionPane()),
-                              const SizedBox(height: 16),
-                              Expanded(
-                                flex: 2,
-                                child: _buildSchemaPane(
-                                  controller: controller,
-                                  filteredObjects: filteredObjects,
-                                  selectedObject: selectedObject,
+                      Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          children: <Widget>[
+                            _Header(controller: controller),
+                            const SizedBox(height: 20),
+                            Expanded(
+                              child: _WorkspaceBody(
+                                sidebar: Column(
+                                  children: <Widget>[
+                                    Expanded(child: _buildConnectionPane()),
+                                    const SizedBox(height: 16),
+                                    Expanded(
+                                      flex: 2,
+                                      child: _buildSchemaPane(
+                                        controller: controller,
+                                        filteredObjects: filteredObjects,
+                                        selectedObject: selectedObject,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                workbench: Column(
+                                  children: <Widget>[
+                                    Expanded(
+                                      flex: 4,
+                                      child: _buildSqlPane(
+                                        controller.activeTab,
+                                        autocompleteResult,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Expanded(
+                                      flex: 5,
+                                      child: _buildResultsPane(
+                                        controller.activeTab,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
-                          ),
-                          workbench: Column(
-                            children: <Widget>[
-                              Expanded(
-                                flex: 4,
-                                child: _buildSqlPane(
-                                  controller.activeTab,
-                                  autocompleteResult,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Expanded(
-                                flex: 5,
-                                child: _buildResultsPane(controller.activeTab),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
+                      if (_isDropTargetActive)
+                        const Positioned.fill(child: _DropOverlay()),
                     ],
                   ),
                 ),
@@ -176,12 +211,95 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
+  Future<void> _showSqliteImportDialog({String sourcePath = ''}) async {
+    final controller = widget.controller;
+    if (!controller.hasSqliteImportSession || sourcePath.trim().isNotEmpty) {
+      controller.beginSqliteImport(sourcePath: sourcePath);
+    }
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => SqliteImportDialog(controller: controller),
+    );
+    if (!mounted) {
+      return;
+    }
+    controller.closeSqliteImportSession();
+  }
+
+  Future<void> _handleIncomingFiles(Iterable<String> rawPaths) async {
+    final decision = decideWorkspaceIncomingFiles(rawPaths);
+    final path = decision.primaryPath;
+    if (path == null) {
+      await _showIncomingFileNotice(
+        title: 'No file detected',
+        message: 'Drop a local DecentDB or SQLite file to continue.',
+      );
+      return;
+    }
+
+    if (decision.hadMultipleFiles && mounted) {
+      await _showIncomingFileNotice(
+        title: 'One file at a time',
+        message:
+            'MVP supports importing one file at a time. Continuing with ${p.basename(path)}.',
+      );
+    }
+
+    switch (decision.kind) {
+      case WorkspaceIncomingFileKind.decentDb:
+        _dbPathController.text = path;
+        await widget.controller.openDatabase(path, createIfMissing: false);
+        break;
+      case WorkspaceIncomingFileKind.sqlite:
+        await _showSqliteImportDialog(sourcePath: path);
+        break;
+      case WorkspaceIncomingFileKind.excel:
+      case WorkspaceIncomingFileKind.sqlDump:
+        await _showIncomingFileNotice(
+          title: 'Import type not implemented yet',
+          message:
+              '${p.basename(path)} was recognized, but Phase 4 only implements SQLite import. Excel and SQL dump imports remain scheduled for later phases.',
+        );
+        break;
+      case WorkspaceIncomingFileKind.unknown:
+        await _showIncomingFileNotice(
+          title: 'Unknown file type',
+          message:
+              'Supported files are DecentDB `.ddb`, SQLite `.db`/`.sqlite`/`.sqlite3`, Excel `.xls`/`.xlsx`, and `.sql` dumps.',
+        );
+        break;
+    }
+  }
+
+  Future<void> _showIncomingFileNotice({
+    required String title,
+    required String message,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: <Widget>[
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildConnectionPane() {
     final controller = widget.controller;
     return PanelCard(
       title: 'Workspace',
       subtitle: controller.databasePath == null
-          ? 'Open an existing DecentDB file or create a new one.'
+          ? 'Open a DecentDB file, create a new one, or import a dropped SQLite source.'
           : controller.databasePath ?? '',
       actions: <Widget>[
         IconButton(
@@ -233,6 +351,17 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: controller.isOpeningDatabase
+                    ? null
+                    : () => _showSqliteImportDialog(),
+                icon: const Icon(Icons.file_upload_outlined),
+                label: const Text('Import SQLite'),
+              ),
             ),
             const SizedBox(height: 16),
             if (controller.workspaceError != null) ...<Widget>[
@@ -1570,6 +1699,61 @@ class _WorkspaceBody extends StatelessWidget {
   }
 }
 
+class _DropOverlay extends StatelessWidget {
+  const _DropOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.82),
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(
+                      Icons.file_download_outlined,
+                      size: 44,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Drop a DecentDB or SQLite file',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '`.ddb` files open immediately. `.db`, `.sqlite`, and `.sqlite3` files launch the SQLite import wizard.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Header extends StatelessWidget {
   const _Header({required this.controller});
 
@@ -1601,7 +1785,7 @@ class _Header extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Phase 3 workspace: reopen a DecentDB file, restore query tabs, author SQL with autocomplete and snippets, format queries deterministically, and iterate through paged results.',
+                    'Phase 4 workspace: open or create DecentDB files, drag in a SQLite source for guided import, restore query tabs, author SQL with autocomplete and snippets, and iterate through paged results.',
                     style: theme.textTheme.bodyMedium,
                   ),
                 ],

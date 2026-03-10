@@ -4,19 +4,35 @@
 
 Decent Bench is a cross-platform desktop app (Flutter) for power users who need
 to work directly with **DecentDB**: open or create a database, inspect schema,
-run the full pinned DecentDB SQL surface, and export shaped results. The longer
-term product also includes drag-and-drop imports from common source formats.
+run the full pinned DecentDB SQL surface, export shaped results, and import
+SQLite sources through a guided workflow.
 
 ## Project status
 
-**Pre-alpha / active implementation.** Phase 3 is implemented and runnable
+**Pre-alpha / active implementation.** Phase 4 is implemented and runnable
 under `apps/decent-bench/`.
 
 Current engine capability baseline: **DecentDB v1.6.x**.
 
-### Implemented now (Phase 3)
+### Implemented now (Phase 4)
 
 - open an existing DecentDB file or create a new one
+- drag and drop a `.ddb` file to open it immediately
+- drag and drop a `.db`, `.sqlite`, or `.sqlite3` file to launch the SQLite
+  import wizard
+- inspect SQLite sources in the background before import
+- run a six-step SQLite import wizard for source, target, preview, transforms,
+  execution, and summary
+- select SQLite tables to import, rename target tables and columns, and apply
+  per-column type overrides limited to DecentDB native types
+- map representative SQLite affinities to DecentDB types, including boolean,
+  decimal, blob, and timestamp-oriented cases
+- preview sample SQLite rows before import and surface warnings for `STRICT`,
+  `WITHOUT ROWID`, skipped composite indexes, and skipped foreign keys to
+  unselected tables
+- execute SQLite imports in a background worker with progress updates and
+  best-effort cancellation plus rollback-oriented summary messaging
+- open the imported database or launch a starter query from the import summary
 - inspect schema metadata loaded through the DecentDB adapter for tables, views,
   columns, indexes, and exposed constraint details
 - run SQL in multiple editor tabs with per-tab positional parameters
@@ -34,13 +50,12 @@ Current engine capability baseline: **DecentDB v1.6.x**.
 - persist recent files, export defaults, editor settings, and SQL snippets in
   TOML
 - persist workspace tab drafts separately from global config
-- run unit, smoke, widget, and integration tests for the Phase 3 workflow
+- run unit, smoke, widget, and integration tests for the Phase 4 workflow
 
 ### Not implemented yet
 
-- drag-and-drop open/import flow
-- Import Wizard
-- Excel, SQLite, and SQL dump imports
+- Excel import
+- SQL dump import
 - JSON, Parquet, and Excel export
 
 For the full planned product scope, read:
@@ -190,6 +205,12 @@ Important repo expectations:
 - create an ADR for lasting architectural or product-impacting decisions
 - only add Apache-2.0-compatible dependencies
 - update `THIRD_PARTY_NOTICES.md` when required by a dependency license
+
+Recent ADRs relevant to the current implementation:
+
+- [design/adr/0004-workspace-state-persistence.md](/home/steven/source/decent-bench/design/adr/0004-workspace-state-persistence.md)
+- [design/adr/0005-editor-config-and-snippet-persistence.md](/home/steven/source/decent-bench/design/adr/0005-editor-config-and-snippet-persistence.md)
+- [design/adr/0006-sqlite-import-entry-and-worker-architecture.md](/home/steven/source/decent-bench/design/adr/0006-sqlite-import-entry-and-worker-architecture.md)
 
 ## License
 

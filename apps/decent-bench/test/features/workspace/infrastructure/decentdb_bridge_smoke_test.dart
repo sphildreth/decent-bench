@@ -1,10 +1,12 @@
 import 'dart:io';
 
+import 'package:decent_bench/features/workspace/domain/sqlite_import_models.dart';
 import 'package:decent_bench/features/workspace/domain/workspace_models.dart';
 import 'package:decent_bench/features/workspace/infrastructure/decentdb_bridge.dart';
 import 'package:decent_bench/features/workspace/infrastructure/native_library_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 class _FixedResolver extends NativeLibraryResolver {
   _FixedResolver(this.path);
@@ -79,6 +81,58 @@ void main() {
           ),
         ),
       );
+    }
+
+    String createSqliteSource(String filename) {
+      final sourcePath = p.join(tempDir.path, filename);
+      final source = sqlite.sqlite3.open(sourcePath);
+      try {
+        source.execute('PRAGMA foreign_keys = ON;');
+        source.execute('''
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE
+)
+''');
+        source.execute('''
+CREATE TABLE notes (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  title TEXT
+)
+''');
+        source.execute('''
+CREATE TABLE feature_flags (
+  id INTEGER PRIMARY KEY,
+  enabled BOOL NOT NULL DEFAULT 1
+)
+''');
+        source.execute('''
+CREATE TABLE blob_samples (
+  id INTEGER PRIMARY KEY,
+  price NUMERIC(10,2),
+  payload BLOB
+)
+''');
+        source.execute(
+          'CREATE TABLE strict_flags (id INTEGER PRIMARY KEY, enabled INTEGER NOT NULL) STRICT',
+        );
+        source.execute(
+          'CREATE TABLE tag_codes (code TEXT PRIMARY KEY) WITHOUT ROWID',
+        );
+        source.execute('CREATE INDEX idx_notes_title ON notes (title)');
+        source.execute("INSERT INTO users VALUES (1, 'Ada')");
+        source.execute("INSERT INTO users VALUES (2, 'Grace')");
+        source.execute("INSERT INTO notes VALUES (1, 1, 'Alpha')");
+        source.execute("INSERT INTO notes VALUES (2, 2, 'Beta')");
+        source.execute('INSERT INTO feature_flags VALUES (1, 1)');
+        source.execute("INSERT INTO blob_samples VALUES (1, 19.95, x'414243')");
+        source.execute('INSERT INTO strict_flags VALUES (1, 1)');
+        source.execute("INSERT INTO tag_codes VALUES ('demo')");
+      } finally {
+        source.close();
+      }
+      return sourcePath;
     }
 
     setUp(() async {
@@ -417,5 +471,133 @@ ORDER BY dept
       );
       expect(rows.single['row_count'], 2);
     });
+
+    test(
+      'inspects SQLite sources and loads preview rows',
+      skip: skipReason,
+      () async {
+        final sourcePath = createSqliteSource('phase4-source.sqlite');
+
+        final inspection = await bridge.inspectSqliteSource(
+          sourcePath: sourcePath,
+        );
+        final featureFlags = inspection.tables.firstWhere(
+          (table) => table.sourceName == 'feature_flags',
+        );
+        final blobSamples = inspection.tables.firstWhere(
+          (table) => table.sourceName == 'blob_samples',
+        );
+        final notes = inspection.tables.firstWhere(
+          (table) => table.sourceName == 'notes',
+        );
+
+        expect(inspection.tables, hasLength(6));
+        expect(inspection.warnings, contains(contains('STRICT')));
+        expect(inspection.warnings, contains(contains('WITHOUT ROWID')));
+        expect(
+          featureFlags.columns
+              .firstWhere((column) => column.sourceName == 'enabled')
+              .targetType,
+          'BOOLEAN',
+        );
+        expect(
+          blobSamples.columns
+              .firstWhere((column) => column.sourceName == 'price')
+              .targetType,
+          'DECIMAL(10,2)',
+        );
+        expect(
+          blobSamples.columns
+              .firstWhere((column) => column.sourceName == 'payload')
+              .targetType,
+          'BLOB',
+        );
+        expect(notes.indexes.single.name, 'idx_notes_title');
+
+        final preview = await bridge.loadSqlitePreview(
+          sourcePath: sourcePath,
+          tableName: 'notes',
+        );
+        expect(preview.rows, hasLength(2));
+        expect(preview.rows.first['title'], 'Alpha');
+      },
+    );
+
+    test(
+      'imports selected SQLite tables into DecentDB',
+      skip: skipReason,
+      () async {
+        final sourcePath = createSqliteSource('phase4-import.sqlite');
+        final inspection = await bridge.inspectSqliteSource(
+          sourcePath: sourcePath,
+        );
+        final targetPath = p.join(tempDir.path, 'phase4-import.ddb');
+        final selectedTables = inspection.tables.map((table) {
+          if (table.sourceName == 'notes') {
+            return table.copyWith(
+              targetName: 'imported_notes',
+              columns: <SqliteImportColumnDraft>[
+                for (final column in table.columns)
+                  if (column.sourceName == 'title')
+                    column.copyWith(targetName: 'note_title')
+                  else
+                    column,
+              ],
+            );
+          }
+          return table.copyWith(
+            selected:
+                table.sourceName == 'users' || table.sourceName == 'notes',
+          );
+        }).toList();
+        final request = SqliteImportRequest(
+          jobId: 'smoke-import',
+          sourcePath: sourcePath,
+          targetPath: targetPath,
+          importIntoExistingTarget: false,
+          replaceExistingTarget: true,
+          tables: selectedTables,
+        );
+
+        final updates = await bridge.importSqlite(request: request).toList();
+        final terminal = updates.last;
+
+        expect(terminal.kind, SqliteImportUpdateKind.completed);
+        expect(terminal.summary, isNotNull);
+        expect(
+          terminal.summary!.importedTables,
+          orderedEquals(<String>['users', 'imported_notes']),
+        );
+        expect(terminal.summary!.rowsCopiedByTable['users'], 2);
+        expect(terminal.summary!.rowsCopiedByTable['imported_notes'], 2);
+
+        await bridge.openDatabase(targetPath);
+        final rows = await queryAllRows('''
+SELECT u.name, n.note_title
+FROM users AS u
+JOIN imported_notes AS n ON n.user_id = u.id
+ORDER BY n.id
+''');
+        final schema = await bridge.loadSchema();
+
+        expect(rows, hasLength(2));
+        expect(rows.first['name'], 'Ada');
+        expect(rows.first['note_title'], 'Alpha');
+        expect(rows.last['name'], 'Grace');
+        expect(schema.tables.any((table) => table.name == 'users'), isTrue);
+        expect(
+          schema.tables.any((table) => table.name == 'imported_notes'),
+          isTrue,
+        );
+        expect(
+          schema.indexes.any(
+            (index) =>
+                index.name == 'idx_notes_title' &&
+                index.table == 'imported_notes',
+          ),
+          isTrue,
+        );
+      },
+    );
   });
 }

@@ -6,8 +6,10 @@ import 'dart:typed_data';
 
 import 'package:decentdb/decentdb.dart';
 
+import '../domain/sqlite_import_models.dart';
 import '../domain/workspace_models.dart';
 import 'native_library_resolver.dart';
+import 'sqlite_import_support.dart';
 
 abstract class WorkspaceDatabaseGateway {
   String? get resolvedLibraryPath;
@@ -40,6 +42,22 @@ abstract class WorkspaceDatabaseGateway {
     required bool includeHeaders,
   });
 
+  Future<SqliteImportInspection> inspectSqliteSource({
+    required String sourcePath,
+  });
+
+  Future<SqliteImportPreview> loadSqlitePreview({
+    required String sourcePath,
+    required String tableName,
+    int limit,
+  });
+
+  Stream<SqliteImportUpdate> importSqlite({
+    required SqliteImportRequest request,
+  });
+
+  Future<void> cancelImport(String jobId);
+
   Future<void> dispose();
 }
 
@@ -50,6 +68,8 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   final NativeLibraryResolver _resolver;
   final Map<int, Completer<Map<String, Object?>>> _pending =
       <int, Completer<Map<String, Object?>>>{};
+  final Map<String, _SqliteImportOperation> _imports =
+      <String, _SqliteImportOperation>{};
 
   Isolate? _isolate;
   SendPort? _workerPort;
@@ -186,6 +206,46 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   }
 
   @override
+  Future<SqliteImportInspection> inspectSqliteSource({
+    required String sourcePath,
+  }) async {
+    return inspectSqliteSourceInBackground(sourcePath);
+  }
+
+  @override
+  Future<SqliteImportPreview> loadSqlitePreview({
+    required String sourcePath,
+    required String tableName,
+    int limit = 8,
+  }) async {
+    return loadSqlitePreviewInBackground(sourcePath, tableName, limit: limit);
+  }
+
+  @override
+  Stream<SqliteImportUpdate> importSqlite({
+    required SqliteImportRequest request,
+  }) {
+    final existing = _imports[request.jobId];
+    if (existing != null) {
+      return existing.controller.stream;
+    }
+
+    final operation = _SqliteImportOperation(
+      controller: StreamController<SqliteImportUpdate>(),
+      receivePort: ReceivePort(),
+    );
+    _imports[request.jobId] = operation;
+    unawaited(_startImportOperation(request, operation));
+    return operation.controller.stream;
+  }
+
+  @override
+  Future<void> cancelImport(String jobId) async {
+    final operation = _imports[jobId];
+    operation?.commandPort?.send('cancel');
+  }
+
+  @override
   Future<void> dispose() async {
     if (_workerPort != null) {
       try {
@@ -194,6 +254,13 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
         // Ignore shutdown races.
       }
     }
+    for (final operation in _imports.values.toList()) {
+      operation.commandPort?.send('cancel');
+      operation.receivePort.close();
+      await operation.controller.close();
+      operation.isolate?.kill(priority: Isolate.immediate);
+    }
+    _imports.clear();
     _responses?.close();
     _responses = null;
     _workerPort = null;
@@ -225,6 +292,77 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
 
     return completer.future;
   }
+
+  Future<void> _startImportOperation(
+    SqliteImportRequest request,
+    _SqliteImportOperation operation,
+  ) async {
+    try {
+      final libraryPath = await initialize();
+      operation.isolate = await Isolate.spawn<List<Object?>>(
+        sqliteImportWorkerMain,
+        <Object?>[operation.receivePort.sendPort, libraryPath, request.toMap()],
+      );
+
+      operation.receivePort.listen((message) async {
+        if (message is SendPort) {
+          operation.commandPort = message;
+          return;
+        }
+        if (message is! Map<Object?, Object?>) {
+          return;
+        }
+
+        final update = SqliteImportUpdate.fromMap(
+          message.map((key, value) => MapEntry(key as String, value)),
+        );
+        if (!operation.controller.isClosed) {
+          operation.controller.add(update);
+        }
+        if (_isTerminalImportUpdate(update.kind)) {
+          await _closeImportOperation(request.jobId);
+        }
+      });
+    } catch (error, stackTrace) {
+      if (!operation.controller.isClosed) {
+        operation.controller.add(
+          SqliteImportUpdate(
+            kind: SqliteImportUpdateKind.failed,
+            jobId: request.jobId,
+            message: '$error\n$stackTrace',
+          ),
+        );
+      }
+      await _closeImportOperation(request.jobId);
+    }
+  }
+
+  Future<void> _closeImportOperation(String jobId) async {
+    final operation = _imports.remove(jobId);
+    if (operation == null) {
+      return;
+    }
+    operation.receivePort.close();
+    if (!operation.controller.isClosed) {
+      await operation.controller.close();
+    }
+    operation.isolate?.kill(priority: Isolate.immediate);
+  }
+}
+
+class _SqliteImportOperation {
+  _SqliteImportOperation({required this.controller, required this.receivePort});
+
+  final StreamController<SqliteImportUpdate> controller;
+  final ReceivePort receivePort;
+  SendPort? commandPort;
+  Isolate? isolate;
+}
+
+bool _isTerminalImportUpdate(SqliteImportUpdateKind kind) {
+  return kind == SqliteImportUpdateKind.completed ||
+      kind == SqliteImportUpdateKind.failed ||
+      kind == SqliteImportUpdateKind.cancelled;
 }
 
 @pragma('vm:entry-point')

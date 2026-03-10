@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../domain/app_config.dart';
+import '../domain/sqlite_import_models.dart';
 import '../domain/workspace_models.dart';
 import '../domain/workspace_state.dart';
 import '../infrastructure/app_config_store.dart';
@@ -30,6 +31,7 @@ class WorkspaceController extends ChangeNotifier {
   AppConfig config = AppConfig.defaults();
   SchemaSnapshot schema = SchemaSnapshot.empty();
   List<QueryTabState> tabs = const <QueryTabState>[];
+  SqliteImportSession? sqliteImportSession;
 
   String? databasePath;
   String? engineVersion;
@@ -44,9 +46,11 @@ class WorkspaceController extends ChangeNotifier {
   int _nextTabTitleCounter = 1;
   String? _activeTabId;
   Timer? _workspaceSaveDebounce;
+  StreamSubscription<SqliteImportUpdate>? _sqliteImportSubscription;
   bool _disposed = false;
 
   bool get hasOpenDatabase => databasePath != null;
+  bool get hasSqliteImportSession => sqliteImportSession != null;
 
   String get activeTabId => _activeTabId ?? tabs.first.id;
 
@@ -710,8 +714,418 @@ class WorkspaceController extends ChangeNotifier {
     await _persistConfig('Deleted snippet "${existing.first.name}".');
   }
 
+  void beginSqliteImport({String sourcePath = ''}) {
+    final trimmedSource = sourcePath.trim();
+    sqliteImportSession = SqliteImportSession.initial(sourcePath: trimmedSource)
+        .copyWith(
+          targetPath: trimmedSource.isEmpty
+              ? ''
+              : _suggestImportTargetPath(trimmedSource),
+        );
+    _safeNotify();
+    if (trimmedSource.isNotEmpty) {
+      unawaited(loadSqliteImportSource(trimmedSource));
+    }
+  }
+
+  void closeSqliteImportSession() {
+    if (sqliteImportSession?.phase == SqliteImportJobPhase.running ||
+        sqliteImportSession?.phase == SqliteImportJobPhase.cancelling) {
+      return;
+    }
+    sqliteImportSession = null;
+    _safeNotify();
+  }
+
+  Future<void> loadSqliteImportSource(String rawPath) async {
+    final normalized = rawPath.trim();
+    if (normalized.isEmpty) {
+      _setSqliteImportError('Choose a SQLite source file first.');
+      return;
+    }
+
+    final session =
+        sqliteImportSession ??
+        SqliteImportSession.initial(sourcePath: normalized);
+    sqliteImportSession = session.copyWith(
+      phase: SqliteImportJobPhase.inspecting,
+      sourcePath: normalized,
+      targetPath: session.targetPath.trim().isEmpty
+          ? _suggestImportTargetPath(normalized)
+          : session.targetPath,
+      tables: const <SqliteImportTableDraft>[],
+      warnings: const <String>[],
+      focusedTable: null,
+      progress: null,
+      summary: null,
+      error: null,
+      jobId: null,
+      loadingPreviewTable: null,
+    );
+    _safeNotify();
+
+    try {
+      final inspection = await _gateway.inspectSqliteSource(
+        sourcePath: normalized,
+      );
+      final focused = inspection.tables.isEmpty
+          ? null
+          : inspection.tables.first.sourceName;
+      sqliteImportSession = sqliteImportSession?.copyWith(
+        phase: SqliteImportJobPhase.ready,
+        sourcePath: inspection.sourcePath,
+        tables: inspection.tables,
+        warnings: inspection.warnings,
+        focusedTable: focused,
+        error: inspection.tables.isEmpty
+            ? 'No user tables were found in the selected SQLite file.'
+            : null,
+      );
+      _safeNotify();
+      if (focused != null) {
+        await loadSqliteImportPreview(focused);
+      }
+    } catch (error) {
+      _setSqliteImportError(
+        error.toString(),
+        phase: SqliteImportJobPhase.failed,
+      );
+    }
+  }
+
+  void setSqliteImportStep(SqliteImportWizardStep step) {
+    final session = sqliteImportSession;
+    if (session == null) {
+      return;
+    }
+    sqliteImportSession = session.copyWith(step: step, error: null);
+    _safeNotify();
+  }
+
+  void updateSqliteImportTargetPath(String value) {
+    final session = sqliteImportSession;
+    if (session == null) {
+      return;
+    }
+    sqliteImportSession = session.copyWith(targetPath: value, error: null);
+    _safeNotify();
+  }
+
+  void updateSqliteImportIntoExistingTarget(bool value) {
+    final session = sqliteImportSession;
+    if (session == null) {
+      return;
+    }
+    sqliteImportSession = session.copyWith(
+      importIntoExistingTarget: value,
+      replaceExistingTarget: value ? false : session.replaceExistingTarget,
+      error: null,
+    );
+    _safeNotify();
+  }
+
+  void updateSqliteImportReplaceExistingTarget(bool value) {
+    final session = sqliteImportSession;
+    if (session == null || session.importIntoExistingTarget) {
+      return;
+    }
+    sqliteImportSession = session.copyWith(
+      replaceExistingTarget: value,
+      error: null,
+    );
+    _safeNotify();
+  }
+
+  void toggleSqliteImportTableSelection(String sourceName, bool selected) {
+    final session = sqliteImportSession;
+    if (session == null) {
+      return;
+    }
+
+    final updatedTables = <SqliteImportTableDraft>[
+      for (final table in session.tables)
+        if (table.sourceName == sourceName)
+          table.copyWith(selected: selected)
+        else
+          table,
+    ];
+    String? focused;
+    if (updatedTables.any(
+      (table) => table.sourceName == session.focusedTable && table.selected,
+    )) {
+      focused = session.focusedTable;
+    } else {
+      for (final table in updatedTables) {
+        if (table.selected) {
+          focused = table.sourceName;
+          break;
+        }
+      }
+    }
+    sqliteImportSession = session.copyWith(
+      tables: updatedTables,
+      focusedTable: focused,
+      error: null,
+    );
+    _safeNotify();
+    if (selected && focused != null) {
+      unawaited(loadSqliteImportPreview(focused));
+    }
+  }
+
+  Future<void> focusSqliteImportTable(String sourceName) async {
+    final session = sqliteImportSession;
+    if (session == null) {
+      return;
+    }
+    sqliteImportSession = session.copyWith(focusedTable: sourceName);
+    _safeNotify();
+    await loadSqliteImportPreview(sourceName);
+  }
+
+  Future<void> loadSqliteImportPreview(String sourceName) async {
+    final session = sqliteImportSession;
+    if (session == null || session.sourcePath.trim().isEmpty) {
+      return;
+    }
+    final table = session.tables.where((item) => item.sourceName == sourceName);
+    if (table.isEmpty ||
+        table.first.previewLoaded ||
+        session.loadingPreviewTable == sourceName) {
+      return;
+    }
+
+    sqliteImportSession = session.copyWith(
+      loadingPreviewTable: sourceName,
+      error: null,
+    );
+    _safeNotify();
+
+    try {
+      final preview = await _gateway.loadSqlitePreview(
+        sourcePath: session.sourcePath,
+        tableName: sourceName,
+      );
+      _mutateSqliteImportTable(
+        sourceName,
+        (table) => table.copyWith(
+          previewRows: preview.rows,
+          previewLoaded: true,
+          previewError: null,
+        ),
+      );
+    } catch (error) {
+      _mutateSqliteImportTable(
+        sourceName,
+        (table) => table.copyWith(
+          previewLoaded: false,
+          previewError: error.toString(),
+        ),
+      );
+    } finally {
+      sqliteImportSession = sqliteImportSession?.copyWith(
+        loadingPreviewTable: null,
+      );
+      _safeNotify();
+    }
+  }
+
+  void renameSqliteImportTable(String sourceName, String targetName) {
+    _mutateSqliteImportTable(
+      sourceName,
+      (table) => table.copyWith(targetName: targetName),
+    );
+  }
+
+  void renameSqliteImportColumn(
+    String sourceTableName,
+    String sourceColumnName,
+    String targetName,
+  ) {
+    _mutateSqliteImportTable(
+      sourceTableName,
+      (table) => table.copyWith(
+        columns: <SqliteImportColumnDraft>[
+          for (final column in table.columns)
+            if (column.sourceName == sourceColumnName)
+              column.copyWith(targetName: targetName)
+            else
+              column,
+        ],
+      ),
+    );
+  }
+
+  void overrideSqliteImportColumnType(
+    String sourceTableName,
+    String sourceColumnName,
+    String targetType,
+  ) {
+    _mutateSqliteImportTable(
+      sourceTableName,
+      (table) => table.copyWith(
+        columns: <SqliteImportColumnDraft>[
+          for (final column in table.columns)
+            if (column.sourceName == sourceColumnName)
+              column.copyWith(targetType: targetType)
+            else
+              column,
+        ],
+      ),
+    );
+  }
+
+  Future<void> runSqliteImport() async {
+    final session = sqliteImportSession;
+    if (session == null) {
+      return;
+    }
+    if (session.selectedTables.isEmpty) {
+      _setSqliteImportError('Select at least one SQLite table to import.');
+      return;
+    }
+    if (!session.canAdvanceFromTransforms) {
+      _setSqliteImportError(
+        'Resolve duplicate or empty target names before starting the import.',
+      );
+      return;
+    }
+    if (session.targetPath.trim().isEmpty) {
+      _setSqliteImportError('Choose a target DecentDB file first.');
+      return;
+    }
+
+    await _sqliteImportSubscription?.cancel();
+    final jobId = createSqliteImportJobId();
+    final request = SqliteImportRequest(
+      jobId: jobId,
+      sourcePath: session.sourcePath,
+      targetPath: session.targetPath.trim(),
+      importIntoExistingTarget: session.importIntoExistingTarget,
+      replaceExistingTarget: session.replaceExistingTarget,
+      tables: session.tables,
+    );
+
+    sqliteImportSession = session.copyWith(
+      step: SqliteImportWizardStep.execute,
+      phase: SqliteImportJobPhase.running,
+      error: null,
+      summary: null,
+      jobId: jobId,
+      progress: SqliteImportProgress(
+        jobId: jobId,
+        currentTable: request.selectedTables.first.targetName,
+        completedTables: 0,
+        totalTables: request.selectedTables.length,
+        currentTableRowsCopied: 0,
+        currentTableRowCount: request.selectedTables.first.rowCount,
+        totalRowsCopied: 0,
+        message: 'Preparing SQLite import...',
+      ),
+    );
+    _safeNotify();
+
+    _sqliteImportSubscription = _gateway.importSqlite(request: request).listen((
+      update,
+    ) {
+      final current = sqliteImportSession;
+      if (current == null || current.jobId != update.jobId) {
+        return;
+      }
+
+      switch (update.kind) {
+        case SqliteImportUpdateKind.progress:
+          sqliteImportSession = current.copyWith(
+            phase: current.phase == SqliteImportJobPhase.cancelling
+                ? SqliteImportJobPhase.cancelling
+                : SqliteImportJobPhase.running,
+            progress: update.progress,
+            error: null,
+          );
+          break;
+        case SqliteImportUpdateKind.completed:
+          sqliteImportSession = current.copyWith(
+            step: SqliteImportWizardStep.summary,
+            phase: SqliteImportJobPhase.completed,
+            summary: update.summary,
+            error: null,
+          );
+          workspaceMessage = update.summary?.statusMessage;
+          workspaceError = null;
+          break;
+        case SqliteImportUpdateKind.cancelled:
+          sqliteImportSession = current.copyWith(
+            step: SqliteImportWizardStep.summary,
+            phase: SqliteImportJobPhase.cancelled,
+            summary: update.summary,
+            error: null,
+          );
+          workspaceMessage = update.summary?.statusMessage;
+          workspaceError = null;
+          break;
+        case SqliteImportUpdateKind.failed:
+          sqliteImportSession = current.copyWith(
+            step: SqliteImportWizardStep.summary,
+            phase: SqliteImportJobPhase.failed,
+            error: update.message ?? 'SQLite import failed.',
+          );
+          break;
+      }
+      _safeNotify();
+    });
+  }
+
+  Future<void> cancelSqliteImport() async {
+    final session = sqliteImportSession;
+    if (session == null || session.jobId == null) {
+      return;
+    }
+    sqliteImportSession = session.copyWith(
+      phase: SqliteImportJobPhase.cancelling,
+      error: null,
+    );
+    _safeNotify();
+    try {
+      await _gateway.cancelImport(session.jobId!);
+    } catch (error) {
+      _setSqliteImportError(
+        error.toString(),
+        phase: SqliteImportJobPhase.failed,
+      );
+    }
+  }
+
+  Future<void> openImportedDatabaseFromSummary() async {
+    final summary = sqliteImportSession?.summary;
+    if (summary == null) {
+      return;
+    }
+    await openDatabase(summary.targetPath, createIfMissing: false);
+    sqliteImportSession = null;
+    _safeNotify();
+  }
+
+  Future<void> runQueryForImportedTable() async {
+    final summary = sqliteImportSession?.summary;
+    if (summary == null) {
+      return;
+    }
+    await openDatabase(summary.targetPath, createIfMissing: false);
+    if (summary.firstImportedTable != null) {
+      createTab(
+        sql:
+            'SELECT *\nFROM ${_quoteIdentifier(summary.firstImportedTable!)}\nLIMIT ${config.defaultPageSize};',
+      );
+    }
+    sqliteImportSession = null;
+    _safeNotify();
+  }
+
   String createSnippetId() =>
       'snippet-${DateTime.now().microsecondsSinceEpoch.toString()}';
+
+  String createSqliteImportJobId() =>
+      'sqlite-import-${DateTime.now().microsecondsSinceEpoch}';
 
   String suggestExportPath([String? tabId]) {
     final tab = tabId == null ? activeTab : tabById(tabId) ?? activeTab;
@@ -774,6 +1188,7 @@ class WorkspaceController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _workspaceSaveDebounce?.cancel();
+    unawaited(_sqliteImportSubscription?.cancel() ?? Future<void>.value());
     if (hasOpenDatabase) {
       unawaited(_persistWorkspaceStateNow());
     }
@@ -877,6 +1292,37 @@ class WorkspaceController extends ChangeNotifier {
     } finally {
       _safeNotify();
     }
+  }
+
+  void _setSqliteImportError(String message, {SqliteImportJobPhase? phase}) {
+    final session = sqliteImportSession;
+    if (session == null) {
+      workspaceError = message;
+      workspaceMessage = null;
+      _safeNotify();
+      return;
+    }
+    sqliteImportSession = session.copyWith(
+      error: message,
+      phase: phase ?? session.phase,
+    );
+    _safeNotify();
+  }
+
+  void _mutateSqliteImportTable(
+    String sourceName,
+    SqliteImportTableDraft Function(SqliteImportTableDraft table) transform,
+  ) {
+    final session = sqliteImportSession;
+    if (session == null) {
+      return;
+    }
+    final updatedTables = <SqliteImportTableDraft>[
+      for (final table in session.tables)
+        if (table.sourceName == sourceName) transform(table) else table,
+    ];
+    sqliteImportSession = session.copyWith(tables: updatedTables, error: null);
+    _safeNotify();
   }
 
   void _mutateActiveTab(
@@ -1044,6 +1490,16 @@ class WorkspaceController extends ChangeNotifier {
     final basename = p.basenameWithoutExtension(databasePath!);
     final suffix = safeTitle.isEmpty ? 'query' : safeTitle;
     return p.join(directory, '$basename-$suffix.csv');
+  }
+
+  String _suggestImportTargetPath(String sourcePath) {
+    final directory = p.dirname(sourcePath);
+    final basename = p.basenameWithoutExtension(sourcePath);
+    return p.join(directory, '$basename.ddb');
+  }
+
+  String _quoteIdentifier(String value) {
+    return '"${value.replaceAll('"', '""')}"';
   }
 
   void _safeNotify() {
