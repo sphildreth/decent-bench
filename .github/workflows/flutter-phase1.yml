@@ -1,0 +1,52 @@
+name: Flutter Phase 1
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  analyze-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out Decent Bench
+        uses: actions/checkout@v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2.21.0
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Nim
+        run: sudo apt-get update && sudo apt-get install --yes nim
+
+      - name: Check out DecentDB v1.6.0
+        run: git clone --depth 1 --branch v1.6.0 https://github.com/sphildreth/decentdb.git ../decentdb
+
+      - name: Build DecentDB native library
+        working-directory: ../decentdb
+        run: nimble build_lib
+
+      - name: Flutter pub get
+        working-directory: apps/decent-bench
+        run: flutter pub get
+
+      - name: Flutter analyze
+        working-directory: apps/decent-bench
+        run: flutter analyze
+
+      - name: Flutter test
+        working-directory: apps/decent-bench
+        env:
+          DECENTDB_NATIVE_LIB: ${{ github.workspace }}/../decentdb/build/libc_api.so
+        run: flutter test
+
+      - name: Flutter integration test
+        working-directory: apps/decent-bench
+        env:
+          DECENTDB_NATIVE_LIB: ${{ github.workspace }}/../decentdb/build/libc_api.so
+        run: flutter test integration_test
