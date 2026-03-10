@@ -421,6 +421,7 @@ class WorkspaceController extends ChangeNotifier {
         hasMoreRows: false,
         isResultPartial: false,
         executionGeneration: generation,
+        executionPlan: const QueryExecutionPlanState.loading(),
         messageHistory: _appendMessage(
           current.messageHistory,
           QueryMessageLevel.info,
@@ -453,14 +454,24 @@ class WorkspaceController extends ChangeNotifier {
         final statusMessage = page.rowsAffected != null
             ? 'Statement completed with ${page.rowsAffected} affected rows.'
             : 'Loaded ${page.rows.length} rows from the first page.';
+        final explainsCurrentSql = _isExplainSql(trimmedSql);
         final updated = _applyFirstPage(
           current,
           page,
           statusMessage: statusMessage,
         );
-        final withMessage = updated.copyWith(
+        final withPlan = explainsCurrentSql
+            ? updated.copyWith(
+                executionPlan: QueryExecutionPlanState(
+                  columns: page.columns,
+                  rows: page.rows,
+                  isLoading: !page.done,
+                ),
+              )
+            : updated;
+        final withMessage = withPlan.copyWith(
           messageHistory: _appendMessage(
-            updated.messageHistory,
+            withPlan.messageHistory,
             QueryMessageLevel.info,
             statusMessage,
           ),
@@ -481,6 +492,16 @@ class WorkspaceController extends ChangeNotifier {
           ),
         );
       }, notify: false);
+      if (!_isExplainSql(trimmedSql)) {
+        unawaited(
+          _loadExecutionPlanForTab(
+            tabId,
+            generation: generation,
+            sql: trimmedSql,
+            params: params,
+          ),
+        );
+      }
     } catch (error) {
       if (_isCurrentGeneration(tabId, generation)) {
         _mutateTab(tabId, (current) {
@@ -494,6 +515,11 @@ class WorkspaceController extends ChangeNotifier {
             statusMessage: null,
             cursorId: null,
             hasMoreRows: false,
+            executionPlan: current.executionPlan.copyWith(
+              isLoading: false,
+              errorMessage:
+                  'Execution plan unavailable because the query did not complete.',
+            ),
             messageHistory: _appendMessage(
               current.messageHistory,
               QueryMessageLevel.error,
@@ -575,18 +601,28 @@ class WorkspaceController extends ChangeNotifier {
             statusMessage,
           ),
         );
+        final withPlan = _isExplainSql(current.lastSql ?? current.sql)
+            ? updated.copyWith(
+                executionPlan: updated.executionPlan.copyWith(
+                  columns: updated.resultColumns,
+                  rows: updated.resultRows,
+                  isLoading: !page.done,
+                  errorMessage: null,
+                ),
+              )
+            : updated;
         if (!page.done) {
-          return updated;
+          return withPlan;
         }
-        return updated.copyWith(
+        return withPlan.copyWith(
           queryHistory: _appendQueryHistory(
-            updated.queryHistory,
+            withPlan.queryHistory,
             _buildQueryHistoryEntry(
-              updated,
+              withPlan,
               outcome: QueryHistoryOutcome.completed,
-              rowsLoaded: updated.resultRows.length,
-              rowsAffected: updated.rowsAffected,
-              elapsed: updated.elapsed,
+              rowsLoaded: withPlan.resultRows.length,
+              rowsAffected: withPlan.rowsAffected,
+              elapsed: withPlan.elapsed,
             ),
           ),
         );
@@ -604,6 +640,12 @@ class WorkspaceController extends ChangeNotifier {
             statusMessage: null,
             cursorId: null,
             hasMoreRows: false,
+            executionPlan: _isExplainSql(current.lastSql ?? current.sql)
+                ? current.executionPlan.copyWith(
+                    isLoading: false,
+                    errorMessage: failure.message,
+                  )
+                : current.executionPlan,
             messageHistory: _appendMessage(
               current.messageHistory,
               QueryMessageLevel.error,
@@ -650,6 +692,7 @@ class WorkspaceController extends ChangeNotifier {
         cursorId: null,
         hasMoreRows: false,
         executionGeneration: generation,
+        executionPlan: current.executionPlan.copyWith(isLoading: false),
       ),
       notify: false,
     );
@@ -2166,6 +2209,81 @@ class WorkspaceController extends ChangeNotifier {
     );
   }
 
+  Future<void> _loadExecutionPlanForTab(
+    String tabId, {
+    required int generation,
+    required String sql,
+    required List<Object?> params,
+  }) async {
+    try {
+      var planPage = await _gateway.runQuery(
+        sql: 'EXPLAIN $sql',
+        params: params,
+        pageSize: config.defaultPageSize,
+      );
+      if (!_isCurrentGeneration(tabId, generation)) {
+        if (planPage.cursorId != null) {
+          unawaited(_gateway.cancelQuery(planPage.cursorId!));
+        }
+        return;
+      }
+
+      final columns = <String>[...planPage.columns];
+      final rows = <Map<String, Object?>>[...planPage.rows];
+      while (planPage.cursorId != null) {
+        planPage = await _gateway.fetchNextPage(
+          cursorId: planPage.cursorId!,
+          pageSize: config.defaultPageSize,
+        );
+        if (!_isCurrentGeneration(tabId, generation)) {
+          if (planPage.cursorId != null) {
+            unawaited(_gateway.cancelQuery(planPage.cursorId!));
+          }
+          return;
+        }
+        if (columns.isEmpty && planPage.columns.isNotEmpty) {
+          columns.addAll(planPage.columns);
+        }
+        rows.addAll(planPage.rows);
+      }
+
+      if (!_isCurrentGeneration(tabId, generation)) {
+        return;
+      }
+      _mutateTab(
+        tabId,
+        (current) => current.copyWith(
+          executionPlan: QueryExecutionPlanState(
+            columns: columns,
+            rows: rows,
+            isLoading: false,
+          ),
+        ),
+        notify: false,
+      );
+      _safeNotify();
+    } catch (error) {
+      if (!_isCurrentGeneration(tabId, generation)) {
+        return;
+      }
+      final failure = QueryErrorDetails.fromError(
+        error,
+        stage: QueryErrorStage.opening,
+      );
+      _mutateTab(
+        tabId,
+        (current) => current.copyWith(
+          executionPlan: current.executionPlan.copyWith(
+            isLoading: false,
+            errorMessage: failure.message,
+          ),
+        ),
+        notify: false,
+      );
+      _safeNotify();
+    }
+  }
+
   List<QueryMessageEntry> _appendMessage(
     List<QueryMessageEntry> history,
     QueryMessageLevel level,
@@ -2215,6 +2333,10 @@ class WorkspaceController extends ChangeNotifier {
       rowsAffected: rowsAffected,
       errorMessage: errorMessage,
     );
+  }
+
+  bool _isExplainSql(String sql) {
+    return RegExp(r'^\s*EXPLAIN\b', caseSensitive: false).hasMatch(sql);
   }
 
   Future<void> _cancelAllOpenCursors() async {

@@ -257,6 +257,7 @@ Each tab owns:
 - SQL text buffer
 - execution state
 - result data source metadata
+- execution-plan metadata derived from `EXPLAIN` when available
 - error panel state
 - export state for the active result set
 

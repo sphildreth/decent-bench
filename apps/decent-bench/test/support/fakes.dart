@@ -559,6 +559,35 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
     required List<Object?> params,
     required int pageSize,
   }) async {
+    if (sql.toUpperCase().startsWith('EXPLAIN')) {
+      if (sql.toLowerCase().contains('projects')) {
+        return QueryResultPage(
+          cursorId: null,
+          columns: const <String>['query_plan'],
+          rows: const <Map<String, Object?>>[
+            <String, Object?>{
+              'query_plan':
+                  'SCAN projects USING COVERING INDEX idx_projects_name',
+            },
+          ],
+          done: true,
+          rowsAffected: null,
+          elapsed: const Duration(milliseconds: 1),
+        );
+      }
+      return QueryResultPage(
+        cursorId: null,
+        columns: const <String>['query_plan'],
+        rows: const <Map<String, Object?>>[
+          <String, Object?>{
+            'query_plan': 'SCAN tasks USING COVERING INDEX idx_tasks_title',
+          },
+        ],
+        done: true,
+        rowsAffected: null,
+        elapsed: const Duration(milliseconds: 1),
+      );
+    }
     if (sql.toUpperCase().contains('BROKEN')) {
       throw const BridgeFailure('syntax error near BROKEN', code: 'ERR_SQL');
     }

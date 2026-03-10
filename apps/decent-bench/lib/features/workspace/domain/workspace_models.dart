@@ -440,6 +440,50 @@ class QueryHistoryEntry {
   }
 }
 
+class QueryExecutionPlanState {
+  const QueryExecutionPlanState({
+    required this.columns,
+    required this.rows,
+    required this.isLoading,
+    this.errorMessage,
+  });
+
+  const QueryExecutionPlanState.idle()
+    : columns = const <String>[],
+      rows = const <Map<String, Object?>>[],
+      isLoading = false,
+      errorMessage = null;
+
+  const QueryExecutionPlanState.loading()
+    : columns = const <String>[],
+      rows = const <Map<String, Object?>>[],
+      isLoading = true,
+      errorMessage = null;
+
+  final List<String> columns;
+  final List<Map<String, Object?>> rows;
+  final bool isLoading;
+  final String? errorMessage;
+
+  bool get hasData => columns.isNotEmpty || rows.isNotEmpty;
+
+  QueryExecutionPlanState copyWith({
+    List<String>? columns,
+    List<Map<String, Object?>>? rows,
+    bool? isLoading,
+    Object? errorMessage = QueryTabState._unset,
+  }) {
+    return QueryExecutionPlanState(
+      columns: columns ?? this.columns,
+      rows: rows ?? this.rows,
+      isLoading: isLoading ?? this.isLoading,
+      errorMessage: errorMessage == QueryTabState._unset
+          ? this.errorMessage
+          : errorMessage as String?,
+    );
+  }
+}
+
 class QueryTabState {
   const QueryTabState({
     required this.id,
@@ -463,6 +507,7 @@ class QueryTabState {
     required this.isExporting,
     required this.isResultPartial,
     required this.executionGeneration,
+    required this.executionPlan,
     required this.messageHistory,
     required this.queryHistory,
   });
@@ -490,6 +535,7 @@ class QueryTabState {
   final bool isExporting;
   final bool isResultPartial;
   final int executionGeneration;
+  final QueryExecutionPlanState executionPlan;
   final List<QueryMessageEntry> messageHistory;
   final List<QueryHistoryEntry> queryHistory;
 
@@ -522,6 +568,7 @@ class QueryTabState {
       isExporting: false,
       isResultPartial: false,
       executionGeneration: 0,
+      executionPlan: const QueryExecutionPlanState.idle(),
       messageHistory: const <QueryMessageEntry>[],
       queryHistory: const <QueryHistoryEntry>[],
     );
@@ -560,6 +607,7 @@ class QueryTabState {
     bool? isExporting,
     bool? isResultPartial,
     int? executionGeneration,
+    QueryExecutionPlanState? executionPlan,
     List<QueryMessageEntry>? messageHistory,
     List<QueryHistoryEntry>? queryHistory,
   }) {
@@ -593,6 +641,7 @@ class QueryTabState {
       isExporting: isExporting ?? this.isExporting,
       isResultPartial: isResultPartial ?? this.isResultPartial,
       executionGeneration: executionGeneration ?? this.executionGeneration,
+      executionPlan: executionPlan ?? this.executionPlan,
       messageHistory: messageHistory ?? this.messageHistory,
       queryHistory: queryHistory ?? this.queryHistory,
     );

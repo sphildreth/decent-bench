@@ -146,6 +146,29 @@ void main() {
     expect(controller.activeTab.hasMoreRows, isTrue);
   });
 
+  test('runTab captures execution plan rows from EXPLAIN output', () async {
+    final dbPath =
+        '${Directory.systemTemp.path}/workbench-${DateTime.now().microsecondsSinceEpoch}.ddb';
+    final controller = WorkspaceController(
+      gateway: FakeWorkspaceGateway(),
+      configStore: InMemoryConfigStore(),
+      workspaceStateStore: InMemoryWorkspaceStateStore(),
+    );
+    await controller.initialize();
+    await controller.openDatabase(dbPath, createIfMissing: true);
+
+    controller.updateActiveSql('SELECT id, title FROM tasks ORDER BY id');
+    await controller.runActiveTab();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(controller.activeTab.executionPlan.isLoading, isFalse);
+    expect(controller.activeTab.executionPlan.columns, <String>['query_plan']);
+    expect(
+      controller.activeTab.executionPlan.rows.single['query_plan'],
+      contains('SCAN tasks'),
+    );
+  });
+
   test('reopening the same database restores persisted tab drafts', () async {
     final dbPath =
         '${Directory.systemTemp.path}/workbench-${DateTime.now().microsecondsSinceEpoch}.ddb';

@@ -2,6 +2,9 @@ import 'package:decent_bench/app/app.dart';
 import 'package:decent_bench/app/startup_launch_options.dart';
 import 'package:decent_bench/features/workspace/application/workspace_controller.dart';
 import 'package:decent_bench/features/workspace/domain/app_config.dart';
+import 'package:decent_bench/features/workspace/domain/workspace_models.dart';
+import 'package:decent_bench/features/workspace/domain/workspace_shell_preferences.dart';
+import 'package:decent_bench/features/workspace/presentation/shell/results_pane.dart';
 import 'package:decent_bench/features/workspace/presentation/shell/status_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -174,5 +177,59 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Excel Import Wizard'), findsOneWidget);
+  });
+
+  testWidgets('execution plan tab renders EXPLAIN rows', (tester) async {
+    final verticalScrollController = ScrollController();
+    final horizontalScrollController = ScrollController();
+    final tab = QueryTabState.initial(id: 'query-tab-1', title: 'Query 1')
+        .copyWith(
+          executionPlan: const QueryExecutionPlanState(
+            columns: <String>['query_plan'],
+            rows: <Map<String, Object?>>[
+              <String, Object?>{
+                'query_plan': 'SCAN tasks USING COVERING INDEX idx_tasks_title',
+              },
+            ],
+            isLoading: false,
+          ),
+        );
+
+    _configureDesktopViewport(tester);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+      verticalScrollController.dispose();
+      horizontalScrollController.dispose();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 1200,
+              height: 600,
+              child: Material(
+                child: ResultsPane(
+                  activeTab: tab,
+                  activeResultsTab: ResultsPaneTab.executionPlan,
+                  verticalScrollController: verticalScrollController,
+                  horizontalScrollController: horizontalScrollController,
+                  interactionState: const ResultsGridInteractionState(),
+                  onResultsTabChanged: (_) {},
+                  onLoadNextPage: () {},
+                  onSelectCell: (_, _) {},
+                  onSelectRow: (_) {},
+                  onTogglePinnedColumn: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('SCAN tasks'), findsOneWidget);
   });
 }

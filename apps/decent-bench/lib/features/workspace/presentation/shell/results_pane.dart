@@ -134,7 +134,9 @@ class ResultsPane extends StatelessWidget {
                 onTogglePinnedColumn: onTogglePinnedColumn,
               ),
               ResultsPaneTab.messages => _MessagesPanel(tab: activeTab),
-              ResultsPaneTab.executionPlan => const _ExecutionPlanPanel(),
+              ResultsPaneTab.executionPlan => _ExecutionPlanPanel(
+                tab: activeTab,
+              ),
             },
           ),
         ],
@@ -149,7 +151,7 @@ class ResultsPane extends StatelessWidget {
     if (activeTab.rowsAffected != null) {
       return '${activeTab.rowsAffected} rows affected';
     }
-    return 'Messages, data, and execution placeholders';
+    return 'Messages, data, and EXPLAIN output';
   }
 }
 
@@ -747,18 +749,162 @@ class _MessagesPanel extends StatelessWidget {
 }
 
 class _ExecutionPlanPanel extends StatelessWidget {
-  const _ExecutionPlanPanel();
+  const _ExecutionPlanPanel({required this.tab});
+
+  final QueryTabState tab;
+
+  @override
+  Widget build(BuildContext context) {
+    final plan = tab.executionPlan;
+    if (plan.isLoading && !plan.hasData) {
+      return const _ExecutionPlanEmptyState(
+        icon: Icons.account_tree_outlined,
+        label: 'Collecting EXPLAIN output...',
+      );
+    }
+    if (!plan.hasData && plan.errorMessage == null) {
+      return const _ExecutionPlanEmptyState(
+        icon: Icons.account_tree_outlined,
+        label:
+            'Run a query to populate the execution plan with EXPLAIN results.',
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (plan.isLoading) const LinearProgressIndicator(minHeight: 2),
+        if (plan.errorMessage != null)
+          Container(
+            margin: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(10),
+            color: Theme.of(context).colorScheme.errorContainer,
+            child: Text(
+              plan.errorMessage!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+          ),
+        Expanded(
+          child: !plan.hasData
+              ? const _ExecutionPlanEmptyState(
+                  icon: Icons.report_gmailerrorred_outlined,
+                  label: 'No EXPLAIN rows were captured for this statement.',
+                )
+              : plan.columns.length == 1 &&
+                    plan.columns.first.toLowerCase() == 'query_plan'
+              ? ListView.separated(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: plan.rows.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final row = plan.rows[index];
+                    return Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerLowest,
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outlineVariant,
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          SizedBox(
+                            width: 34,
+                            child: Text(
+                              '${index + 1}',
+                              textAlign: TextAlign.right,
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    fontFamily: 'monospace',
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              formatCellValue(row[plan.columns.first]),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(fontFamily: 'monospace'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(12),
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    headingRowHeight: 36,
+                    dataRowMinHeight: 32,
+                    dataRowMaxHeight: 56,
+                    columns: <DataColumn>[
+                      for (final column in plan.columns)
+                        DataColumn(
+                          label: Text(
+                            column,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  fontFamily: 'monospace',
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ),
+                    ],
+                    rows: <DataRow>[
+                      for (final row in plan.rows)
+                        DataRow(
+                          cells: <DataCell>[
+                            for (final column in plan.columns)
+                              DataCell(
+                                Text(
+                                  formatCellValue(row[column]),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(fontFamily: 'monospace'),
+                                ),
+                              ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ExecutionPlanEmptyState extends StatelessWidget {
+  const _ExecutionPlanEmptyState({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Text(
-          'Execution plan visualizer is not implemented yet.\n'
-          'The pane remains docked so message history, grid interactions, and result workflows can be used without changing the layout.',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyMedium,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 24),
+            const SizedBox(height: 12),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
         ),
       ),
     );
