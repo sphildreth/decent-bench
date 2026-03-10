@@ -8,10 +8,9 @@ Decent Bench.
 - `pubspec.yaml`, `lib/`, `test/`, and `integration_test/` are present
 - the Phase 1 workspace controller, DecentDB bridge, and desktop UI are in
   place
-- desktop runner folders (`linux/`, `macos/`, `windows/`) still need to be
-  generated with the Flutter tool once Flutter is installed in the environment
+- desktop runner folders (`linux/`, `macos/`, `windows/`) are checked in
 
-## When Flutter is available
+## Validation
 
 From `apps/decent-bench/`:
 
@@ -23,7 +22,7 @@ flutter test
 flutter test integration_test
 ```
 
-The app expects the pinned DecentDB v1.6.0 native library to be available via:
+The app expects a compatible DecentDB v1.6.x native library to be available via:
 
 1. `DECENTDB_NATIVE_LIB`
 2. a bundled desktop runner path

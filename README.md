@@ -9,12 +9,11 @@ results**.
 
 ## Project status
 
-**Pre-alpha / docs-first.** This repository currently contains the product
-requirements, specification, ADRs, and an initial placeholder app directory.
-The Flutter app folder exists under `apps/decent-bench/`, but there is **not
-yet a runnable Flutter project scaffold**.
+**Pre-alpha / active implementation.** This repository contains the product
+requirements, specification, ADRs, and a runnable Phase 1 Flutter desktop
+scaffold under `apps/decent-bench/`.
 
-Current engine capability baseline: **DecentDB v1.6.0**.
+Current engine capability baseline: **DecentDB v1.6.x**.
 
 Current source-of-truth documents:
 
@@ -28,7 +27,7 @@ If you want to contribute right now, the highest-value work is usually:
 
 - tightening MVP requirements in `design/SPEC.md`
 - creating or refining ADRs in `design/adr/`
-- landing the first runnable Flutter + DecentDB scaffold
+- expanding the runnable Flutter + DecentDB scaffold into later phases
 - adding CI for `flutter analyze` and `flutter test`
 
 ## MVP at a glance
@@ -81,7 +80,7 @@ The current MVP is intentionally narrower than the long-term product vision.
 ## Repository layout
 
 ```text
-apps/decent-bench/              Flutter desktop app (placeholder today)
+apps/decent-bench/              Flutter desktop app
 design/                         Product docs (PRD, SPEC)
 design/adr/                     Architecture Decision Records
 design/IMPLEMENTATION_PHASES.md Delivery sequencing and milestones

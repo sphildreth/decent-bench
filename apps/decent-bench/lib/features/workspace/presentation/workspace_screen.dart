@@ -268,7 +268,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     return PanelCard(
       title: 'SQL Editor',
       subtitle:
-          'Phase 1 keeps one tab but executes the pinned DecentDB v1.6.0 SQL surface.',
+          'Phase 1 keeps one tab but executes the pinned DecentDB v1.6.x SQL surface.',
       actions: <Widget>[
         FilledButton.icon(
           onPressed: controller.canRunQuery

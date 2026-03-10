@@ -7,7 +7,7 @@
 schema, run the pinned DecentDB SQL surface, and export shaped results.
 **PRD reference:** `design/PRD.md`
 
-**Pinned engine capability baseline:** DecentDB v1.6.0
+**Pinned engine capability baseline:** DecentDB v1.6.x
 
 ---
 
@@ -340,7 +340,7 @@ bindings are:
 
 ### 5.4 Pinned SQL capability baseline
 
-The pinned DecentDB engine version (`v1.6.0`) and its official SQL reference are the
+The pinned DecentDB compatibility line (`v1.6.x`) and its official SQL reference are the
 normative source of truth for SQL capability in Decent Bench.
 
 For the pinned engine version, Decent Bench should preserve support for the
@@ -754,7 +754,7 @@ Integration tests:
 ### 13.1.1 Phase 1 representative engine smoke-test matrix
 
 The Phase 1 smoke suite should validate a representative slice of the pinned
-DecentDB `v1.6.0` SQL surface. It is not a full compatibility suite, but it
+DecentDB `v1.6.x` SQL surface. It is not a full compatibility suite, but it
 must cover each major engine category that the app intends to preserve.
 
 | Area | Representative operation | Minimum assertion |

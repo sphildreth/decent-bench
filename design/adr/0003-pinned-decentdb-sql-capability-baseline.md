@@ -4,10 +4,10 @@
 
 ### Decision
 
-Decent Bench treats the official SQL reference for the pinned DecentDB engine
-version as the normative SQL capability contract.
+Decent Bench treats the official SQL reference for the pinned DecentDB
+compatibility line as the normative SQL capability contract.
 
-Current project pin: **DecentDB v1.6.0**.
+Current project compatibility line: **DecentDB v1.6.x**.
 
 The app may phase dedicated UI affordances and schema-browser coverage over
 time, but it should not intentionally narrow the SQL surface below what the
@@ -21,8 +21,12 @@ pinned engine documents as supported. This applies in particular to:
   functions, transactions, `EXPLAIN`, `EXPLAIN ANALYZE`, table-valued
   functions, and positional parameters
 
-Any future engine-version upgrade must update this ADR, the PRD/SPEC wording,
-and the representative smoke-test matrix in the same change.
+Patch upgrades within `v1.6.x` do not require doc churn unless they change the
+documented capability surface, validation expectations, or packaging
+assumptions.
+
+Any future compatibility-line upgrade must update this ADR, the PRD/SPEC
+wording, and the representative smoke-test matrix in the same change.
 
 ### Rationale
 
@@ -49,8 +53,8 @@ SELECT-only workbench.
   than simple `SELECT` queries.
 - Dedicated UI coverage can still be phased, so the docs must distinguish
   between engine capability parity and when a feature gets first-class UI.
-- Future engine-version upgrades will require deliberate review of the upstream
-  SQL reference and corresponding doc/test updates.
+- Future compatibility-line upgrades will require deliberate review of the
+  upstream SQL reference and corresponding doc/test updates.
 
 ### References
 

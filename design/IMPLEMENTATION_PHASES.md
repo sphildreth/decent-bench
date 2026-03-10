@@ -34,8 +34,8 @@ to land the entire product in one step.
    - Each phase should produce demonstrable user value or architectural
      certainty.
 6. **Pinned engine surface is normative**
-   - The official SQL reference for the pinned DecentDB engine version
-     (`v1.6.0`) defines the SQL surface Decent Bench must preserve. Delivery
+   - The official SQL reference for the pinned DecentDB compatibility line
+     (`v1.6.x`) defines the SQL surface Decent Bench must preserve. Delivery
      phases may stage UI affordances, but they must not invent a narrower SQL
      dialect.
 
@@ -132,7 +132,7 @@ This phase proves the highest-risk architectural assumptions:
 
 ### Phase 1 representative engine smoke-test matrix
 
-Use the matrix in `design/SPEC.md` as the minimum representative `v1.6.0`
+Use the matrix in `design/SPEC.md` as the minimum representative `v1.6.x`
 engine-coverage gate for Phase 1.
 
 ### Exit criteria

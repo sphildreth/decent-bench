@@ -24,8 +24,17 @@ jobs:
       - name: Install Nim
         run: sudo apt-get update && sudo apt-get install --yes nim
 
-      - name: Check out DecentDB v1.6.0
-        run: git clone --depth 1 --branch v1.6.0 https://github.com/sphildreth/decentdb.git ../decentdb
+      - name: Resolve latest DecentDB v1.6.x tag
+        id: decentdb-tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(git ls-remote --tags --refs https://github.com/sphildreth/decentdb.git 'v1.6.*' | awk -F/ '{print $3}' | sort -V | tail -n 1)"
+          test -n "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Check out DecentDB ${{ steps.decentdb-tag.outputs.tag }}
+        run: git clone --depth 1 --branch "${{ steps.decentdb-tag.outputs.tag }}" https://github.com/sphildreth/decentdb.git ../decentdb
 
       - name: Build DecentDB native library
         working-directory: ../decentdb
