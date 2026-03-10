@@ -1,186 +1,172 @@
 # Decent Bench
 
-> The GUI for DecentDB — Because perfection is overrated.
+> The GUI for DecentDB.
 
 Decent Bench is a cross-platform desktop app (Flutter) for power users who need
-to **open DecentDB files**, **import data into DecentDB**, **inspect schema**,
-run the full **pinned DecentDB SQL reference surface**, and **export shaped
-results**.
+to work directly with **DecentDB**: open or create a database, inspect schema,
+run the full pinned DecentDB SQL surface, and export shaped results. The longer
+term product also includes drag-and-drop imports from common source formats.
 
 ## Project status
 
-**Pre-alpha / active implementation.** This repository contains the product
-requirements, specification, ADRs, and a runnable Phase 1 Flutter desktop
-scaffold under `apps/decent-bench/`.
+**Pre-alpha / active implementation.** Phase 1 is implemented and runnable
+under `apps/decent-bench/`.
 
 Current engine capability baseline: **DecentDB v1.6.x**.
 
-Current source-of-truth documents:
+### Implemented now (Phase 1)
 
-- Product requirements: `design/PRD.md`
-- Product specification: `design/SPEC.md`
-- Engineering plan: `design/IMPLEMENTATION_PHASES.md`
-- Architecture decisions: `design/adr/`
-- Repo workflow and constraints: `AGENTS.md`
+- open an existing DecentDB file or create a new one
+- inspect schema metadata loaded through the DecentDB adapter
+- run SQL in a single editor tab with positional parameters
+- page large result sets instead of materializing everything by default
+- best-effort query cancellation
+- export query results to CSV
+- persist recent files, default page size, and CSV defaults in TOML
+- run unit, smoke, and integration tests for the Phase 1 workflow
 
-If you want to contribute right now, the highest-value work is usually:
+### Not implemented yet
 
-- tightening MVP requirements in `design/SPEC.md`
-- creating or refining ADRs in `design/adr/`
-- expanding the runnable Flutter + DecentDB scaffold into later phases
-- adding CI for `flutter analyze` and `flutter test`
+- drag-and-drop open/import flow
+- Import Wizard
+- Excel, SQLite, and SQL dump imports
+- multi-tab SQL editing
+- autocomplete, snippets, and SQL formatting
+- JSON, Parquet, and Excel export
 
-## MVP at a glance
+For the full planned product scope, read:
 
-The current MVP is intentionally narrower than the long-term product vision.
+- [design/PRD.md](/home/steven/source/decent-bench/design/PRD.md)
+- [design/SPEC.md](/home/steven/source/decent-bench/design/SPEC.md)
+- [design/IMPLEMENTATION_PHASES.md](/home/steven/source/decent-bench/design/IMPLEMENTATION_PHASES.md)
 
-### MVP includes
+## Engine baseline
 
-- Drag-and-drop a file:
-  - DecentDB file → open immediately
-  - supported import source → open Import Wizard
-- Open/create a local DecentDB file
-- Import sources:
-  - Excel (`.xls`, `.xlsx`)
-  - SQLite (`.db`, `.sqlite`, `.sqlite3`)
-  - MariaDB/MySQL-style `.sql` dumps (**MVP-lite**)
-- Import transforms before commit:
-  - rename columns
-  - type overrides
-  - basic computed columns
-- Schema browser for the **pinned DecentDB feature surface required by MVP**
-- SQL editor with:
-  - multiple tabs
-  - per-tab results
-  - run/stop query
-  - execution aligned to the full pinned DecentDB SQL reference
-  - schema-aware autocomplete
-  - snippets
-  - deterministic formatter
-- Results grid backed by paging/streaming
-- Export query results to:
-  - CSV (**required MVP format**)
-- TOML configuration
-- ADR-driven architecture decisions from day one
-
-### Explicitly not MVP
-
-- Postgres custom-format backup import
-- External databases as first-class query targets
-- Collaboration or multi-user features
-- Full migration tooling
-- Multiple DecentDB workspaces open simultaneously
-
-### Planned after MVP
-
-- Additional export formats such as JSON, Parquet, and Excel
-- Additional import connectors
-- Richer workflow and workspace features
+- Decent Bench tracks the **DecentDB `v1.6.x` compatibility line**.
+- The official DecentDB SQL reference for that line is the normative SQL
+  contract for the app.
+- Patch upgrades inside `v1.6.x` do not require doc churn unless they change
+  capability surface, validation expectations, or packaging assumptions.
 
 ## Repository layout
 
 ```text
 apps/decent-bench/              Flutter desktop app
-design/                         Product docs (PRD, SPEC)
+.github/workflows/              CI workflows
+design/                         Product docs, roadmap, and ADRs
 design/adr/                     Architecture Decision Records
-design/IMPLEMENTATION_PHASES.md Delivery sequencing and milestones
 THIRD_PARTY_NOTICES.md          Third-party attribution tracking
 LICENSE                         Apache 2.0 license
 AGENTS.md                       Repo workflow and guardrails
 ```
 
-## Architecture direction
+## Source of truth
 
-At a high level, Decent Bench is expected to consist of:
+- Product requirements: [design/PRD.md](/home/steven/source/decent-bench/design/PRD.md)
+- Product specification: [design/SPEC.md](/home/steven/source/decent-bench/design/SPEC.md)
+- Delivery phases: [design/IMPLEMENTATION_PHASES.md](/home/steven/source/decent-bench/design/IMPLEMENTATION_PHASES.md)
+- ADR policy and decisions: [design/adr/README.md](/home/steven/source/decent-bench/design/adr/README.md)
+- Repo workflow and validation rules: [AGENTS.md](/home/steven/source/decent-bench/AGENTS.md)
 
-1. **Flutter desktop UI shell**
-2. **DecentDB integration via Dart FFI**
-3. **Import pipeline** for supported source formats
-4. **Results paging/streaming pipeline**
-5. **Export pipeline**
-6. **Config + secrets handling**
-7. **ADR-governed technical decisions**
-
-See:
-
-- `design/SPEC.md` for behavior and structure
-- `design/adr/0001-decentdb-flutter-binding-strategy.md`
-- `design/adr/0002-results-paging-and-streaming-contract.md`
-- `design/adr/0003-pinned-decentdb-sql-capability-baseline.md`
-
-## Onboarding for contributors
+## Developer onboarding
 
 ### Prerequisites
 
-- Flutter (stable) with desktop tooling enabled for your OS
 - Git
+- Flutter stable with desktop tooling enabled for your OS
+- the native toolchain required by Flutter desktop on your platform
+- Nim, for building the local DecentDB native library
+- a local DecentDB checkout placed as a sibling repo, or an equivalent update
+  to the path dependency in `apps/decent-bench/pubspec.yaml`
 
-> Note: until the Flutter scaffold lands in `apps/decent-bench/`, you will not
-> be able to run `flutter pub get`, `flutter analyze`, or `flutter test` in the
-> app directory.
+### Expected checkout layout
 
-### Read first
+The current Flutter app depends on the upstream Dart binding via a local path:
 
-1. `design/PRD.md` — what we are building and why
-2. `design/SPEC.md` — implementable behavior and scope
-3. `design/IMPLEMENTATION_PHASES.md` — sequencing and near-term milestones
-4. `AGENTS.md` — repo rules, especially performance and scope control
-
-### ADR workflow
-
-We require ADRs for lasting architectural or product-impacting choices.
-
-Typical ADR topics include:
-
-- DecentDB binding strategy
-- paging and streaming behavior
-- import type mapping rules
-- export library selection
-- credential storage strategy
-
-To create an ADR:
-
-1. Read `design/adr/README.md`
-2. Copy `design/adr/0000-template.md`
-3. Save the next numbered file in `design/adr/`
-
-## Development workflow
-
-Once the app scaffold exists, expected commands from `apps/decent-bench/` are:
-
-```bash
-flutter --version
-flutter doctor -v
-
-flutter pub get
-flutter analyze
-flutter test
-flutter test integration_test
-
-# Run on desktop (pick one)
-flutter run -d linux
-flutter run -d macos
-flutter run -d windows
+```text
+decent-bench/apps/decent-bench/pubspec.yaml -> ../../../decentdb/bindings/dart/dart
 ```
 
-## Contribution guidance
+The simplest layout is:
 
-Until the first runnable app scaffold is merged, contributions are especially
-welcome in:
+```text
+/path/to/source/decent-bench
+/path/to/source/decentdb
+```
 
-- clarifying MVP behavior in `design/SPEC.md`
-- aligning `design/PRD.md` and `design/SPEC.md`
-- writing and accepting ADRs
-- adding the initial Flutter project scaffold
-- adding CI that runs analysis and tests
+### Bootstrap
 
-When submitting changes:
+1. Build the DecentDB native library:
+
+```bash
+cd ../decentdb
+nimble build_lib
+```
+
+2. Install Flutter dependencies:
+
+```bash
+cd ../decent-bench/apps/decent-bench
+flutter pub get
+```
+
+### Validate
+
+From `apps/decent-bench/`:
+
+```bash
+flutter analyze
+DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter test
+DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter test integration_test
+```
+
+If `flutter` is not on `PATH`, use its full path instead.
+
+### Run locally
+
+From `apps/decent-bench/`, pick the desktop target you want:
+
+```bash
+DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter run -d linux
+DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter run -d macos
+DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter run -d windows
+```
+
+The app resolves the native DecentDB library in this order:
+
+1. `DECENTDB_NATIVE_LIB`
+2. a bundled desktop-runner location
+3. a sibling `../decentdb/build/` checkout discovered from the app working
+   directory
+
+If the sibling build is present and resolves correctly, you can omit
+`DECENTDB_NATIVE_LIB` when launching locally.
+
+### Local config file
+
+Phase 1 stores config as TOML at:
+
+- Linux: `~/.config/decent-bench/config.toml`
+- macOS: `~/Library/Application Support/Decent Bench/config.toml`
+- Windows: `%APPDATA%\Decent Bench\config.toml`
+
+### Contributing
+
+Read these before making non-trivial changes:
+
+1. [design/PRD.md](/home/steven/source/decent-bench/design/PRD.md)
+2. [design/SPEC.md](/home/steven/source/decent-bench/design/SPEC.md)
+3. [design/IMPLEMENTATION_PHASES.md](/home/steven/source/decent-bench/design/IMPLEMENTATION_PHASES.md)
+4. [AGENTS.md](/home/steven/source/decent-bench/AGENTS.md)
+
+Important repo expectations:
 
 - keep changes small and testable
-- avoid UI-thread-heavy work
+- keep heavy work off the UI thread
 - prefer paging/streaming over full materialization
-- do not add dependencies that are incompatible with Apache 2.0 distribution
-- update `THIRD_PARTY_NOTICES.md` when required
+- create an ADR for lasting architectural or product-impacting decisions
+- only add Apache-2.0-compatible dependencies
+- update `THIRD_PARTY_NOTICES.md` when required by a dependency license
 
 ## License
 
