@@ -6,12 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/fakes.dart';
 
 void main() {
-  testWidgets('renders the Phase 1 workspace shell', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('renders the Phase 2 workspace shell', (tester) async {
     final controller = WorkspaceController(
       gateway: FakeWorkspaceGateway(),
       configStore: InMemoryConfigStore(),
+      workspaceStateStore: InMemoryWorkspaceStateStore(),
     );
 
     tester.view.devicePixelRatio = 1;
@@ -22,14 +21,17 @@ void main() {
       controller.dispose();
     });
 
+    await controller.initialize();
     await tester.pumpWidget(
       DecentBenchApp(controller: controller, autoInitialize: false),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('Decent Bench'), findsOneWidget);
     expect(find.text('Workspace'), findsOneWidget);
     expect(find.text('Schema'), findsOneWidget);
-    expect(find.text('Run SQL'), findsOneWidget);
+    expect(find.text('SQL Workspace'), findsOneWidget);
+    expect(find.text('Results'), findsOneWidget);
+    expect(find.text('New Tab'), findsOneWidget);
   });
 }

@@ -9,28 +9,32 @@ term product also includes drag-and-drop imports from common source formats.
 
 ## Project status
 
-**Pre-alpha / active implementation.** Phase 1 is implemented and runnable
+**Pre-alpha / active implementation.** Phase 2 is implemented and runnable
 under `apps/decent-bench/`.
 
 Current engine capability baseline: **DecentDB v1.6.x**.
 
-### Implemented now (Phase 1)
+### Implemented now (Phase 2)
 
 - open an existing DecentDB file or create a new one
-- inspect schema metadata loaded through the DecentDB adapter
-- run SQL in a single editor tab with positional parameters
+- inspect schema metadata loaded through the DecentDB adapter for tables, views,
+  columns, indexes, and exposed constraint details
+- run SQL in multiple editor tabs with per-tab positional parameters
+- keep per-tab results, errors, and CSV export state isolated
+- restore query tabs when reopening the same DecentDB file
+- switch tabs and move between editor/results with keyboard shortcuts
 - page large result sets instead of materializing everything by default
 - best-effort query cancellation
 - export query results to CSV
 - persist recent files, default page size, and CSV defaults in TOML
-- run unit, smoke, and integration tests for the Phase 1 workflow
+- persist workspace tab drafts separately from global config
+- run unit, smoke, widget, and integration tests for the Phase 2 workflow
 
 ### Not implemented yet
 
 - drag-and-drop open/import flow
 - Import Wizard
 - Excel, SQLite, and SQL dump imports
-- multi-tab SQL editing
 - autocomplete, snippets, and SQL formatting
 - JSON, Parquet, and Excel export
 
@@ -142,13 +146,23 @@ The app resolves the native DecentDB library in this order:
 If the sibling build is present and resolves correctly, you can omit
 `DECENTDB_NATIVE_LIB` when launching locally.
 
-### Local config file
+### Local config and workspace state
 
-Phase 1 stores config as TOML at:
+Global config is stored as TOML at:
 
 - Linux: `~/.config/decent-bench/config.toml`
 - macOS: `~/Library/Application Support/Decent Bench/config.toml`
 - Windows: `%APPDATA%\Decent Bench\config.toml`
+
+Per-database workspace state is stored separately under:
+
+- Linux: `~/.config/decent-bench/workspaces/`
+- macOS: `~/Library/Application Support/Decent Bench/workspaces/`
+- Windows: `%APPDATA%\Decent Bench\workspaces\`
+
+That workspace-state store restores query tabs only when the same database is
+opened again. See
+[design/adr/0004-workspace-state-persistence.md](/home/steven/source/decent-bench/design/adr/0004-workspace-state-persistence.md).
 
 ### Contributing
 

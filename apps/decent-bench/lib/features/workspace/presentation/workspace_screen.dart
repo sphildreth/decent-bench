@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../shared/widgets/panel_card.dart';
 import '../application/workspace_controller.dart';
@@ -17,9 +18,9 @@ class WorkspaceScreen extends StatefulWidget {
 
 class _WorkspaceScreenState extends State<WorkspaceScreen> {
   late final TextEditingController _dbPathController = TextEditingController();
-  late final TextEditingController _sqlController = TextEditingController(
-    text: 'SELECT 1 AS ready;',
-  );
+  late final TextEditingController _schemaFilterController =
+      TextEditingController();
+  late final TextEditingController _sqlController = TextEditingController();
   late final TextEditingController _paramsController = TextEditingController();
   late final TextEditingController _pageSizeController =
       TextEditingController();
@@ -30,6 +31,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   late final ScrollController _resultsScrollController = ScrollController()
     ..addListener(_onResultsScroll);
   late final ScrollController _resultsHorizontalController = ScrollController();
+  late final FocusNode _sqlFocusNode = FocusNode(debugLabel: 'sql-editor');
+  late final FocusNode _resultsFocusNode = FocusNode(debugLabel: 'results');
+
+  String? _selectedSchemaObjectName;
+  String? _syncedTabId;
 
   @override
   void dispose() {
@@ -37,23 +43,30 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     _resultsScrollController
       ..removeListener(_onResultsScroll)
       ..dispose();
+    _resultsFocusNode.dispose();
+    _sqlFocusNode.dispose();
     _exportPathController.dispose();
     _delimiterController.dispose();
     _pageSizeController.dispose();
     _paramsController.dispose();
     _sqlController.dispose();
+    _schemaFilterController.dispose();
     _dbPathController.dispose();
     super.dispose();
   }
 
   void _onResultsScroll() {
     final controller = widget.controller;
-    if (!_resultsScrollController.hasClients || !controller.hasMoreRows) {
+    final tab = controller.tabById(controller.activeTabId);
+    if (tab == null ||
+        !_resultsScrollController.hasClients ||
+        !tab.hasMoreRows ||
+        tab.phase == QueryPhase.fetching) {
       return;
     }
     final threshold = _resultsScrollController.position.maxScrollExtent - 320;
     if (_resultsScrollController.position.pixels >= threshold) {
-      controller.fetchNextPage();
+      controller.fetchNextPage(tabId: tab.id);
     }
   }
 
@@ -62,42 +75,89 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     return AnimatedBuilder(
       animation: widget.controller,
       builder: (context, _) {
-        _syncFormFields(widget.controller);
-        return Scaffold(
-          body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: <Widget>[
-                  _Header(controller: widget.controller),
-                  const SizedBox(height: 20),
-                  Expanded(
-                    child: Row(
-                      children: <Widget>[
-                        SizedBox(
-                          width: 320,
-                          child: Column(
+        final controller = widget.controller;
+        _syncFormFields(controller);
+        final filteredObjects = controller.filterSchemaObjects(
+          _schemaFilterController.text,
+        );
+        final selectedObject = _selectedObjectFor(filteredObjects);
+
+        return Shortcuts(
+          shortcuts: const <ShortcutActivator, Intent>{
+            SingleActivator(LogicalKeyboardKey.enter, control: true):
+                _RunQueryIntent(),
+            SingleActivator(LogicalKeyboardKey.enter, meta: true):
+                _RunQueryIntent(),
+            SingleActivator(LogicalKeyboardKey.keyT, control: true):
+                _NewTabIntent(),
+            SingleActivator(LogicalKeyboardKey.keyT, meta: true):
+                _NewTabIntent(),
+            SingleActivator(LogicalKeyboardKey.tab, control: true):
+                _NextTabIntent(),
+            SingleActivator(LogicalKeyboardKey.tab, meta: true):
+                _NextTabIntent(),
+            SingleActivator(LogicalKeyboardKey.tab, control: true, shift: true):
+                _PreviousTabIntent(),
+            SingleActivator(LogicalKeyboardKey.tab, meta: true, shift: true):
+                _PreviousTabIntent(),
+          },
+          child: Actions(
+            actions: <Type, Action<Intent>>{
+              _RunQueryIntent: CallbackAction<_RunQueryIntent>(
+                onInvoke: (_) => controller.runActiveTab(),
+              ),
+              _NewTabIntent: CallbackAction<_NewTabIntent>(
+                onInvoke: (_) => controller.createTab(),
+              ),
+              _NextTabIntent: CallbackAction<_NextTabIntent>(
+                onInvoke: (_) => controller.nextTab(),
+              ),
+              _PreviousTabIntent: CallbackAction<_PreviousTabIntent>(
+                onInvoke: (_) => controller.previousTab(),
+              ),
+            },
+            child: Scaffold(
+              body: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: <Widget>[
+                      _Header(controller: controller),
+                      const SizedBox(height: 20),
+                      Expanded(
+                        child: _WorkspaceBody(
+                          sidebar: Column(
                             children: <Widget>[
-                              Expanded(flex: 4, child: _buildConnectionPane()),
+                              Expanded(child: _buildConnectionPane()),
                               const SizedBox(height: 16),
-                              Expanded(flex: 5, child: _buildSchemaPane()),
+                              Expanded(
+                                flex: 2,
+                                child: _buildSchemaPane(
+                                  controller: controller,
+                                  filteredObjects: filteredObjects,
+                                  selectedObject: selectedObject,
+                                ),
+                              ),
+                            ],
+                          ),
+                          workbench: Column(
+                            children: <Widget>[
+                              Expanded(
+                                flex: 4,
+                                child: _buildSqlPane(controller.activeTab),
+                              ),
+                              const SizedBox(height: 16),
+                              Expanded(
+                                flex: 5,
+                                child: _buildResultsPane(controller.activeTab),
+                              ),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            children: <Widget>[
-                              Expanded(flex: 4, child: _buildSqlPane()),
-                              const SizedBox(height: 16),
-                              Expanded(flex: 5, child: _buildResultsPane()),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -116,279 +176,552 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       actions: <Widget>[
         IconButton(
           tooltip: 'Reload schema',
-          onPressed: controller.hasOpenDatabase && !controller.isSchemaLoading
+          onPressed:
+              controller.hasOpenDatabase &&
+                  !controller.isSchemaLoading &&
+                  !controller.isOpeningDatabase
               ? controller.refreshSchema
               : null,
           icon: const Icon(Icons.refresh_rounded),
         ),
       ],
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          TextField(
-            controller: _dbPathController,
-            decoration: const InputDecoration(
-              labelText: 'Database path',
-              hintText: '/tmp/workbench.ddb',
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            TextField(
+              controller: _dbPathController,
+              decoration: const InputDecoration(
+                labelText: 'Database path',
+                hintText: '/tmp/workbench.ddb',
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: FilledButton.tonal(
-                  onPressed: controller.isBusy
-                      ? null
-                      : () => controller.openDatabase(
-                          _dbPathController.text,
-                          createIfMissing: false,
-                        ),
-                  child: const Text('Open Existing'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: controller.isBusy
-                      ? null
-                      : () => controller.openDatabase(
-                          _dbPathController.text,
-                          createIfMissing: true,
-                        ),
-                  child: const Text('Create New'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text('Recent files', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
-          Expanded(
-            child: controller.config.recentFiles.isEmpty
-                ? const _EmptyState(
-                    title: 'No recent files yet',
-                    message: 'The most recent DecentDB paths will appear here.',
-                  )
-                : ListView.separated(
-                    itemCount: controller.config.recentFiles.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final item = controller.config.recentFiles[index];
-                      return OutlinedButton(
-                        onPressed: controller.isBusy
-                            ? null
-                            : () {
-                                _dbPathController.text = item;
-                                controller.openDatabase(
-                                  item,
-                                  createIfMissing: false,
-                                );
-                              },
-                        style: OutlinedButton.styleFrom(
-                          alignment: Alignment.centerLeft,
-                          padding: const EdgeInsets.all(14),
-                        ),
-                        child: Text(
-                          item,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    },
+            const SizedBox(height: 12),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: FilledButton.tonal(
+                    onPressed: controller.isOpeningDatabase
+                        ? null
+                        : () => controller.openDatabase(
+                            _dbPathController.text,
+                            createIfMissing: false,
+                          ),
+                    child: const Text('Open Existing'),
                   ),
-          ),
-        ],
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: controller.isOpeningDatabase
+                        ? null
+                        : () => controller.openDatabase(
+                            _dbPathController.text,
+                            createIfMissing: true,
+                          ),
+                    child: const Text('Create New'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (controller.workspaceError != null) ...<Widget>[
+              _InlineBanner(
+                color: Theme.of(context).colorScheme.errorContainer,
+                icon: Icons.error_outline_rounded,
+                text: controller.workspaceError!,
+              ),
+              const SizedBox(height: 12),
+            ] else if (controller.workspaceMessage != null) ...<Widget>[
+              _InlineBanner(
+                color: Theme.of(context).colorScheme.secondaryContainer,
+                icon: Icons.info_outline_rounded,
+                text: controller.workspaceMessage!,
+              ),
+              const SizedBox(height: 12),
+            ],
+            Text('Recent files', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            if (controller.config.recentFiles.isEmpty)
+              const _CompactEmptyState(
+                title: 'No recent files yet',
+                message: 'The most recent DecentDB paths will appear here.',
+              )
+            else
+              Column(
+                children: <Widget>[
+                  for (final item in controller.config.recentFiles) ...<Widget>[
+                    OutlinedButton(
+                      onPressed: controller.isOpeningDatabase
+                          ? null
+                          : () {
+                              _dbPathController.text = item;
+                              controller.openDatabase(
+                                item,
+                                createIfMissing: false,
+                              );
+                            },
+                      style: OutlinedButton.styleFrom(
+                        alignment: Alignment.centerLeft,
+                        padding: const EdgeInsets.all(14),
+                      ),
+                      child: Text(
+                        item,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ],
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildSchemaPane() {
-    final controller = widget.controller;
+  Widget _buildSchemaPane({
+    required WorkspaceController controller,
+    required List<SchemaObjectSummary> filteredObjects,
+    required SchemaObjectSummary? selectedObject,
+  }) {
     return PanelCard(
       title: 'Schema',
       subtitle: controller.hasOpenDatabase
-          ? '${controller.schema.tables.length} tables, ${controller.schema.views.length} views'
-          : 'Tables and columns appear here after opening a database.',
+          ? '${controller.schema.tables.length} tables, ${controller.schema.views.length} views, ${controller.schema.indexes.length} indexes'
+          : 'Schema details appear after opening a database.',
       child: controller.isSchemaLoading
           ? const Center(child: CircularProgressIndicator())
-          : controller.schema.objects.isEmpty
-          ? const _EmptyState(
-              title: 'No schema loaded',
-              message:
-                  'Create a table or open an existing database to inspect columns.',
-            )
-          : ListView(
+          : Column(
               children: <Widget>[
-                for (final object in controller.schema.objects)
-                  ExpansionTile(
-                    leading: Icon(
-                      object.kind == SchemaObjectKind.table
-                          ? Icons.table_chart_rounded
-                          : Icons.visibility_rounded,
-                    ),
-                    title: Text(object.name),
-                    subtitle: Text(
-                      '${object.columns.length} columns'
-                      '${object.kind == SchemaObjectKind.view ? ' | view' : ''}',
-                    ),
-                    children: <Widget>[
-                      for (final column in object.columns)
-                        ListTile(
-                          dense: true,
-                          title: Text(column.name),
-                          subtitle: Text(column.descriptor),
+                TextField(
+                  controller: _schemaFilterController,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'Filter schema',
+                    hintText: 'tables, columns, indexes, constraints',
+                    prefixIcon: Icon(Icons.search_rounded),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: controller.schema.objects.isEmpty
+                      ? const _EmptyState(
+                          title: 'No schema loaded',
+                          message:
+                              'Create a table or open an existing database to inspect objects and indexes.',
+                        )
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            final splitVertical = constraints.maxWidth < 420;
+                            if (splitVertical) {
+                              return Column(
+                                children: <Widget>[
+                                  Expanded(
+                                    child: _buildSchemaObjectList(
+                                      filteredObjects,
+                                      selectedObject,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Expanded(
+                                    child: _buildSchemaDetails(
+                                      controller,
+                                      selectedObject,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
+                            return Row(
+                              children: <Widget>[
+                                SizedBox(
+                                  width: 200,
+                                  child: _buildSchemaObjectList(
+                                    filteredObjects,
+                                    selectedObject,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _buildSchemaDetails(
+                                    controller,
+                                    selectedObject,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
                         ),
-                    ],
-                  ),
-                if (controller.schema.indexes.isNotEmpty) ...<Widget>[
-                  const Divider(height: 28),
-                  Text(
-                    'Indexes',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 8),
-                  for (final index in controller.schema.indexes)
-                    ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.account_tree_rounded),
-                      title: Text(index.name),
-                      subtitle: Text(
-                        '${index.table} (${index.columns.join(", ")})'
-                        ' | ${index.kind}${index.unique ? " | UNIQUE" : ""}',
-                      ),
-                    ),
-                ],
+                ),
               ],
             ),
     );
   }
 
-  Widget _buildSqlPane() {
+  Widget _buildSchemaObjectList(
+    List<SchemaObjectSummary> filteredObjects,
+    SchemaObjectSummary? selectedObject,
+  ) {
+    if (filteredObjects.isEmpty) {
+      return const _CompactEmptyState(
+        title: 'Nothing matched',
+        message: 'Try a broader schema filter.',
+      );
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: ListView.separated(
+        itemCount: filteredObjects.length,
+        separatorBuilder: (_, _) => Divider(
+          height: 1,
+          color: Theme.of(context).colorScheme.outlineVariant,
+        ),
+        itemBuilder: (context, index) {
+          final object = filteredObjects[index];
+          final isSelected = object.name == selectedObject?.name;
+          return Material(
+            color: isSelected
+                ? Theme.of(context).colorScheme.secondaryContainer
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () {
+                setState(() {
+                  _selectedSchemaObjectName = object.name;
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      object.kind == SchemaObjectKind.table
+                          ? Icons.table_chart_rounded
+                          : Icons.visibility_rounded,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            object.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${object.columns.length} columns',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSchemaDetails(
+    WorkspaceController controller,
+    SchemaObjectSummary? object,
+  ) {
+    if (object == null) {
+      return const _CompactEmptyState(
+        title: 'Select an object',
+        message: 'Choose a table or view to inspect details.',
+      );
+    }
+
+    final relatedIndexes = controller.schema.indexesForObject(object.name);
+    final notes = controller.schemaNotesForObject(object);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(object.name, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                Chip(label: Text(object.kind.name)),
+                Chip(label: Text('${object.columns.length} columns')),
+                Chip(label: Text('${relatedIndexes.length} indexes')),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text('Columns', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            for (final column in object.columns) ...<Widget>[
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text(column.name),
+                subtitle: Text(column.descriptor),
+              ),
+              const Divider(height: 1),
+            ],
+            const SizedBox(height: 14),
+            Text('Constraints', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            if (object.exposedConstraintSummaries.isEmpty)
+              const Text('No exposed column-level constraints for this object.')
+            else
+              for (final constraint in object.exposedConstraintSummaries)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(constraint),
+                ),
+            const SizedBox(height: 14),
+            Text('Indexes', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            if (relatedIndexes.isEmpty)
+              const Text('No indexes associated with this object.')
+            else
+              for (final index in relatedIndexes)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    '${index.name}: ${index.kind}'
+                    '${index.unique ? ' | UNIQUE' : ''}'
+                    ' | (${index.columns.join(", ")})',
+                  ),
+                ),
+            if (object.ddl != null) ...<Widget>[
+              const SizedBox(height: 14),
+              Text('Definition', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: SelectableText(
+                    object.ddl!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontFamily: 'monospace',
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            Text(
+              'Adapter Notes',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            for (final note in notes)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(note, style: Theme.of(context).textTheme.bodySmall),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSqlPane(QueryTabState activeTab) {
     final controller = widget.controller;
     return PanelCard(
-      title: 'SQL Editor',
+      title: 'SQL Workspace',
       subtitle:
-          'Phase 1 keeps one tab but executes the pinned DecentDB v1.6.x SQL surface.',
+          'Phase 2 adds multi-tab editing, per-tab results ownership, and persisted tab drafts when reopening the same database.',
       actions: <Widget>[
         FilledButton.icon(
-          onPressed: controller.canRunQuery
-              ? () => controller.runSql(
-                  sql: _sqlController.text,
-                  parameterJson: _paramsController.text,
-                )
+          onPressed: controller.canRunActiveTab
+              ? controller.runActiveTab
               : null,
           icon: const Icon(Icons.play_arrow_rounded),
           label: const Text('Run SQL'),
         ),
         const SizedBox(width: 8),
         OutlinedButton.icon(
-          onPressed: controller.canCancelQuery
+          onPressed: controller.canCancelActiveTab
               ? controller.cancelActiveQuery
               : null,
           icon: const Icon(Icons.stop_rounded),
           label: const Text('Stop'),
         ),
       ],
-      child: Column(
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: TextField(
-                  controller: _paramsController,
-                  decoration: const InputDecoration(
-                    labelText: 'Parameters (JSON array)',
-                    hintText: '[1, "alice", true]',
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final editorHeight = math.max(180.0, constraints.maxHeight * 0.42);
+          return SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Column(
+                children: <Widget>[
+                  _buildTabStrip(controller, activeTab),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: TextField(
+                          controller: _paramsController,
+                          onChanged: controller.updateActiveParameterJson,
+                          decoration: const InputDecoration(
+                            labelText: 'Parameters (JSON array)',
+                            hintText: '[1, "alice", true]',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 120,
+                        child: TextField(
+                          controller: _pageSizeController,
+                          decoration: const InputDecoration(
+                            labelText: 'Page size',
+                          ),
+                          keyboardType: TextInputType.number,
+                          onSubmitted: controller.updateDefaultPageSize,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 120,
-                child: TextField(
-                  controller: _pageSizeController,
-                  decoration: const InputDecoration(labelText: 'Page size'),
-                  keyboardType: TextInputType.number,
-                  onSubmitted: controller.updateDefaultPageSize,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: TextField(
-              controller: _sqlController,
-              expands: true,
-              maxLines: null,
-              minLines: null,
-              textAlignVertical: TextAlignVertical.top,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontFamily: 'monospace',
-                height: 1.35,
-              ),
-              decoration: const InputDecoration(
-                alignLabelWithHint: true,
-                labelText: 'SQL',
-                hintText: 'SELECT 1 AS ready;',
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: <Widget>[
-                Chip(label: Text('State: ${controller.queryPhase.name}')),
-                if (controller.lastQueryElapsed != null)
-                  Chip(
-                    label: Text(
-                      'Elapsed: ${controller.lastQueryElapsed!.inMilliseconds} ms',
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: editorHeight,
+                    child: Focus(
+                      focusNode: _sqlFocusNode,
+                      onKeyEvent: _handleEditorKeyEvent,
+                      child: TextField(
+                        controller: _sqlController,
+                        onChanged: controller.updateActiveSql,
+                        expands: true,
+                        maxLines: null,
+                        minLines: null,
+                        textAlignVertical: TextAlignVertical.top,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontFamily: 'monospace',
+                          height: 1.35,
+                        ),
+                        decoration: const InputDecoration(
+                          alignLabelWithHint: true,
+                          labelText: 'SQL',
+                          hintText: 'SELECT 1 AS ready;',
+                        ),
+                      ),
                     ),
                   ),
-                if (controller.lastRowsAffected != null)
-                  Chip(
-                    label: Text(
-                      'Rows affected: ${controller.lastRowsAffected}',
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: <Widget>[
+                        Chip(label: Text('State: ${activeTab.phase.name}')),
+                        if (activeTab.elapsed != null)
+                          Chip(
+                            label: Text(
+                              'Elapsed: ${activeTab.elapsed!.inMilliseconds} ms',
+                            ),
+                          ),
+                        if (activeTab.rowsAffected != null)
+                          Chip(
+                            label: Text(
+                              'Rows affected: ${activeTab.rowsAffected}',
+                            ),
+                          ),
+                        Chip(
+                          label: Text(
+                            'Default page size: ${controller.config.defaultPageSize}',
+                          ),
+                        ),
+                        if (activeTab.isResultPartial)
+                          const Chip(label: Text('Partial results retained')),
+                      ],
                     ),
                   ),
-                Chip(
-                  label: Text(
-                    'Default page size: ${controller.config.defaultPageSize}',
-                  ),
-                ),
-              ],
+                  if (activeTab.statusMessage != null &&
+                      activeTab.error == null) ...<Widget>[
+                    const SizedBox(height: 12),
+                    _InlineBanner(
+                      color: Theme.of(context).colorScheme.secondaryContainer,
+                      icon: activeTab.phase == QueryPhase.cancelled
+                          ? Icons.warning_amber_rounded
+                          : Icons.info_outline_rounded,
+                      text: activeTab.statusMessage!,
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ),
-          if (controller.lastError != null) ...<Widget>[
-            const SizedBox(height: 12),
-            _InlineBanner(
-              color: Theme.of(context).colorScheme.errorContainer,
-              icon: Icons.error_outline_rounded,
-              text: controller.lastError!,
-            ),
-          ] else if (controller.lastStatus != null) ...<Widget>[
-            const SizedBox(height: 12),
-            _InlineBanner(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              icon: Icons.info_outline_rounded,
-              text: controller.lastStatus!,
-            ),
-          ],
-        ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildResultsPane() {
+  Widget _buildTabStrip(
+    WorkspaceController controller,
+    QueryTabState activeTab,
+  ) {
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: <Widget>[
+                for (final tab in controller.tabs) ...<Widget>[
+                  _QueryTabChip(
+                    tab: tab,
+                    isActive: tab.id == activeTab.id,
+                    onTap: () => controller.selectTab(tab.id),
+                    onClose: () => controller.closeTab(tab.id),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ],
+            ),
+          ),
+        ),
+        FilledButton.tonalIcon(
+          onPressed: controller.createTab,
+          icon: const Icon(Icons.add_rounded),
+          label: const Text('New Tab'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResultsPane(QueryTabState activeTab) {
     final controller = widget.controller;
     return PanelCard(
-      title: 'Paged Results',
-      subtitle: controller.resultColumns.isEmpty
-          ? 'Result sets and CSV export live here.'
-          : '${controller.resultRows.length} rows loaded'
-                '${controller.hasMoreRows ? ' | more rows available' : ''}',
+      title: 'Results',
+      subtitle: activeTab.resultColumns.isEmpty
+          ? 'Each query tab owns its own results, error state, and export controls.'
+          : '${activeTab.resultRows.length} rows loaded'
+                '${activeTab.hasMoreRows ? ' | more rows available' : ''}'
+                '${activeTab.isResultPartial ? ' | partial result' : ''}',
       child: Column(
         children: <Widget>[
           Row(
@@ -396,6 +729,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               Expanded(
                 child: TextField(
                   controller: _exportPathController,
+                  onChanged: controller.updateActiveExportPath,
                   decoration: const InputDecoration(
                     labelText: 'CSV export path',
                   ),
@@ -418,50 +752,76 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               ),
               const SizedBox(width: 12),
               FilledButton.tonalIcon(
-                onPressed: controller.isExporting
+                onPressed: activeTab.isExporting
                     ? null
-                    : () => controller.exportCurrentQuery(
-                        _exportPathController.text,
-                      ),
+                    : controller.exportCurrentQuery,
                 icon: const Icon(Icons.download_rounded),
                 label: Text(
-                  controller.isExporting ? 'Exporting...' : 'Export CSV',
+                  activeTab.isExporting ? 'Exporting...' : 'Export CSV',
                 ),
               ),
             ],
           ),
+          if (activeTab.error != null) ...<Widget>[
+            const SizedBox(height: 12),
+            _ErrorPanel(
+              error: activeTab.error!,
+              onCopyDetails: () => _copyActiveErrorDetails(activeTab),
+            ),
+          ],
           const SizedBox(height: 12),
           Expanded(
-            child: controller.resultColumns.isEmpty
-                ? _buildResultSummary(controller)
-                : _buildResultsTable(controller),
+            child: Focus(
+              focusNode: _resultsFocusNode,
+              onKeyEvent: _handleResultsKeyEvent,
+              child: activeTab.resultColumns.isEmpty
+                  ? _buildResultSummary(activeTab)
+                  : _buildResultsTable(activeTab),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildResultSummary(WorkspaceController controller) {
-    if (controller.lastRowsAffected != null) {
+  Widget _buildResultSummary(QueryTabState tab) {
+    if (tab.rowsAffected != null) {
       return Center(
         child: Text(
-          'Statement finished with ${controller.lastRowsAffected} affected rows.',
+          'Statement finished with ${tab.rowsAffected} affected rows.',
           style: Theme.of(context).textTheme.titleMedium,
         ),
       );
     }
-    return const _EmptyState(
-      title: 'No result set yet',
-      message:
-          'Run a SELECT, EXPLAIN, CTE, or other row-producing statement to page through results.',
-    );
+
+    final title = switch (tab.phase) {
+      QueryPhase.cancelled => 'Query cancelled',
+      QueryPhase.failed => 'Query failed',
+      QueryPhase.opening ||
+      QueryPhase.running ||
+      QueryPhase.fetching => 'Running query',
+      _ => 'No result set yet',
+    };
+    final message = switch (tab.phase) {
+      QueryPhase.cancelled =>
+        'Run the tab again or adjust the SQL. Partial rows remain visible only when at least one page arrived before cancellation.',
+      QueryPhase.failed =>
+        'Inspect the error details above or copy them for debugging.',
+      QueryPhase.opening ||
+      QueryPhase.running ||
+      QueryPhase.fetching => 'The first page has not completed yet.',
+      _ =>
+        'Run a SELECT, EXPLAIN, CTE, or other row-producing statement to page through results.',
+    };
+
+    return _EmptyState(title: title, message: message);
   }
 
-  Widget _buildResultsTable(WorkspaceController controller) {
+  Widget _buildResultsTable(QueryTabState tab) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final tableWidth = math
-            .max(constraints.maxWidth, controller.resultColumns.length * 220)
+            .max(constraints.maxWidth, tab.resultColumns.length * 220)
             .toDouble();
 
         return Scrollbar(
@@ -484,7 +844,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                     ),
                     child: Row(
                       children: <Widget>[
-                        for (final column in controller.resultColumns)
+                        for (final column in tab.resultColumns)
                           _ResultCell(
                             width: 220,
                             value: column,
@@ -501,17 +861,17 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                       child: ListView.builder(
                         controller: _resultsScrollController,
                         itemCount:
-                            controller.resultRows.length +
-                            (controller.hasMoreRows ? 1 : 0),
+                            tab.resultRows.length + (tab.hasMoreRows ? 1 : 0),
                         itemBuilder: (context, index) {
-                          if (index >= controller.resultRows.length) {
+                          if (index >= tab.resultRows.length) {
                             return Padding(
                               padding: const EdgeInsets.symmetric(vertical: 24),
                               child: Center(
-                                child: controller.isFetchingNextPage
+                                child: tab.phase == QueryPhase.fetching
                                     ? const CircularProgressIndicator()
                                     : OutlinedButton.icon(
-                                        onPressed: controller.fetchNextPage,
+                                        onPressed: () => widget.controller
+                                            .fetchNextPage(tabId: tab.id),
                                         icon: const Icon(
                                           Icons.expand_more_rounded,
                                         ),
@@ -521,7 +881,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                             );
                           }
 
-                          final row = controller.resultRows[index];
+                          final row = tab.resultRows[index];
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8),
                             child: DecoratedBox(
@@ -537,7 +897,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                               ),
                               child: Row(
                                 children: <Widget>[
-                                  for (final column in controller.resultColumns)
+                                  for (final column in tab.resultColumns)
                                     _ResultCell(
                                       width: 220,
                                       value: formatCellValue(row[column]),
@@ -559,19 +919,136 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
+  Future<void> _copyActiveErrorDetails(QueryTabState tab) async {
+    final details = widget.controller.errorDetailsForTab(tab.id);
+    if (details == null) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: details));
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Copied error details to the clipboard.')),
+    );
+  }
+
+  KeyEventResult _handleEditorKeyEvent(FocusNode node, KeyEvent event) {
+    if (_isPlainTabKey(event)) {
+      _resultsFocusNode.requestFocus();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  KeyEventResult _handleResultsKeyEvent(FocusNode node, KeyEvent event) {
+    if (_isPlainTabKey(event)) {
+      _sqlFocusNode.requestFocus();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  bool _isPlainTabKey(KeyEvent event) {
+    final keyboard = HardwareKeyboard.instance;
+    return event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.tab &&
+        !keyboard.isControlPressed &&
+        !keyboard.isMetaPressed &&
+        !keyboard.isAltPressed;
+  }
+
+  SchemaObjectSummary? _selectedObjectFor(
+    List<SchemaObjectSummary> filteredObjects,
+  ) {
+    if (filteredObjects.isEmpty) {
+      return null;
+    }
+    for (final object in filteredObjects) {
+      if (object.name == _selectedSchemaObjectName) {
+        return object;
+      }
+    }
+    return filteredObjects.first;
+  }
+
   void _syncFormFields(WorkspaceController controller) {
-    if (_dbPathController.text.isEmpty && controller.databasePath != null) {
+    if (controller.databasePath != null &&
+        _dbPathController.text != controller.databasePath) {
       _dbPathController.text = controller.databasePath!;
     }
-    if (_pageSizeController.text.isEmpty) {
-      _pageSizeController.text = controller.config.defaultPageSize.toString();
+
+    final pageSize = controller.config.defaultPageSize.toString();
+    if (_pageSizeController.text != pageSize) {
+      _pageSizeController.text = pageSize;
     }
-    if (_delimiterController.text.isEmpty) {
+    if (_delimiterController.text != controller.config.csvDelimiter) {
       _delimiterController.text = controller.config.csvDelimiter;
     }
-    if (_exportPathController.text.isEmpty) {
-      _exportPathController.text = controller.suggestExportPath();
+
+    final activeTab = controller.activeTab;
+    final tabChanged = _syncedTabId != activeTab.id;
+    if (tabChanged || _sqlController.text != activeTab.sql) {
+      _sqlController.value = TextEditingValue(
+        text: activeTab.sql,
+        selection: TextSelection.collapsed(offset: activeTab.sql.length),
+      );
     }
+    if (tabChanged || _paramsController.text != activeTab.parameterJson) {
+      _paramsController.value = TextEditingValue(
+        text: activeTab.parameterJson,
+        selection: TextSelection.collapsed(
+          offset: activeTab.parameterJson.length,
+        ),
+      );
+    }
+    if (tabChanged || _exportPathController.text != activeTab.exportPath) {
+      final exportPath = activeTab.exportPath.isEmpty
+          ? controller.suggestExportPath(activeTab.id)
+          : activeTab.exportPath;
+      _exportPathController.value = TextEditingValue(
+        text: exportPath,
+        selection: TextSelection.collapsed(offset: exportPath.length),
+      );
+    }
+    _syncedTabId = activeTab.id;
+  }
+}
+
+class _WorkspaceBody extends StatelessWidget {
+  const _WorkspaceBody({required this.sidebar, required this.workbench});
+
+  final Widget sidebar;
+  final Widget workbench;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 1180) {
+          return Column(
+            children: <Widget>[
+              SizedBox(
+                height: math.min(
+                  440,
+                  math.max(300, constraints.maxHeight * 0.42),
+                ),
+                child: sidebar,
+              ),
+              const SizedBox(height: 16),
+              Expanded(child: workbench),
+            ],
+          );
+        }
+        return Row(
+          children: <Widget>[
+            SizedBox(width: 360, child: sidebar),
+            const SizedBox(width: 16),
+            Expanded(child: workbench),
+          ],
+        );
+      },
+    );
   }
 }
 
@@ -606,7 +1083,7 @@ class _Header extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Phase 1 scaffold: open/create DecentDB, browse schema, run SQL, page results, cancel, export CSV.',
+                    'Phase 2 workspace: reopen a DecentDB file, restore query tabs, inspect richer schema details, and iterate between tabbed queries and paged results.',
                     style: theme.textTheme.bodyMedium,
                   ),
                 ],
@@ -614,7 +1091,7 @@ class _Header extends StatelessWidget {
             ),
             const SizedBox(width: 16),
             ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 360),
+              constraints: const BoxConstraints(maxWidth: 420),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -626,6 +1103,12 @@ class _Header extends StatelessWidget {
                   _HeaderFact(
                     label: 'Engine',
                     value: controller.engineVersion ?? 'No database open',
+                  ),
+                  const SizedBox(height: 8),
+                  _HeaderFact(
+                    label: 'Tabs',
+                    value:
+                        '${controller.tabs.length} total | ${controller.hasRunningTabs ? 'activity in progress' : 'idle'}',
                   ),
                 ],
               ),
@@ -710,6 +1193,76 @@ class _InlineBanner extends StatelessWidget {
   }
 }
 
+class _ErrorPanel extends StatelessWidget {
+  const _ErrorPanel({required this.error, required this.onCopyDetails});
+
+  final QueryErrorDetails error;
+  final VoidCallback onCopyDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(
+              Icons.error_outline_rounded,
+              color: theme.colorScheme.onErrorContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    '${error.stageLabel} error',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    error.message,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
+                  ),
+                  if (error.code != null) ...<Widget>[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Code: ${error.code}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: onCopyDetails,
+              icon: const Icon(Icons.copy_rounded),
+              label: const Text('Copy'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: theme.colorScheme.onErrorContainer,
+                side: BorderSide(color: theme.colorScheme.onErrorContainer),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.title, required this.message});
 
@@ -753,6 +1306,107 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+class _CompactEmptyState extends StatelessWidget {
+  const _CompactEmptyState({required this.title, required this.message});
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(title, style: theme.textTheme.titleSmall),
+          const SizedBox(height: 4),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QueryTabChip extends StatelessWidget {
+  const _QueryTabChip({
+    required this.tab,
+    required this.isActive,
+    required this.onTap,
+    required this.onClose,
+  });
+
+  final QueryTabState tab;
+  final bool isActive;
+  final VoidCallback onTap;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: isActive ? colors.primaryContainer : colors.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: _phaseColor(colors, tab.phase),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(tab.title, style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(width: 8),
+              Text(
+                tab.phase.name,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(width: 8),
+              InkWell(
+                onTap: onClose,
+                borderRadius: BorderRadius.circular(12),
+                child: const Padding(
+                  padding: EdgeInsets.all(2),
+                  child: Icon(Icons.close_rounded, size: 18),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _phaseColor(ColorScheme colors, QueryPhase phase) {
+    return switch (phase) {
+      QueryPhase.opening ||
+      QueryPhase.running ||
+      QueryPhase.fetching ||
+      QueryPhase.cancelling => colors.tertiary,
+      QueryPhase.completed => colors.primary,
+      QueryPhase.cancelled => colors.error,
+      QueryPhase.failed => colors.error,
+      QueryPhase.idle => colors.outline,
+    };
+  }
+}
+
 class _ResultCell extends StatelessWidget {
   const _ResultCell({
     required this.width,
@@ -784,4 +1438,20 @@ class _ResultCell extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RunQueryIntent extends Intent {
+  const _RunQueryIntent();
+}
+
+class _NewTabIntent extends Intent {
+  const _NewTabIntent();
+}
+
+class _NextTabIntent extends Intent {
+  const _NextTabIntent();
+}
+
+class _PreviousTabIntent extends Intent {
+  const _PreviousTabIntent();
 }

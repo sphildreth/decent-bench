@@ -497,6 +497,8 @@ List<Map<String, Object?>> _serializeColumns(List<ColumnInfo> columns) {
         'primaryKey': column.primaryKey,
         'refTable': column.refTable,
         'refColumn': column.refColumn,
+        'refOnDelete': column.refOnDelete,
+        'refOnUpdate': column.refOnUpdate,
       },
   ];
 }

@@ -19,10 +19,11 @@ Finder _fieldWithLabel(String label) {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('renders the phase 1 workspace shell', (tester) async {
+  testWidgets('renders the phase 2 workspace shell', (tester) async {
     final controller = WorkspaceController(
       gateway: FakeWorkspaceGateway(),
       configStore: InMemoryConfigStore(),
+      workspaceStateStore: InMemoryWorkspaceStateStore(),
     );
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1600, 1000);
@@ -40,73 +41,94 @@ void main() {
 
     expect(find.text('Decent Bench'), findsOneWidget);
     expect(find.text('Workspace'), findsOneWidget);
-    expect(find.text('SQL Editor'), findsOneWidget);
-    expect(find.text('Paged Results'), findsOneWidget);
-    expect(find.text('Run SQL'), findsOneWidget);
-    expect(find.text('Open Existing'), findsOneWidget);
+    expect(find.text('Schema'), findsOneWidget);
+    expect(find.text('SQL Workspace'), findsOneWidget);
+    expect(find.text('Results'), findsOneWidget);
+    expect(find.text('New Tab'), findsOneWidget);
   });
 
-  testWidgets(
-    'creates a workspace, runs a query, pages results, and exports CSV',
-    (tester) async {
-      final gateway = FakeWorkspaceGateway();
-      final controller = WorkspaceController(
-        gateway: gateway,
-        configStore: InMemoryConfigStore(),
-      );
-      final tempDir = await Directory.systemTemp.createTemp('decent-bench-it-');
-      final dbPath = p.join(tempDir.path, 'phase1.ddb');
-      final exportPath = p.join(tempDir.path, 'phase1.csv');
+  testWidgets('creates a workspace, uses multiple tabs, and exports CSV', (
+    tester,
+  ) async {
+    final gateway = FakeWorkspaceGateway();
+    final controller = WorkspaceController(
+      gateway: gateway,
+      configStore: InMemoryConfigStore(),
+      workspaceStateStore: InMemoryWorkspaceStateStore(),
+    );
+    final tempDir = await Directory.systemTemp.createTemp('decent-bench-it-');
+    final dbPath = p.join(tempDir.path, 'phase2.ddb');
+    final exportPath = p.join(tempDir.path, 'phase2.csv');
 
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(1600, 1000);
-      addTearDown(() async {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-        controller.dispose();
-        if (await tempDir.exists()) {
-          await tempDir.delete(recursive: true);
-        }
-      });
-      await controller.initialize();
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1600, 1000);
+    addTearDown(() async {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+      controller.dispose();
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+    await controller.initialize();
 
-      await tester.pumpWidget(
-        DecentBenchApp(controller: controller, autoInitialize: false),
-      );
-      await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      DecentBenchApp(controller: controller, autoInitialize: false),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.enterText(_fieldWithLabel('Database path'), dbPath);
-      await tester.tap(find.text('Create New'));
-      await tester.pumpAndSettle();
+    await tester.enterText(_fieldWithLabel('Database path'), dbPath);
+    final createNewButton = find.widgetWithText(FilledButton, 'Create New');
+    await tester.ensureVisible(createNewButton);
+    await tester.tap(createNewButton);
+    await tester.pumpAndSettle();
 
-      expect(find.text('tasks'), findsOneWidget);
+    expect(find.text('tasks'), findsWidgets);
+    expect(find.text('active_tasks'), findsWidgets);
 
-      await tester.tap(find.text('tasks'));
-      await tester.pumpAndSettle();
+    await tester.tap(find.text('active_tasks').first);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('CREATE VIEW active_tasks'), findsOneWidget);
 
-      expect(find.text('id'), findsOneWidget);
-      expect(find.text('title'), findsOneWidget);
+    await tester.enterText(
+      _fieldWithLabel('SQL'),
+      'SELECT id, title FROM tasks ORDER BY id',
+    );
+    final runSqlButton = find.widgetWithText(FilledButton, 'Run SQL');
+    await tester.ensureVisible(runSqlButton);
+    await tester.tap(runSqlButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Ship phase 1'), findsOneWidget);
 
-      await tester.enterText(
-        _fieldWithLabel('SQL'),
-        'SELECT id, title FROM tasks ORDER BY id',
-      );
-      await tester.tap(find.text('Run SQL'));
-      await tester.pumpAndSettle();
+    final newTabButton = find.widgetWithText(FilledButton, 'New Tab');
+    await tester.ensureVisible(newTabButton);
+    await tester.tap(newTabButton);
+    await tester.pumpAndSettle();
+    expect(find.text('Query 2'), findsOneWidget);
+    expect(controller.activeTab.title, 'Query 2');
 
-      expect(find.text('Ship phase 1'), findsOneWidget);
+    controller.updateActiveSql('SELECT id, name FROM projects ORDER BY id');
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(runSqlButton);
+    await tester.tap(runSqlButton);
+    await tester.pumpAndSettle();
+    expect(controller.activeTab.resultRows.single['name'], 'Phase 2');
 
-      await tester.tap(find.text('Load next page'));
-      await tester.pumpAndSettle();
+    await tester.tap(find.text('Query 1'));
+    await tester.pumpAndSettle();
+    expect(find.text('Ship phase 1'), findsOneWidget);
 
-      expect(find.text('Keep paging'), findsOneWidget);
+    await tester.tap(find.text('Load next page'));
+    await tester.pumpAndSettle();
+    expect(find.text('Keep paging'), findsOneWidget);
 
-      await tester.enterText(_fieldWithLabel('CSV export path'), exportPath);
-      await tester.tap(find.text('Export CSV'));
-      await tester.pumpAndSettle();
+    await tester.enterText(_fieldWithLabel('CSV export path'), exportPath);
+    final exportButton = find.widgetWithText(FilledButton, 'Export CSV');
+    await tester.ensureVisible(exportButton);
+    await tester.tap(exportButton);
+    await tester.pumpAndSettle();
 
-      expect(gateway.lastExportPath, exportPath);
-      expect(find.textContaining('Exported 2 rows to'), findsOneWidget);
-    },
-  );
+    expect(gateway.lastExportPath, exportPath);
+    expect(find.textContaining('Exported 2 rows to'), findsOneWidget);
+  });
 }

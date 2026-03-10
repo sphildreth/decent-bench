@@ -12,6 +12,8 @@ enum QueryPhase {
   failed,
 }
 
+enum QueryErrorStage { validation, opening, paging, cancellation, export }
+
 enum SchemaObjectKind { table, view }
 
 class BridgeFailure implements Exception {
@@ -24,11 +26,71 @@ class BridgeFailure implements Exception {
   String toString() => code == null ? message : '$code: $message';
 }
 
+class QueryErrorDetails {
+  const QueryErrorDetails({
+    required this.stage,
+    required this.message,
+    this.code,
+  });
+
+  final QueryErrorStage stage;
+  final String message;
+  final String? code;
+
+  factory QueryErrorDetails.fromError(
+    Object error, {
+    required QueryErrorStage stage,
+  }) {
+    if (error is QueryErrorDetails) {
+      return error;
+    }
+    if (error is BridgeFailure) {
+      return QueryErrorDetails(
+        stage: stage,
+        message: error.message,
+        code: error.code,
+      );
+    }
+    return QueryErrorDetails(stage: stage, message: error.toString());
+  }
+
+  String get stageLabel {
+    switch (stage) {
+      case QueryErrorStage.validation:
+        return 'Validation';
+      case QueryErrorStage.opening:
+        return 'Open';
+      case QueryErrorStage.paging:
+        return 'Paging';
+      case QueryErrorStage.cancellation:
+        return 'Cancellation';
+      case QueryErrorStage.export:
+        return 'Export';
+    }
+  }
+
+  String toClipboardText({String? sql}) {
+    final buffer = StringBuffer()
+      ..writeln('Stage: $stageLabel')
+      ..writeln('Message: $message');
+    if (code != null) {
+      buffer.writeln('Code: $code');
+    }
+    if (sql != null && sql.trim().isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('SQL:')
+        ..writeln(sql.trim());
+    }
+    return buffer.toString().trimRight();
+  }
+}
+
 class DatabaseSession {
+  const DatabaseSession({required this.path, required this.engineVersion});
+
   final String path;
   final String engineVersion;
-
-  const DatabaseSession({required this.path, required this.engineVersion});
 
   factory DatabaseSession.fromMap(Map<String, Object?> map) {
     return DatabaseSession(
@@ -39,14 +101,6 @@ class DatabaseSession {
 }
 
 class SchemaColumn {
-  final String name;
-  final String type;
-  final bool notNull;
-  final bool unique;
-  final bool primaryKey;
-  final String? refTable;
-  final String? refColumn;
-
   const SchemaColumn({
     required this.name,
     required this.type,
@@ -55,7 +109,19 @@ class SchemaColumn {
     required this.primaryKey,
     required this.refTable,
     required this.refColumn,
+    required this.refOnDelete,
+    required this.refOnUpdate,
   });
+
+  final String name;
+  final String type;
+  final bool notNull;
+  final bool unique;
+  final bool primaryKey;
+  final String? refTable;
+  final String? refColumn;
+  final String? refOnDelete;
+  final String? refOnUpdate;
 
   factory SchemaColumn.fromMap(Map<String, Object?> map) {
     return SchemaColumn(
@@ -66,32 +132,43 @@ class SchemaColumn {
       primaryKey: map['primaryKey']! as bool,
       refTable: map['refTable'] as String?,
       refColumn: map['refColumn'] as String?,
+      refOnDelete: map['refOnDelete'] as String?,
+      refOnUpdate: map['refOnUpdate'] as String?,
     );
   }
 
-  String get descriptor {
-    final flags = <String>[
-      if (primaryKey) 'PK',
+  bool get hasForeignKey => refTable != null && refColumn != null;
+
+  List<String> get constraintSummaries {
+    return <String>[
+      if (primaryKey) 'PRIMARY KEY',
       if (unique) 'UNIQUE',
       if (notNull) 'NOT NULL',
-      if (refTable != null && refColumn != null) 'FK->$refTable.$refColumn',
+      if (hasForeignKey)
+        'REFERENCES $refTable($refColumn)'
+            '${refOnDelete != null ? ' ON DELETE $refOnDelete' : ''}'
+            '${refOnUpdate != null ? ' ON UPDATE $refOnUpdate' : ''}',
     ];
+  }
+
+  String get descriptor {
+    final flags = constraintSummaries;
     return flags.isEmpty ? type : '$type | ${flags.join(" | ")}';
   }
 }
 
 class SchemaObjectSummary {
-  final String name;
-  final SchemaObjectKind kind;
-  final String? ddl;
-  final List<SchemaColumn> columns;
-
   const SchemaObjectSummary({
     required this.name,
     required this.kind,
     required this.columns,
     this.ddl,
   });
+
+  final String name;
+  final SchemaObjectKind kind;
+  final String? ddl;
+  final List<SchemaColumn> columns;
 
   factory SchemaObjectSummary.fromMap(Map<String, Object?> map) {
     return SchemaObjectSummary(
@@ -110,15 +187,17 @@ class SchemaObjectSummary {
           .toList(),
     );
   }
+
+  List<String> get exposedConstraintSummaries {
+    return <String>[
+      for (final column in columns)
+        for (final constraint in column.constraintSummaries)
+          '${column.name}: $constraint',
+    ];
+  }
 }
 
 class IndexSummary {
-  final String name;
-  final String table;
-  final List<String> columns;
-  final bool unique;
-  final String kind;
-
   const IndexSummary({
     required this.name,
     required this.table,
@@ -126,6 +205,12 @@ class IndexSummary {
     required this.unique,
     required this.kind,
   });
+
+  final String name;
+  final String table;
+  final List<String> columns;
+  final bool unique;
+  final String kind;
 
   factory IndexSummary.fromMap(Map<String, Object?> map) {
     return IndexSummary(
@@ -139,15 +224,15 @@ class IndexSummary {
 }
 
 class SchemaSnapshot {
-  final List<SchemaObjectSummary> objects;
-  final List<IndexSummary> indexes;
-  final DateTime loadedAt;
-
   const SchemaSnapshot({
     required this.objects,
     required this.indexes,
     required this.loadedAt,
   });
+
+  final List<SchemaObjectSummary> objects;
+  final List<IndexSummary> indexes;
+  final DateTime loadedAt;
 
   factory SchemaSnapshot.empty() {
     return SchemaSnapshot(
@@ -184,16 +269,22 @@ class SchemaSnapshot {
 
   List<SchemaObjectSummary> get views =>
       objects.where((item) => item.kind == SchemaObjectKind.view).toList();
+
+  SchemaObjectSummary? objectNamed(String name) {
+    for (final object in objects) {
+      if (object.name == name) {
+        return object;
+      }
+    }
+    return null;
+  }
+
+  List<IndexSummary> indexesForObject(String objectName) {
+    return indexes.where((index) => index.table == objectName).toList();
+  }
 }
 
 class QueryResultPage {
-  final String? cursorId;
-  final List<String> columns;
-  final List<Map<String, Object?>> rows;
-  final bool done;
-  final int? rowsAffected;
-  final Duration elapsed;
-
   const QueryResultPage({
     required this.cursorId,
     required this.columns,
@@ -202,6 +293,13 @@ class QueryResultPage {
     required this.rowsAffected,
     required this.elapsed,
   });
+
+  final String? cursorId;
+  final List<String> columns;
+  final List<Map<String, Object?>> rows;
+  final bool done;
+  final int? rowsAffected;
+  final Duration elapsed;
 
   factory QueryResultPage.fromMap(Map<String, Object?> map) {
     return QueryResultPage(
@@ -238,15 +336,150 @@ class QueryResultPage {
 }
 
 class CsvExportResult {
+  const CsvExportResult({required this.rowCount, required this.path});
+
   final int rowCount;
   final String path;
-
-  const CsvExportResult({required this.rowCount, required this.path});
 
   factory CsvExportResult.fromMap(Map<String, Object?> map) {
     return CsvExportResult(
       rowCount: map['rowCount']! as int,
       path: map['path']! as String,
+    );
+  }
+}
+
+class QueryTabState {
+  const QueryTabState({
+    required this.id,
+    required this.title,
+    required this.sql,
+    required this.parameterJson,
+    required this.exportPath,
+    required this.phase,
+    required this.resultColumns,
+    required this.resultRows,
+    required this.cursorId,
+    required this.error,
+    required this.statusMessage,
+    required this.lastSql,
+    required this.lastParams,
+    required this.rowsAffected,
+    required this.elapsed,
+    required this.hasMoreRows,
+    required this.isExporting,
+    required this.isResultPartial,
+    required this.executionGeneration,
+  });
+
+  static const Object _unset = Object();
+
+  final String id;
+  final String title;
+  final String sql;
+  final String parameterJson;
+  final String exportPath;
+  final QueryPhase phase;
+  final List<String> resultColumns;
+  final List<Map<String, Object?>> resultRows;
+  final String? cursorId;
+  final QueryErrorDetails? error;
+  final String? statusMessage;
+  final String? lastSql;
+  final List<Object?> lastParams;
+  final int? rowsAffected;
+  final Duration? elapsed;
+  final bool hasMoreRows;
+  final bool isExporting;
+  final bool isResultPartial;
+  final int executionGeneration;
+
+  factory QueryTabState.initial({
+    required String id,
+    required String title,
+    String sql = 'SELECT 1 AS ready;',
+    String parameterJson = '',
+    String exportPath = '',
+  }) {
+    return QueryTabState(
+      id: id,
+      title: title,
+      sql: sql,
+      parameterJson: parameterJson,
+      exportPath: exportPath,
+      phase: QueryPhase.idle,
+      resultColumns: const <String>[],
+      resultRows: const <Map<String, Object?>>[],
+      cursorId: null,
+      error: null,
+      statusMessage: null,
+      lastSql: null,
+      lastParams: const <Object?>[],
+      rowsAffected: null,
+      elapsed: null,
+      hasMoreRows: false,
+      isExporting: false,
+      isResultPartial: false,
+      executionGeneration: 0,
+    );
+  }
+
+  bool get canCancel =>
+      phase == QueryPhase.opening ||
+      phase == QueryPhase.running ||
+      phase == QueryPhase.fetching ||
+      phase == QueryPhase.cancelling;
+
+  bool get canExport =>
+      lastSql != null && resultColumns.isNotEmpty && !isExporting;
+
+  bool get hasResultData => resultColumns.isNotEmpty || rowsAffected != null;
+
+  QueryTabState copyWith({
+    String? id,
+    String? title,
+    String? sql,
+    String? parameterJson,
+    String? exportPath,
+    QueryPhase? phase,
+    List<String>? resultColumns,
+    List<Map<String, Object?>>? resultRows,
+    Object? cursorId = _unset,
+    Object? error = _unset,
+    Object? statusMessage = _unset,
+    Object? lastSql = _unset,
+    List<Object?>? lastParams,
+    Object? rowsAffected = _unset,
+    Object? elapsed = _unset,
+    bool? hasMoreRows,
+    bool? isExporting,
+    bool? isResultPartial,
+    int? executionGeneration,
+  }) {
+    return QueryTabState(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      sql: sql ?? this.sql,
+      parameterJson: parameterJson ?? this.parameterJson,
+      exportPath: exportPath ?? this.exportPath,
+      phase: phase ?? this.phase,
+      resultColumns: resultColumns ?? this.resultColumns,
+      resultRows: resultRows ?? this.resultRows,
+      cursorId: cursorId == _unset ? this.cursorId : cursorId as String?,
+      error: error == _unset ? this.error : error as QueryErrorDetails?,
+      statusMessage: statusMessage == _unset
+          ? this.statusMessage
+          : statusMessage as String?,
+      lastSql: lastSql == _unset ? this.lastSql : lastSql as String?,
+      lastParams: lastParams ?? this.lastParams,
+      rowsAffected: rowsAffected == _unset
+          ? this.rowsAffected
+          : rowsAffected as int?,
+      elapsed: elapsed == _unset ? this.elapsed : elapsed as Duration?,
+      hasMoreRows: hasMoreRows ?? this.hasMoreRows,
+      isExporting: isExporting ?? this.isExporting,
+      isResultPartial: isResultPartial ?? this.isResultPartial,
+      executionGeneration: executionGeneration ?? this.executionGeneration,
     );
   }
 }
