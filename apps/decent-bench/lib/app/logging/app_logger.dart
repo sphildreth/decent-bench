@@ -305,8 +305,14 @@ class DecentBenchLogger extends AppLogger {
     final gateway = _gatewayFactory();
     await gateway.initialize();
     await gateway.openDatabase(_logDatabasePath);
-    await gateway.runQuery(
-      sql: '''
+    final schema = await gateway.loadSchema();
+    final hasLogsTable = schema.tables.any((table) => table.name == 'app_logs');
+    final hasLoggedAtIndex = schema.indexes.any(
+      (index) => index.name == 'idx_app_logs_logged_at',
+    );
+    if (!hasLogsTable) {
+      await gateway.runQuery(
+        sql: '''
 CREATE TABLE IF NOT EXISTS app_logs (
   id INTEGER PRIMARY KEY,
   logged_at_utc TEXT NOT NULL,
@@ -323,17 +329,20 @@ CREATE TABLE IF NOT EXISTS app_logs (
   details_json TEXT
 );
 ''',
-      params: const <Object?>[],
-      pageSize: 1,
-    );
-    await gateway.runQuery(
-      sql: '''
+        params: const <Object?>[],
+        pageSize: 1,
+      );
+    }
+    if (!hasLoggedAtIndex) {
+      await gateway.runQuery(
+        sql: '''
 CREATE INDEX IF NOT EXISTS idx_app_logs_logged_at
 ON app_logs(logged_at_utc DESC);
 ''',
-      params: const <Object?>[],
-      pageSize: 1,
-    );
+        params: const <Object?>[],
+        pageSize: 1,
+      );
+    }
     _gateway = gateway;
     await _persistEntryWithGateway(
       gateway,

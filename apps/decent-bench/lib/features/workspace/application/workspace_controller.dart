@@ -3452,6 +3452,14 @@ class WorkspaceController extends ChangeNotifier {
   }
 
   _RestoredQueryReplay? _latestRestorableQuery() {
+    final latest = _latestCompletedQuery();
+    if (latest == null || !_canRestoreStartupQuery(latest.entry)) {
+      return null;
+    }
+    return latest;
+  }
+
+  _RestoredQueryReplay? _latestCompletedQuery() {
     _RestoredQueryReplay? latest;
     for (final tab in tabs) {
       for (final entry in tab.queryHistory) {
@@ -3466,6 +3474,26 @@ class WorkspaceController extends ChangeNotifier {
       }
     }
     return latest;
+  }
+
+  bool _canRestoreStartupQuery(QueryHistoryEntry entry) {
+    return entry.rowsAffected == null && _isStartupReplaySafeSql(entry.sql);
+  }
+
+  bool _isStartupReplaySafeSql(String sql) {
+    final keyword = _leadingSqlKeyword(sql);
+    return switch (keyword) {
+      'SELECT' || 'EXPLAIN' || 'PRAGMA' || 'VALUES' || 'WITH' => true,
+      _ => false,
+    };
+  }
+
+  String? _leadingSqlKeyword(String sql) {
+    final match = RegExp(
+      r'^(?:\s|--[^\r\n]*(?:\r?\n|$)|/\*[\s\S]*?\*/)*([A-Za-z]+)',
+      caseSensitive: false,
+    ).firstMatch(sql);
+    return match?.group(1)?.toUpperCase();
   }
 
   void _scheduleWorkspaceStateSave() {

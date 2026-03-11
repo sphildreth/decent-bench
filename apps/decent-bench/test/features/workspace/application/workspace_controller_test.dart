@@ -226,6 +226,82 @@ void main() {
   );
 
   test(
+    'initialize skips a newer non-restorable completed query and falls back to a preview query',
+    () async {
+      final dbPath =
+          '${Directory.systemTemp.path}/workbench-${DateTime.now().microsecondsSinceEpoch}.ddb';
+      final file = File(dbPath);
+      await file.parent.create(recursive: true);
+      await file.writeAsString('');
+
+      addTearDown(() async {
+        if (await file.exists()) {
+          await file.delete();
+        }
+      });
+
+      final workspaceStateStore = InMemoryWorkspaceStateStore();
+      await workspaceStateStore.save(
+        dbPath,
+        PersistedWorkspaceState(
+          schemaVersion: PersistedWorkspaceState.currentSchemaVersion,
+          activeTabId: 'query-tab-1',
+          tabs: <WorkspaceTabDraft>[
+            WorkspaceTabDraft(
+              id: 'query-tab-1',
+              title: 'Query 1',
+              sql: 'CREATE TABLE archived_tasks (id INTEGER);',
+              parameterJson: '',
+              exportPath: '',
+              queryHistory: <QueryHistoryEntry>[
+                QueryHistoryEntry(
+                  sql: 'SELECT id, title FROM tasks ORDER BY id',
+                  parameterJson: '',
+                  ranAt: DateTime(2026, 3, 10, 9, 30),
+                  outcome: QueryHistoryOutcome.completed,
+                  elapsed: const Duration(milliseconds: 12),
+                  rowsLoaded: 2,
+                  rowsAffected: null,
+                ),
+                QueryHistoryEntry(
+                  sql: 'CREATE TABLE archived_tasks (id INTEGER);',
+                  parameterJson: '',
+                  ranAt: DateTime(2026, 3, 10, 9, 31),
+                  outcome: QueryHistoryOutcome.completed,
+                  elapsed: const Duration(milliseconds: 3),
+                  rowsLoaded: 0,
+                  rowsAffected: 0,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+
+      final controller = WorkspaceController(
+        gateway: FakeWorkspaceGateway(),
+        configStore: InMemoryConfigStore(
+          AppConfig.defaults().copyWith(recentFiles: <String>[dbPath]),
+        ),
+        workspaceStateStore: workspaceStateStore,
+      );
+
+      await controller.initialize();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(controller.databasePath, dbPath);
+      expect(controller.activeTab.sql, startsWith('SELECT *'));
+      expect(controller.activeTab.sql, contains('FROM "tasks"'));
+      expect(
+        controller.activeTab.sql,
+        isNot('SELECT id, title FROM tasks ORDER BY id'),
+      );
+      expect(controller.activeTab.phase, QueryPhase.completed);
+      expect(controller.activeTab.resultRows.single['title'], 'Ship phase 1');
+    },
+  );
+
+  test(
     'initialize falls back to the sample shell when the last workspace is missing',
     () async {
       final missingPath =

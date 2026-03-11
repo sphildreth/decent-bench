@@ -84,12 +84,53 @@ void main() {
     expect(inserted.params[10], 987654321);
     expect((inserted.params[11] as String), contains('"tab_id":"query-tab-1"'));
   });
+
+  test('logger skips schema DDL when the log objects already exist', () async {
+    final gateway = _FakeLogGateway()
+      ..schema = SchemaSnapshot(
+        objects: <SchemaObjectSummary>[
+          const SchemaObjectSummary(
+            name: 'app_logs',
+            kind: SchemaObjectKind.table,
+            columns: <SchemaColumn>[],
+          ),
+        ],
+        indexes: const <IndexSummary>[
+          IndexSummary(
+            name: 'idx_app_logs_logged_at',
+            table: 'app_logs',
+            columns: <String>['logged_at_utc'],
+            unique: false,
+            kind: 'index',
+          ),
+        ],
+        loadedAt: DateTime.utc(2026, 3, 11),
+      );
+    final logger = DecentBenchLogger(
+      gatewayFactory: () => gateway,
+      logDatabasePath: '/tmp/decent-bench-log-test.ddb',
+    );
+    addTearDown(logger.dispose);
+
+    await logger.initialize();
+
+    expect(
+      gateway.executedSql.where((sql) => sql.contains('CREATE TABLE')),
+      isEmpty,
+    );
+    expect(
+      gateway.executedSql.where((sql) => sql.contains('CREATE INDEX')),
+      isEmpty,
+    );
+    expect(gateway.inserts, hasLength(1));
+  });
 }
 
 class _FakeLogGateway implements WorkspaceDatabaseGateway {
   final List<String> executedSql = <String>[];
   final List<_ExecutedInsert> inserts = <_ExecutedInsert>[];
   String? openedPath;
+  SchemaSnapshot schema = SchemaSnapshot.empty();
 
   @override
   String? get resolvedLibraryPath => '/tmp/libc_api.so';
@@ -170,7 +211,7 @@ class _FakeLogGateway implements WorkspaceDatabaseGateway {
 
   @override
   Future<SchemaSnapshot> loadSchema() async {
-    throw UnimplementedError();
+    return schema;
   }
 
   @override
