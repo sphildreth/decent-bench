@@ -115,7 +115,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   bool _didCheckNativeMenuAvailability = false;
   bool _didProcessStartupLaunchOptions = false;
   bool _pendingSqlEditorStateRebuild = false;
+  bool _pendingControllerSync = false;
   int _autocompleteSelectionIndex = 0;
+  String? _pendingSqlText;
+  String? _pendingParamsText;
   SqlExecutionTarget _lastSqlExecutionTarget = const SqlExecutionTarget(
     kind: SqlExecutionTargetKind.buffer,
     sql: '',
@@ -466,8 +469,24 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     WorkspaceController controller,
     QueryTabState activeTab,
   ) {
-    _syncTextController(_sqlController, activeTab.sql);
-    _syncTextController(_paramsController, activeTab.parameterJson);
+    _pendingSqlText = activeTab.sql;
+    _pendingParamsText = activeTab.parameterJson;
+    if (_pendingControllerSync) {
+      return;
+    }
+    if (_sqlController.text == activeTab.sql &&
+        _paramsController.text == activeTab.parameterJson) {
+      return;
+    }
+    _pendingControllerSync = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pendingControllerSync = false;
+      if (!mounted) {
+        return;
+      }
+      _syncTextController(_sqlController, _pendingSqlText ?? '');
+      _syncTextController(_paramsController, _pendingParamsText ?? '');
+    });
   }
 
   void _syncTextController(TextEditingController controller, String value) {

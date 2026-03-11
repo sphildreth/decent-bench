@@ -695,6 +695,10 @@ class WorkspaceController extends ChangeNotifier {
             ? 'Statement completed with ${page.rowsAffected} affected rows.'
             : 'Loaded ${page.rows.length} rows from the first page.';
         final explainsCurrentSql = _isExplainSql(trimmedSql);
+        final shouldLoadExecutionPlan = _shouldLoadExecutionPlan(
+          sql: trimmedSql,
+          page: page,
+        );
         final updated = _applyFirstPage(
           current,
           page,
@@ -708,7 +712,14 @@ class WorkspaceController extends ChangeNotifier {
                   isLoading: !page.done,
                 ),
               )
-            : updated;
+            : shouldLoadExecutionPlan
+            ? updated
+            : updated.copyWith(
+                executionPlan: const QueryExecutionPlanState.idle().copyWith(
+                  errorMessage:
+                      'Execution plan is only available for statements that return rows.',
+                ),
+              );
         final withMessage = withPlan.copyWith(
           messageHistory: _appendMessage(
             withPlan.messageHistory,
@@ -749,7 +760,7 @@ class WorkspaceController extends ChangeNotifier {
           ),
         );
       }, notify: false);
-      if (!_isExplainSql(trimmedSql)) {
+      if (_shouldLoadExecutionPlan(sql: trimmedSql, page: page)) {
         unawaited(
           _loadExecutionPlanForTab(
             tabId,
@@ -3016,6 +3027,13 @@ class WorkspaceController extends ChangeNotifier {
 
   bool _isExplainSql(String sql) {
     return RegExp(r'^\s*EXPLAIN\b', caseSensitive: false).hasMatch(sql);
+  }
+
+  bool _shouldLoadExecutionPlan({
+    required String sql,
+    required QueryResultPage page,
+  }) {
+    return !_isExplainSql(sql) && page.rowsAffected == null;
   }
 
   Future<void> _cancelAllOpenCursors() async {

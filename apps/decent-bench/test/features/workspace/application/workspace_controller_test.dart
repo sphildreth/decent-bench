@@ -390,6 +390,39 @@ void main() {
   });
 
   test(
+    'runTab skips execution plans for statements that do not return rows',
+    () async {
+      final dbPath =
+          '${Directory.systemTemp.path}/workbench-${DateTime.now().microsecondsSinceEpoch}.ddb';
+      final gateway = FakeWorkspaceGateway();
+      final controller = WorkspaceController(
+        gateway: gateway,
+        configStore: InMemoryConfigStore(),
+        workspaceStateStore: InMemoryWorkspaceStateStore(),
+      );
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+
+      controller.updateActiveSql(
+        'CREATE TABLE sample_items (id INTEGER PRIMARY KEY)',
+      );
+      await controller.runActiveTab();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        gateway.lastRunQuerySql,
+        'CREATE TABLE sample_items (id INTEGER PRIMARY KEY)',
+      );
+      expect(controller.activeTab.executionPlan.isLoading, isFalse);
+      expect(controller.activeTab.executionPlan.hasData, isFalse);
+      expect(
+        controller.activeTab.executionPlan.errorMessage,
+        'Execution plan is only available for statements that return rows.',
+      );
+    },
+  );
+
+  test(
     'runActiveSql executes selected SQL without overwriting the tab draft',
     () async {
       final dbPath =
