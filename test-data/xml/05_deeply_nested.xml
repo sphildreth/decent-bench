@@ -1,0 +1,82 @@
+<?xml version="1.0" ?>
+<company>
+  <name>TechCorp</name>
+  <departments>
+    <department id="D1">
+      <name>Dept 1</name>
+      <employees>
+        <employee id="E11">
+          <name>Emp 1 of Dept 1</name>
+          <projects>
+            <project id="P111">
+              <role>Contributor</role>
+            </project>
+            <project id="P112">
+              <role>Contributor</role>
+            </project>
+          </projects>
+        </employee>
+        <employee id="E12">
+          <name>Emp 2 of Dept 1</name>
+          <projects>
+            <project id="P121">
+              <role>Contributor</role>
+            </project>
+            <project id="P122">
+              <role>Contributor</role>
+            </project>
+          </projects>
+        </employee>
+        <employee id="E13">
+          <name>Emp 3 of Dept 1</name>
+          <projects>
+            <project id="P131">
+              <role>Contributor</role>
+            </project>
+            <project id="P132">
+              <role>Contributor</role>
+            </project>
+          </projects>
+        </employee>
+      </employees>
+    </department>
+    <department id="D2">
+      <name>Dept 2</name>
+      <employees>
+        <employee id="E21">
+          <name>Emp 1 of Dept 2</name>
+          <projects>
+            <project id="P211">
+              <role>Contributor</role>
+            </project>
+            <project id="P212">
+              <role>Contributor</role>
+            </project>
+          </projects>
+        </employee>
+        <employee id="E22">
+          <name>Emp 2 of Dept 2</name>
+          <projects>
+            <project id="P221">
+              <role>Contributor</role>
+            </project>
+            <project id="P222">
+              <role>Contributor</role>
+            </project>
+          </projects>
+        </employee>
+        <employee id="E23">
+          <name>Emp 3 of Dept 2</name>
+          <projects>
+            <project id="P231">
+              <role>Contributor</role>
+            </project>
+            <project id="P232">
+              <role>Contributor</role>
+            </project>
+          </projects>
+        </employee>
+      </employees>
+    </department>
+  </departments>
+</company>

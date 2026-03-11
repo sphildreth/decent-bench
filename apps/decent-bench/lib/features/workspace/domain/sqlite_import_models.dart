@@ -26,18 +26,24 @@ class SqliteImportForeignKey {
   const SqliteImportForeignKey({
     required this.fromColumn,
     required this.toTable,
-    required this.toColumn,
+    this.toColumn,
+    this.onDelete,
+    this.onUpdate,
   });
 
   final String fromColumn;
   final String toTable;
-  final String toColumn;
+  final String? toColumn;
+  final String? onDelete;
+  final String? onUpdate;
 
   Map<String, Object?> toMap() {
     return <String, Object?>{
       'fromColumn': fromColumn,
       'toTable': toTable,
       'toColumn': toColumn,
+      'onDelete': onDelete,
+      'onUpdate': onUpdate,
     };
   }
 
@@ -45,7 +51,9 @@ class SqliteImportForeignKey {
     return SqliteImportForeignKey(
       fromColumn: map['fromColumn']! as String,
       toTable: map['toTable']! as String,
-      toColumn: map['toColumn']! as String,
+      toColumn: map['toColumn'] as String?,
+      onDelete: map['onDelete'] as String?,
+      onUpdate: map['onUpdate'] as String?,
     );
   }
 }
@@ -53,23 +61,59 @@ class SqliteImportForeignKey {
 class SqliteImportIndex {
   const SqliteImportIndex({
     required this.name,
-    required this.column,
+    String? column,
+    List<String>? elements,
     required this.unique,
-  });
+    this.whereSql,
+  }) : elements =
+           elements ?? (column == null ? const <String>[] : <String>[column]);
 
   final String name;
-  final String column;
+  final List<String> elements;
   final bool unique;
+  final String? whereSql;
+
+  String? get column => elements.isEmpty ? null : elements.first;
+  bool get isComposite => elements.length > 1;
+  bool get isPartial => whereSql != null && whereSql!.trim().isNotEmpty;
 
   Map<String, Object?> toMap() {
-    return <String, Object?>{'name': name, 'column': column, 'unique': unique};
+    return <String, Object?>{
+      'name': name,
+      'column': column,
+      'elements': elements,
+      'unique': unique,
+      'whereSql': whereSql,
+    };
   }
 
   factory SqliteImportIndex.fromMap(Map<String, Object?> map) {
+    final storedElements = ((map['elements'] as List?) ?? const <Object?>[])
+        .cast<String>();
     return SqliteImportIndex(
       name: map['name']! as String,
-      column: map['column']! as String,
+      column: storedElements.isEmpty ? map['column'] as String? : null,
+      elements: storedElements.isEmpty ? null : storedElements,
       unique: map['unique']! as bool,
+      whereSql: map['whereSql'] as String?,
+    );
+  }
+}
+
+class SqliteImportCheckConstraint {
+  const SqliteImportCheckConstraint({required this.exprSql, this.name});
+
+  final String exprSql;
+  final String? name;
+
+  Map<String, Object?> toMap() {
+    return <String, Object?>{'exprSql': exprSql, 'name': name};
+  }
+
+  factory SqliteImportCheckConstraint.fromMap(Map<String, Object?> map) {
+    return SqliteImportCheckConstraint(
+      exprSql: (map['exprSql'] ?? map['sql'])! as String,
+      name: map['name'] as String?,
     );
   }
 }
@@ -112,6 +156,10 @@ class SqliteImportColumnDraft {
     required this.notNull,
     required this.primaryKey,
     required this.unique,
+    this.defaultExpr,
+    this.generatedExpr,
+    this.generatedStored = false,
+    this.generatedVirtual = false,
   });
 
   final String sourceName;
@@ -122,6 +170,13 @@ class SqliteImportColumnDraft {
   final bool notNull;
   final bool primaryKey;
   final bool unique;
+  final String? defaultExpr;
+  final String? generatedExpr;
+  final bool generatedStored;
+  final bool generatedVirtual;
+
+  bool get hasDefault => defaultExpr != null && defaultExpr!.trim().isNotEmpty;
+  bool get isGenerated => generatedStored || generatedVirtual;
 
   SqliteImportColumnDraft copyWith({
     String? sourceName,
@@ -132,6 +187,10 @@ class SqliteImportColumnDraft {
     bool? notNull,
     bool? primaryKey,
     bool? unique,
+    Object? defaultExpr = _unset,
+    Object? generatedExpr = _unset,
+    bool? generatedStored,
+    bool? generatedVirtual,
   }) {
     return SqliteImportColumnDraft(
       sourceName: sourceName ?? this.sourceName,
@@ -142,6 +201,14 @@ class SqliteImportColumnDraft {
       notNull: notNull ?? this.notNull,
       primaryKey: primaryKey ?? this.primaryKey,
       unique: unique ?? this.unique,
+      defaultExpr: defaultExpr == _unset
+          ? this.defaultExpr
+          : defaultExpr as String?,
+      generatedExpr: generatedExpr == _unset
+          ? this.generatedExpr
+          : generatedExpr as String?,
+      generatedStored: generatedStored ?? this.generatedStored,
+      generatedVirtual: generatedVirtual ?? this.generatedVirtual,
     );
   }
 
@@ -155,6 +222,10 @@ class SqliteImportColumnDraft {
       'notNull': notNull,
       'primaryKey': primaryKey,
       'unique': unique,
+      'defaultExpr': defaultExpr,
+      'generatedExpr': generatedExpr,
+      'generatedStored': generatedStored,
+      'generatedVirtual': generatedVirtual,
     };
   }
 
@@ -168,6 +239,10 @@ class SqliteImportColumnDraft {
       notNull: map['notNull']! as bool,
       primaryKey: map['primaryKey']! as bool,
       unique: map['unique']! as bool,
+      defaultExpr: map['defaultExpr'] as String?,
+      generatedExpr: map['generatedExpr'] as String?,
+      generatedStored: map['generatedStored'] as bool? ?? false,
+      generatedVirtual: map['generatedVirtual'] as bool? ?? false,
     );
   }
 }
@@ -182,6 +257,7 @@ class SqliteImportTableDraft {
     required this.withoutRowId,
     required this.columns,
     required this.foreignKeys,
+    this.checks = const <SqliteImportCheckConstraint>[],
     required this.indexes,
     required this.skippedItems,
     required this.previewRows,
@@ -197,6 +273,7 @@ class SqliteImportTableDraft {
   final bool withoutRowId;
   final List<SqliteImportColumnDraft> columns;
   final List<SqliteImportForeignKey> foreignKeys;
+  final List<SqliteImportCheckConstraint> checks;
   final List<SqliteImportIndex> indexes;
   final List<SqliteImportSkippedItem> skippedItems;
   final List<Map<String, Object?>> previewRows;
@@ -218,6 +295,7 @@ class SqliteImportTableDraft {
     bool? withoutRowId,
     List<SqliteImportColumnDraft>? columns,
     List<SqliteImportForeignKey>? foreignKeys,
+    List<SqliteImportCheckConstraint>? checks,
     List<SqliteImportIndex>? indexes,
     List<SqliteImportSkippedItem>? skippedItems,
     List<Map<String, Object?>>? previewRows,
@@ -233,6 +311,7 @@ class SqliteImportTableDraft {
       withoutRowId: withoutRowId ?? this.withoutRowId,
       columns: columns ?? this.columns,
       foreignKeys: foreignKeys ?? this.foreignKeys,
+      checks: checks ?? this.checks,
       indexes: indexes ?? this.indexes,
       skippedItems: skippedItems ?? this.skippedItems,
       previewRows: previewRows ?? this.previewRows,
@@ -256,6 +335,9 @@ class SqliteImportTableDraft {
       ],
       'foreignKeys': <Map<String, Object?>>[
         for (final foreignKey in foreignKeys) foreignKey.toMap(),
+      ],
+      'checks': <Map<String, Object?>>[
+        for (final check in checks) check.toMap(),
       ],
       'indexes': <Map<String, Object?>>[
         for (final index in indexes) index.toMap(),
@@ -290,6 +372,14 @@ class SqliteImportTableDraft {
           .map(
             (foreignKey) => SqliteImportForeignKey.fromMap(
               foreignKey.map((key, value) => MapEntry(key as String, value)),
+            ),
+          )
+          .toList(),
+      checks: ((map['checks'] as List?) ?? const <Object?>[])
+          .cast<Map<Object?, Object?>>()
+          .map(
+            (check) => SqliteImportCheckConstraint.fromMap(
+              check.map((key, value) => MapEntry(key as String, value)),
             ),
           )
           .toList(),

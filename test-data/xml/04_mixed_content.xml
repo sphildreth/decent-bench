@@ -1,0 +1,10 @@
+<?xml version="1.0" ?>
+<document>
+  <p>
+    This is a 
+    <b>bold</b>
+     word and a 
+    <a href="http://example.com">link</a>
+    .
+  </p>
+</document>

@@ -1,0 +1,46 @@
+{
+  "company": "TechCorp",
+  "departments": [
+    {
+      "id": "D1",
+      "name": "Engineering",
+      "employees": [
+        {
+          "id": "E1",
+          "name": "Eve",
+          "projects": [
+            {
+              "id": "P1",
+              "role": "Lead"
+            },
+            {
+              "id": "P2",
+              "role": "Contributor"
+            }
+          ]
+        },
+        {
+          "id": "E2",
+          "name": "Frank",
+          "projects": [
+            {
+              "id": "P1",
+              "role": "Contributor"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D2",
+      "name": "Sales",
+      "employees": [
+        {
+          "id": "E3",
+          "name": "Grace",
+          "projects": []
+        }
+      ]
+    }
+  ]
+}

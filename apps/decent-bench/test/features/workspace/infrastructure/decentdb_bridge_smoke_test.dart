@@ -158,6 +158,34 @@ CREATE TABLE blob_samples (
       return sourcePath;
     }
 
+    String createSqliteImplicitFkSource(String filename) {
+      final sourcePath = p.join(tempDir.path, filename);
+      final source = sqlite.sqlite3.open(sourcePath);
+      try {
+        source.execute('PRAGMA foreign_keys = ON;');
+        source.execute('''
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL
+)
+''');
+        source.execute('''
+CREATE TABLE playlists (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users,
+  name TEXT NOT NULL
+)
+''');
+        source.execute("INSERT INTO users VALUES ('u1', 'Ada')");
+        source.execute(
+          "INSERT INTO playlists VALUES ('p1', 'u1', 'Favorites')",
+        );
+      } finally {
+        source.close();
+      }
+      return sourcePath;
+    }
+
     String createExcelSource(String filename) {
       final sourcePath = p.join(tempDir.path, filename);
       final workbook = xls.Excel.createExcel();
@@ -882,6 +910,61 @@ ORDER BY n.id
           ),
           isTrue,
         );
+      },
+    );
+
+    test(
+      'inspects and imports SQLite foreign keys that omit the parent column',
+      skip: skipReason,
+      () async {
+        final sourcePath = createSqliteImplicitFkSource(
+          'phase4-implicit-fk.sqlite',
+        );
+        final inspection = await bridge.inspectSqliteSource(
+          sourcePath: sourcePath,
+        );
+        final playlists = inspection.tables.firstWhere(
+          (table) => table.sourceName == 'playlists',
+        );
+
+        expect(playlists.foreignKeys, hasLength(1));
+        expect(playlists.foreignKeys.single.toTable, 'users');
+        expect(playlists.foreignKeys.single.toColumn, 'id');
+
+        final targetPath = p.join(tempDir.path, 'phase4-implicit-fk.ddb');
+        final updates = await bridge
+            .importSqlite(
+              request: SqliteImportRequest(
+                jobId: 'implicit-fk-import',
+                sourcePath: sourcePath,
+                targetPath: targetPath,
+                importIntoExistingTarget: false,
+                replaceExistingTarget: true,
+                tables: inspection.tables,
+              ),
+            )
+            .toList();
+        final terminal = updates.last;
+
+        expect(terminal.kind, SqliteImportUpdateKind.completed);
+
+        await bridge.openDatabase(targetPath);
+        final schema = await bridge.loadSchema();
+        final playlistTable = schema.objectNamed('playlists');
+        final ownerColumn = playlistTable!.columns.firstWhere(
+          (column) => column.name == 'owner_id',
+        );
+
+        expect(ownerColumn.refTable, 'users');
+        expect(ownerColumn.refColumn, 'id');
+
+        final rows = await queryAllRows('''
+SELECT p.name, u.name AS owner_name
+FROM playlists AS p
+JOIN users AS u ON u.id = p.owner_id
+''');
+        expect(rows.single['name'], 'Favorites');
+        expect(rows.single['owner_name'], 'Ada');
       },
     );
 

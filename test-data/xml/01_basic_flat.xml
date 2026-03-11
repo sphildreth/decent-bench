@@ -1,0 +1,18 @@
+<?xml version="1.0" ?>
+<employees>
+  <employee>
+    <id>1</id>
+    <name>User 1</name>
+    <role>Developer</role>
+  </employee>
+  <employee>
+    <id>2</id>
+    <name>User 2</name>
+    <role>Developer</role>
+  </employee>
+  <employee>
+    <id>3</id>
+    <name>User 3</name>
+    <role>Developer</role>
+  </employee>
+</employees>

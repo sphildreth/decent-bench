@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "user": {
+      "firstName": "John",
+      "lastName": "Doe"
+    },
+    "address": {
+      "city": "New York",
+      "zip": "10001",
+      "coords": {
+        "lat": 40.71,
+        "lng": -74.0
+      }
+    }
+  },
+  {
+    "id": 2,
+    "user": {
+      "firstName": "Jane",
+      "lastName": "Smith"
+    },
+    "address": {
+      "city": "Los Angeles",
+      "zip": "90001",
+      "coords": {
+        "lat": 34.05,
+        "lng": -118.24
+      }
+    }
+  }
+]

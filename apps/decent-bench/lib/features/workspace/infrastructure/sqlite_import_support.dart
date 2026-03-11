@@ -22,7 +22,10 @@ SqliteImportInspection inspectSqliteSourceFile(String sourcePath) {
     throw BridgeFailure('SQLite source file does not exist: $sourcePath');
   }
 
-  final database = sqlite.sqlite3.open(sourcePath);
+  final database = sqlite.sqlite3.open(
+    sourcePath,
+    mode: sqlite.OpenMode.readOnly,
+  );
   try {
     database.execute('PRAGMA foreign_keys = ON;');
     final tables = <SqliteImportTableDraft>[];
@@ -72,7 +75,10 @@ SqliteImportPreview loadSqlitePreview(
     throw BridgeFailure('SQLite source file does not exist: $sourcePath');
   }
 
-  final database = sqlite.sqlite3.open(sourcePath);
+  final database = sqlite.sqlite3.open(
+    sourcePath,
+    mode: sqlite.OpenMode.readOnly,
+  );
   try {
     final quotedTable = _quoteSqliteIdent(tableName);
     final rows = database.select('SELECT * FROM $quotedTable LIMIT $limit');
@@ -188,7 +194,10 @@ Future<SqliteImportSummary> _runSqliteImport({
     }
   }
 
-  final source = sqlite.sqlite3.open(request.sourcePath);
+  final source = sqlite.sqlite3.open(
+    request.sourcePath,
+    mode: sqlite.OpenMode.readOnly,
+  );
   final target = Database.open(request.targetPath, libraryPath: libraryPath);
   var transactionOpen = false;
   final rowsCopied = <String, int>{};
@@ -486,11 +495,14 @@ SqliteImportTableDraft _inspectTable(
     'PRAGMA foreign_key_list(${_quoteSqliteIdent(tableName)})',
   );
   for (final row in foreignKeyRows) {
+    final toTable = row['table']! as String;
     foreignKeys.add(
       SqliteImportForeignKey(
         fromColumn: row['from']! as String,
-        toTable: row['table']! as String,
-        toColumn: row['to']! as String,
+        toTable: toTable,
+        toColumn:
+            row['to'] as String? ??
+            _inferSinglePrimaryKeyColumn(database, toTable),
       ),
     );
   }
@@ -574,7 +586,7 @@ List<SqliteImportTableDraft> _toposortSelectedTables(
       final target = bySourceName[foreignKey.toTable];
       if (target == null) {
         warnings.add(
-          'Skipping foreign key ${table.sourceName}.${foreignKey.fromColumn} -> ${foreignKey.toTable}.${foreignKey.toColumn} because the referenced table is not selected.',
+          'Skipping foreign key ${table.sourceName}.${foreignKey.fromColumn} -> ${_describeForeignKeyTarget(foreignKey)} because the referenced table is not selected.',
         );
         continue;
       }
@@ -661,21 +673,39 @@ String _buildCreateTableSql(
         ? null
         : selectedBySource[foreignKey.toTable];
     if (foreignKey != null && targetTable != null) {
-      parts.add(
-        'REFERENCES ${_quoteDecentIdent(targetTable.targetName)}'
-        '(${_quoteDecentIdent(_targetColumnName(targetTable, foreignKey.toColumn))})',
+      final targetColumn = _resolveForeignKeyTargetColumn(
+        foreignKey,
+        targetTable,
       );
+      if (targetColumn != null) {
+        parts.add(
+          'REFERENCES ${_quoteDecentIdent(targetTable.targetName)}'
+          '(${_quoteDecentIdent(targetColumn)})',
+        );
+      } else {
+        skippedItems.add(
+          SqliteImportSkippedItem(
+            name: '${table.sourceName}.${column.sourceName}',
+            tableName: table.sourceName,
+            reason:
+                'Foreign key to ${_describeForeignKeyTarget(foreignKey)} skipped because the referenced primary key could not be resolved.',
+          ),
+        );
+        warnings.add(
+          'Skipping foreign key ${table.sourceName}.${column.sourceName} -> ${_describeForeignKeyTarget(foreignKey)} because the referenced primary key could not be resolved.',
+        );
+      }
     } else if (foreignKey != null) {
       skippedItems.add(
         SqliteImportSkippedItem(
           name: '${table.sourceName}.${column.sourceName}',
           tableName: table.sourceName,
           reason:
-              'Foreign key to ${foreignKey.toTable}.${foreignKey.toColumn} skipped because that table is not selected.',
+              'Foreign key to ${_describeForeignKeyTarget(foreignKey)} skipped because that table is not selected.',
         ),
       );
       warnings.add(
-        'Skipping foreign key ${table.sourceName}.${column.sourceName} -> ${foreignKey.toTable}.${foreignKey.toColumn} because the referenced table is not selected.',
+        'Skipping foreign key ${table.sourceName}.${column.sourceName} -> ${_describeForeignKeyTarget(foreignKey)} because the referenced table is not selected.',
       );
     }
 
@@ -701,6 +731,48 @@ String _targetColumnName(
     }
   }
   return sourceColumnName;
+}
+
+String? _inferSinglePrimaryKeyColumn(
+  sqlite.Database database,
+  String tableName,
+) {
+  final tableInfo = database.select(
+    'PRAGMA table_info(${_quoteSqliteIdent(tableName)})',
+  );
+  final primaryKeyColumns = <String>[
+    for (final row in tableInfo)
+      if (((row['pk'] as int?) ?? 0) > 0) row['name']! as String,
+  ];
+  if (primaryKeyColumns.length == 1) {
+    return primaryKeyColumns.single;
+  }
+  return null;
+}
+
+String _describeForeignKeyTarget(SqliteImportForeignKey foreignKey) {
+  final toColumn = foreignKey.toColumn;
+  if (toColumn == null || toColumn.trim().isEmpty) {
+    return '${foreignKey.toTable}.<primary key>';
+  }
+  return '${foreignKey.toTable}.$toColumn';
+}
+
+String? _resolveForeignKeyTargetColumn(
+  SqliteImportForeignKey foreignKey,
+  SqliteImportTableDraft targetTable,
+) {
+  final toColumn = foreignKey.toColumn;
+  if (toColumn != null && toColumn.trim().isNotEmpty) {
+    return _targetColumnName(targetTable, toColumn);
+  }
+  final primaryKeyColumns = targetTable.columns
+      .where((column) => column.primaryKey)
+      .toList(growable: false);
+  if (primaryKeyColumns.length == 1) {
+    return primaryKeyColumns.single.targetName;
+  }
+  return null;
 }
 
 String _placeholderForType(String targetType, int index) {

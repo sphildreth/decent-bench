@@ -1,0 +1,43 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "name": "User 1"
+    },
+    {
+      "id": 2,
+      "name": "User 2"
+    }
+  ],
+  "posts": [
+    {
+      "id": 101,
+      "user_id": 1,
+      "title": "Post 1 by User 1"
+    },
+    {
+      "id": 102,
+      "user_id": 1,
+      "title": "Post 2 by User 1"
+    },
+    {
+      "id": 103,
+      "user_id": 2,
+      "title": "Post 1 by User 2"
+    }
+  ],
+  "comments": [
+    {
+      "id": 1001,
+      "post_id": 101,
+      "user_id": 2,
+      "text": "Comment on Post 1"
+    },
+    {
+      "id": 1002,
+      "post_id": 103,
+      "user_id": 1,
+      "text": "Comment on Post 3"
+    }
+  ]
+}

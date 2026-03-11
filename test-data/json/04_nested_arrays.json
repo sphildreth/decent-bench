@@ -1,0 +1,33 @@
+[
+  {
+    "orderId": "ORD-001",
+    "customer": "Alice",
+    "items": [
+      {
+        "sku": "A1",
+        "qty": 2,
+        "price": 10.5
+      },
+      {
+        "sku": "A2",
+        "qty": 1,
+        "price": 20.0
+      }
+    ]
+  },
+  {
+    "orderId": "ORD-002",
+    "customer": "Bob",
+    "items": [
+      {
+        "sku": "B1",
+        "qty": 5,
+        "price": 5.0
+      }
+    ],
+    "tags": [
+      "urgent",
+      "wholesale"
+    ]
+  }
+]

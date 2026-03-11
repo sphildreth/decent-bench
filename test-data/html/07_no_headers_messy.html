@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head><title>07_no_headers_messy.html</title></head>
+<body>
+
+<!-- Table without thead/th -->
+<table id="no-headers">
+  <tr><td>1</td><td>Apple</td><td>Fruit</td></tr>
+  <tr><td>2</td><td>Carrot</td><td>Vegetable</td></tr>
+  <tr><td>3</td><td>Banana</td><td>Fruit</td></tr>
+</table>
+
+<!-- Table with weird nesting and missing closing tags (browsers usually fix, good to test parser) -->
+<table id="messy-table">
+  <tr><th>Col A<th>Col B
+  <tr><td>Val A1<td>Val B1
+  <tr><td>Val A2
+</table>
+
+</body>
+</html>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <script type="text/javascript">
+    <![CDATA[
+    function matchwo(a,b) {
+      if (a < b && a < 0) then {
+        return 1;
+      } else {
+        return 0;
+      }
+    }
+    ]]>
+  </script>
+  <description>
+    <![CDATA[
+    Here is some text with <brackets> and & ampersands that shouldn't be parsed.
+    ]]>
+  </description>
+</root>
