@@ -2919,6 +2919,12 @@ class WorkspaceController extends ChangeNotifier {
       if (object.name.toLowerCase().contains(filter)) {
         return true;
       }
+      if (object.checks.any((check) {
+        return check.name.toLowerCase().contains(filter) ||
+            check.exprSql.toLowerCase().contains(filter);
+      })) {
+        return true;
+      }
       if (object.columns.any(
         (column) =>
             column.name.toLowerCase().contains(filter) ||
@@ -2929,7 +2935,7 @@ class WorkspaceController extends ChangeNotifier {
       )) {
         return true;
       }
-      return schema
+      if (schema
           .indexesForObject(object.name)
           .any(
             (index) =>
@@ -2938,19 +2944,28 @@ class WorkspaceController extends ChangeNotifier {
                 index.columns.any(
                   (column) => column.toLowerCase().contains(filter),
                 ),
+          )) {
+        return true;
+      }
+      return schema
+          .triggersForObject(object.name)
+          .any(
+            (trigger) =>
+                trigger.name.toLowerCase().contains(filter) ||
+                trigger.timing.toLowerCase().contains(filter) ||
+                trigger.events.any(
+                  (event) => event.toLowerCase().contains(filter),
+                ),
           );
     }).toList();
   }
 
   List<String> schemaNotesForObject(SchemaObjectSummary object) {
     return <String>[
-      if (object.kind == SchemaObjectKind.table && object.ddl == null)
-        'Table DDL is not exposed by the current DecentDB Dart schema API.',
-      if (object.kind == SchemaObjectKind.view && object.ddl == null)
-        'View definition text is not exposed for this object.',
-      'Trigger metadata is not exposed by the current DecentDB Dart schema API.',
-      'Generated-column metadata is not exposed by the current DecentDB Dart schema API.',
-      'Temporary-object metadata is not exposed by the current DecentDB Dart schema API.',
+      if (object.temporary)
+        'Temporary ${object.kind.name}s exist only for the current database connection.',
+      if (object.ddl == null || object.ddl!.trim().isEmpty)
+        '${object.kind == SchemaObjectKind.table ? 'Table DDL' : 'View definition'} is unavailable for this object.',
     ];
   }
 

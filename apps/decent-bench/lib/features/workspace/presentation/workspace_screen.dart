@@ -555,6 +555,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           MapEntry('Tables', '${controller.schema.tables.length}'),
           MapEntry('Views', '${controller.schema.views.length}'),
           MapEntry('Indexes', '${controller.schema.indexes.length}'),
+          MapEntry('Triggers', '${controller.schema.triggers.length}'),
           MapEntry('Engine', controller.engineVersion ?? 'DecentDB mock shell'),
         ],
         notes: controller.databasePath == null
@@ -598,6 +599,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         return allowSampleSchema ? _sampleSelectionDetails(nodeId) : null;
       }
       final indexes = controller.schema.indexesForObject(object.name);
+      final triggers = controller.schema.triggersForObject(object.name);
       return SchemaSelectionDetails(
         nodeId: nodeId,
         kind: isTable ? SchemaSelectionKind.table : SchemaSelectionKind.view,
@@ -608,13 +610,19 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         summaryRows: <MapEntry<String, String>>[
           MapEntry('Columns', '${object.columns.length}'),
           MapEntry('Indexes', '${indexes.length}'),
+          MapEntry('Triggers', '${triggers.length}'),
+          MapEntry('Temporary', object.temporary ? 'Yes' : 'No'),
           MapEntry(
             'Definition',
-            object.ddl == null ? 'Not exposed' : 'Available',
+            object.ddl == null || object.ddl!.trim().isEmpty
+                ? 'Unavailable'
+                : 'Available',
           ),
         ],
         notes: <String>[
           ...object.exposedConstraintSummaries,
+          for (final trigger in triggers)
+            'Trigger ${trigger.name}: ${trigger.timing.toUpperCase()} ${trigger.events.join(", ")}',
           ...controller.schemaNotesForObject(object),
         ],
       );
@@ -630,14 +638,19 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             label: index.name,
             subtitle: 'Index metadata',
             objectName: index.table,
+            definition: index.ddl,
             summaryRows: <MapEntry<String, String>>[
               MapEntry('Table', index.table),
               MapEntry('Kind', index.kind),
               MapEntry('Unique', index.unique ? 'Yes' : 'No'),
+              MapEntry('Temporary', index.temporary ? 'Yes' : 'No'),
               MapEntry('Columns', index.columns.join(', ')),
+              if (index.predicateSql != null && index.predicateSql!.isNotEmpty)
+                MapEntry('Predicate', index.predicateSql!),
             ],
-            notes: const <String>[
-              'Index statistics are not exposed by the current DecentDB Dart schema API.',
+            notes: <String>[
+              if (index.ddl == null || index.ddl!.trim().isEmpty)
+                'Canonical index DDL is unavailable for this index.',
             ],
           );
         }
@@ -666,6 +679,19 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 MapEntry('Primary key', column.primaryKey ? 'Yes' : 'No'),
                 MapEntry('Nullable', column.notNull ? 'No' : 'Yes'),
                 MapEntry('Unique', column.unique ? 'Yes' : 'No'),
+                if (column.hasDefault) MapEntry('Default', column.defaultExpr!),
+                if (column.isGenerated)
+                  MapEntry(
+                    'Generated',
+                    column.generatedStored
+                        ? 'STORED AS (${column.generatedExpr})'
+                        : 'AS (${column.generatedExpr})',
+                  ),
+                if (column.hasForeignKey)
+                  MapEntry(
+                    'References',
+                    '${column.refTable}(${column.refColumn})',
+                  ),
               ],
               notes: column.constraintSummaries.isEmpty
                   ? const <String>['No explicit constraints exposed.']
@@ -683,6 +709,32 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         final object = controller.schema.objectNamed(parts[1]);
         if (object == null) {
           return allowSampleSchema ? _sampleSelectionDetails(nodeId) : null;
+        }
+        if (parts[2] == 'check') {
+          final checkIndex = int.tryParse(parts[3]);
+          if (checkIndex != null &&
+              checkIndex >= 0 &&
+              checkIndex < object.checks.length) {
+            final check = object.checks[checkIndex];
+            return SchemaSelectionDetails(
+              nodeId: nodeId,
+              kind: SchemaSelectionKind.constraint,
+              label: check.summary,
+              subtitle: 'Constraint metadata',
+              objectName: object.name,
+              summaryRows: <MapEntry<String, String>>[
+                MapEntry('Object', object.name),
+                MapEntry(
+                  'Constraint',
+                  check.name.isEmpty ? 'CHECK' : check.name,
+                ),
+                MapEntry('Expression', check.exprSql),
+              ],
+              notes: const <String>[
+                'Table-level CHECK constraints are surfaced directly from DecentDB schema metadata.',
+              ],
+            );
+          }
         }
         for (final column in object.columns) {
           if (column.name != parts[2]) {
@@ -704,9 +756,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 MapEntry('Column', column.name),
                 MapEntry('Constraint', constraint),
               ],
-              notes: const <String>[
-                'Check and named constraint metadata is currently inferred from column introspection only.',
-              ],
+              notes: const <String>[],
             );
           }
         }
@@ -720,27 +770,51 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           MapEntry('Constraint count', '0'),
         ],
         notes: const <String>[
-          'The current object does not expose explicit constraints through the Dart schema API.',
+          'The current object does not define any explicit constraints.',
         ],
       );
     }
 
     if (nodeId.startsWith('trigger:')) {
       final parts = nodeId.split(':');
-      return SchemaSelectionDetails(
-        nodeId: nodeId,
-        kind: SchemaSelectionKind.trigger,
-        label: parts.length > 1 ? parts[1] : 'Trigger',
-        subtitle: 'Trigger metadata',
-        objectName: parts.length > 1 ? parts[1] : null,
-        summaryRows: const <MapEntry<String, String>>[
-          MapEntry('Exposure', 'Not available'),
-        ],
-        notes: const <String>[
-          'Trigger definitions and bindings are not exposed by the current DecentDB Dart schema API.',
-          'The tree keeps trigger folders visible now so the shell layout matches classic database clients even before deeper engine metadata lands.',
-        ],
-      );
+      if (parts.length >= 3) {
+        final targetName = parts[1];
+        final triggerName = parts.sublist(2).join(':');
+        final trigger = controller.schema.triggerNamed(targetName, triggerName);
+        if (trigger != null) {
+          return SchemaSelectionDetails(
+            nodeId: nodeId,
+            kind: SchemaSelectionKind.trigger,
+            label: trigger.name,
+            subtitle: 'Trigger metadata',
+            objectName: trigger.targetName,
+            definition: trigger.ddl,
+            summaryRows: <MapEntry<String, String>>[
+              MapEntry('Target', trigger.targetName),
+              MapEntry('Target kind', trigger.targetKind),
+              MapEntry('Timing', trigger.timing.toUpperCase()),
+              MapEntry('Events', trigger.events.join(', ')),
+              MapEntry('For each row', trigger.forEachRow ? 'Yes' : 'No'),
+              MapEntry('Temporary', trigger.temporary ? 'Yes' : 'No'),
+            ],
+            notes: <String>['Action SQL: ${trigger.actionSql}'],
+          );
+        }
+        if (triggerName == 'none') {
+          return SchemaSelectionDetails(
+            nodeId: nodeId,
+            kind: SchemaSelectionKind.trigger,
+            label: 'No triggers',
+            subtitle: 'Trigger folder',
+            objectName: targetName,
+            summaryRows: const <MapEntry<String, String>>[
+              MapEntry('Trigger count', '0'),
+            ],
+            notes: const <String>['No triggers are defined for this object.'],
+          );
+        }
+      }
+      return allowSampleSchema ? _sampleSelectionDetails(nodeId) : null;
     }
 
     return allowSampleSchema ? _sampleSelectionDetails(nodeId) : null;
@@ -2183,6 +2257,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
     final objectName = _objectNameForSchemaNode(nodeId);
     switch (action) {
+      case _SchemaNodeMenuAction.scriptDdl:
+        if (objectName != null) {
+          _openObjectDefinitionQuery(objectName);
+        }
+        break;
       case _SchemaNodeMenuAction.viewData:
         if (objectName != null) {
           await _openObjectDataQuery(objectName);
@@ -2250,6 +2329,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           value: _SchemaNodeMenuAction.scriptDelete,
           icon: Icons.delete_sweep_outlined,
           label: 'Script Table as DELETE',
+        ),
+        _popupMenuItem(
+          value: _SchemaNodeMenuAction.scriptDdl,
+          icon: Icons.description_outlined,
+          label: 'Script Table DDL',
         ),
         const PopupMenuDivider(),
         _popupMenuItem(
@@ -2329,6 +2413,18 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (widget.controller.hasOpenDatabase) {
       await widget.controller.runActiveTab();
     }
+  }
+
+  void _openObjectDefinitionQuery(String objectName) {
+    final object = widget.controller.schema.objectNamed(objectName);
+    final ddl = object?.ddl?.trim();
+    if (ddl == null || ddl.isEmpty) {
+      _openSqlTemplate(
+        '-- Canonical DDL is unavailable for ${_quoteIdentifier(objectName)}.',
+      );
+      return;
+    }
+    _openSqlTemplate(ddl.endsWith(';') ? ddl : '$ddl;');
   }
 
   void _openSqlTemplate(String sql) {
@@ -2801,6 +2897,7 @@ class _EditableFieldBinding {
 enum _ResultsCellMenuAction { copy, paste, setNull }
 
 enum _SchemaNodeMenuAction {
+  scriptDdl,
   scriptInsert,
   scriptUpdate,
   scriptDelete,

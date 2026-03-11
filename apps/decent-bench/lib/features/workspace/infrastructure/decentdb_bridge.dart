@@ -665,27 +665,40 @@ Future<void> _workerMain(List<Object?> bootstrap) async {
         };
       case 'loadSchema':
         final db = _requireDatabase(database);
-        final tables = db.schema.listTables()..sort();
-        final views = db.schema.listViews()..sort();
+        final tables = db.schema.listTablesInfo()
+          ..sort((left, right) => left.name.compareTo(right.name));
+        final views = db.schema.listViewsInfo()
+          ..sort((left, right) => left.name.compareTo(right.name));
         final objects = <Map<String, Object?>>[
           for (final table in tables)
             <String, Object?>{
-              'name': table,
+              'name': table.name,
               'kind': 'table',
-              'columns': _serializeColumns(db.schema.getTableColumns(table)),
+              'temporary': table.temporary,
+              'ddl': table.ddl,
+              'columns': _serializeColumns(table.columns),
+              'checks': _serializeChecks(table.checks),
             },
           for (final view in views)
             <String, Object?>{
-              'name': view,
+              'name': view.name,
               'kind': 'view',
-              'ddl': db.schema.getViewDdl(view),
-              'columns': _serializeColumns(db.schema.getTableColumns(view)),
+              'temporary': view.temporary,
+              'ddl': view.ddl,
+              'columns': _serializeColumns(
+                db.schema.getTableColumns(view.name),
+              ),
             },
         ];
         final indexes = db.schema.listIndexes()
           ..sort((left, right) {
             final byTable = left.table.compareTo(right.table);
             return byTable != 0 ? byTable : left.name.compareTo(right.name);
+          });
+        final triggers = db.schema.listTriggers()
+          ..sort((left, right) {
+            final byTarget = left.targetName.compareTo(right.targetName);
+            return byTarget != 0 ? byTarget : left.name.compareTo(right.name);
           });
         return <String, Object?>{
           'objects': objects,
@@ -697,8 +710,12 @@ Future<void> _workerMain(List<Object?> bootstrap) async {
                 'columns': index.columns,
                 'unique': index.unique,
                 'kind': index.kind,
+                'temporary': index.temporary,
+                'predicateSql': index.predicateSql,
+                'ddl': index.ddl,
               },
           ],
+          'triggers': _serializeTriggers(triggers),
           'loadedAt': DateTime.now().toUtc().toIso8601String(),
         };
       case 'runQuery':
@@ -876,10 +893,38 @@ List<Map<String, Object?>> _serializeColumns(List<ColumnInfo> columns) {
         'notNull': column.notNull,
         'unique': column.unique,
         'primaryKey': column.primaryKey,
+        'defaultExpr': column.defaultExpr,
+        'generatedExpr': column.generatedExpr,
+        'generatedStored': column.generatedStored,
         'refTable': column.refTable,
         'refColumn': column.refColumn,
         'refOnDelete': column.refOnDelete,
         'refOnUpdate': column.refOnUpdate,
+      },
+  ];
+}
+
+List<Map<String, Object?>> _serializeChecks(List<CheckConstraintInfo> checks) {
+  return <Map<String, Object?>>[
+    for (final check in checks)
+      <String, Object?>{'name': check.name, 'exprSql': check.exprSql},
+  ];
+}
+
+List<Map<String, Object?>> _serializeTriggers(List<TriggerInfo> triggers) {
+  return <Map<String, Object?>>[
+    for (final trigger in triggers)
+      <String, Object?>{
+        'name': trigger.name,
+        'targetName': trigger.targetName,
+        'targetKind': trigger.targetKind,
+        'timing': trigger.timing,
+        'events': trigger.events,
+        'eventsMask': trigger.eventsMask,
+        'forEachRow': trigger.forEachRow,
+        'temporary': trigger.temporary,
+        'actionSql': trigger.actionSql,
+        'ddl': trigger.ddl,
       },
   ];
 }

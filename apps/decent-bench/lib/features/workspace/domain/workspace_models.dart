@@ -156,6 +156,9 @@ class SchemaColumn {
     required this.notNull,
     required this.unique,
     required this.primaryKey,
+    this.defaultExpr,
+    this.generatedExpr,
+    this.generatedStored = false,
     required this.refTable,
     required this.refColumn,
     required this.refOnDelete,
@@ -167,6 +170,9 @@ class SchemaColumn {
   final bool notNull;
   final bool unique;
   final bool primaryKey;
+  final String? defaultExpr;
+  final String? generatedExpr;
+  final bool generatedStored;
   final String? refTable;
   final String? refColumn;
   final String? refOnDelete;
@@ -179,6 +185,9 @@ class SchemaColumn {
       notNull: map['notNull']! as bool,
       unique: map['unique']! as bool,
       primaryKey: map['primaryKey']! as bool,
+      defaultExpr: map['defaultExpr'] as String?,
+      generatedExpr: map['generatedExpr'] as String?,
+      generatedStored: map['generatedStored'] as bool? ?? false,
       refTable: map['refTable'] as String?,
       refColumn: map['refColumn'] as String?,
       refOnDelete: map['refOnDelete'] as String?,
@@ -187,12 +196,20 @@ class SchemaColumn {
   }
 
   bool get hasForeignKey => refTable != null && refColumn != null;
+  bool get hasDefault => defaultExpr != null && defaultExpr!.trim().isNotEmpty;
+  bool get isGenerated =>
+      generatedExpr != null && generatedExpr!.trim().isNotEmpty;
 
   List<String> get constraintSummaries {
     return <String>[
       if (primaryKey) 'PRIMARY KEY',
       if (unique) 'UNIQUE',
       if (notNull) 'NOT NULL',
+      if (hasDefault) 'DEFAULT $defaultExpr',
+      if (isGenerated)
+        generatedStored
+            ? 'GENERATED ALWAYS AS ($generatedExpr) STORED'
+            : 'GENERATED AS ($generatedExpr)',
       if (hasForeignKey)
         'REFERENCES $refTable($refColumn)'
             '${refOnDelete != null ? ' ON DELETE $refOnDelete' : ''}'
@@ -206,18 +223,39 @@ class SchemaColumn {
   }
 }
 
+class SchemaCheckConstraint {
+  const SchemaCheckConstraint({required this.name, required this.exprSql});
+
+  final String name;
+  final String exprSql;
+
+  factory SchemaCheckConstraint.fromMap(Map<String, Object?> map) {
+    return SchemaCheckConstraint(
+      name: map['name'] as String? ?? '',
+      exprSql: map['exprSql']! as String,
+    );
+  }
+
+  String get summary =>
+      name.isEmpty ? 'CHECK ($exprSql)' : 'CHECK $name ($exprSql)';
+}
+
 class SchemaObjectSummary {
   const SchemaObjectSummary({
     required this.name,
     required this.kind,
     required this.columns,
+    this.temporary = false,
+    this.checks = const <SchemaCheckConstraint>[],
     this.ddl,
   });
 
   final String name;
   final SchemaObjectKind kind;
+  final bool temporary;
   final String? ddl;
   final List<SchemaColumn> columns;
+  final List<SchemaCheckConstraint> checks;
 
   factory SchemaObjectSummary.fromMap(Map<String, Object?> map) {
     return SchemaObjectSummary(
@@ -225,12 +263,21 @@ class SchemaObjectSummary {
       kind: (map['kind'] as String) == 'view'
           ? SchemaObjectKind.view
           : SchemaObjectKind.table,
+      temporary: map['temporary'] as bool? ?? false,
       ddl: map['ddl'] as String?,
       columns: ((map['columns'] as List?) ?? const <Object?>[])
           .cast<Map<Object?, Object?>>()
           .map(
             (column) => SchemaColumn.fromMap(
               column.map((key, value) => MapEntry(key as String, value)),
+            ),
+          )
+          .toList(),
+      checks: ((map['checks'] as List?) ?? const <Object?>[])
+          .cast<Map<Object?, Object?>>()
+          .map(
+            (check) => SchemaCheckConstraint.fromMap(
+              check.map((key, value) => MapEntry(key as String, value)),
             ),
           )
           .toList(),
@@ -242,6 +289,7 @@ class SchemaObjectSummary {
       for (final column in columns)
         for (final constraint in column.constraintSummaries)
           '${column.name}: $constraint',
+      for (final check in checks) check.summary,
     ];
   }
 }
@@ -253,6 +301,9 @@ class IndexSummary {
     required this.columns,
     required this.unique,
     required this.kind,
+    this.temporary = false,
+    this.predicateSql,
+    this.ddl,
   });
 
   final String name;
@@ -260,6 +311,9 @@ class IndexSummary {
   final List<String> columns;
   final bool unique;
   final String kind;
+  final bool temporary;
+  final String? predicateSql;
+  final String? ddl;
 
   factory IndexSummary.fromMap(Map<String, Object?> map) {
     return IndexSummary(
@@ -268,6 +322,50 @@ class IndexSummary {
       columns: ((map['columns'] as List?) ?? const <Object?>[]).cast<String>(),
       unique: map['unique']! as bool,
       kind: map['kind']! as String,
+      temporary: map['temporary'] as bool? ?? false,
+      predicateSql: map['predicateSql'] as String?,
+      ddl: map['ddl'] as String?,
+    );
+  }
+}
+
+class TriggerSummary {
+  const TriggerSummary({
+    required this.name,
+    required this.targetName,
+    required this.targetKind,
+    required this.timing,
+    required this.events,
+    required this.eventsMask,
+    required this.forEachRow,
+    required this.temporary,
+    required this.actionSql,
+    required this.ddl,
+  });
+
+  final String name;
+  final String targetName;
+  final String targetKind;
+  final String timing;
+  final List<String> events;
+  final int eventsMask;
+  final bool forEachRow;
+  final bool temporary;
+  final String actionSql;
+  final String ddl;
+
+  factory TriggerSummary.fromMap(Map<String, Object?> map) {
+    return TriggerSummary(
+      name: map['name']! as String,
+      targetName: map['targetName']! as String,
+      targetKind: map['targetKind']! as String,
+      timing: map['timing']! as String,
+      events: ((map['events'] as List?) ?? const <Object?>[]).cast<String>(),
+      eventsMask: map['eventsMask'] as int? ?? 0,
+      forEachRow: map['forEachRow'] as bool? ?? true,
+      temporary: map['temporary'] as bool? ?? false,
+      actionSql: map['actionSql']! as String,
+      ddl: map['ddl']! as String,
     );
   }
 }
@@ -276,17 +374,20 @@ class SchemaSnapshot {
   const SchemaSnapshot({
     required this.objects,
     required this.indexes,
+    this.triggers = const <TriggerSummary>[],
     required this.loadedAt,
   });
 
   final List<SchemaObjectSummary> objects;
   final List<IndexSummary> indexes;
+  final List<TriggerSummary> triggers;
   final DateTime loadedAt;
 
   factory SchemaSnapshot.empty() {
     return SchemaSnapshot(
       objects: const <SchemaObjectSummary>[],
       indexes: const <IndexSummary>[],
+      triggers: const <TriggerSummary>[],
       loadedAt: DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
@@ -305,6 +406,14 @@ class SchemaSnapshot {
           .cast<Map<Object?, Object?>>()
           .map(
             (item) => IndexSummary.fromMap(
+              item.map((key, value) => MapEntry(key as String, value)),
+            ),
+          )
+          .toList(),
+      triggers: ((map['triggers'] as List?) ?? const <Object?>[])
+          .cast<Map<Object?, Object?>>()
+          .map(
+            (item) => TriggerSummary.fromMap(
               item.map((key, value) => MapEntry(key as String, value)),
             ),
           )
@@ -330,6 +439,21 @@ class SchemaSnapshot {
 
   List<IndexSummary> indexesForObject(String objectName) {
     return indexes.where((index) => index.table == objectName).toList();
+  }
+
+  List<TriggerSummary> triggersForObject(String objectName) {
+    return triggers
+        .where((trigger) => trigger.targetName == objectName)
+        .toList();
+  }
+
+  TriggerSummary? triggerNamed(String targetName, String triggerName) {
+    for (final trigger in triggers) {
+      if (trigger.targetName == targetName && trigger.name == triggerName) {
+        return trigger;
+      }
+    }
+    return null;
   }
 }
 

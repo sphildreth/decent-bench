@@ -447,6 +447,20 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
         schema.indexes.any((item) => item.name == 'idx_users_name'),
         isTrue,
       );
+      final users = schema.objectNamed('users');
+      final userNames = schema.objectNamed('user_names');
+      final userNameIndex = schema.indexes.firstWhere(
+        (item) => item.name == 'idx_users_name',
+      );
+      expect(users, isNotNull);
+      expect(users!.ddl, contains('CREATE TABLE "users"'));
+      expect(users.temporary, isFalse);
+      expect(userNames, isNotNull);
+      expect(userNames!.ddl, contains('CREATE VIEW "user_names"'));
+      expect(userNames.temporary, isFalse);
+      expect(userNameIndex.ddl, contains('CREATE INDEX "idx_users_name"'));
+      expect(userNameIndex.temporary, isFalse);
+      expect(userNameIndex.predicateSql, anyOf(isNull, isEmpty));
     });
 
     test(
@@ -528,7 +542,42 @@ CREATE TABLE line_items (
         final reopenedRows = await queryAllRows(
           'SELECT total FROM line_items WHERE id = 1',
         );
+        final schema = await bridge.loadSchema();
+        final lineItems = schema.objectNamed('line_items');
+        final statusColumn = lineItems!.columns.firstWhere(
+          (column) => column.name == 'status',
+        );
+        final totalColumn = lineItems.columns.firstWhere(
+          (column) => column.name == 'total',
+        );
+
         expect(reopenedRows.single['total'], closeTo(19.0, 0.0001));
+        expect(lineItems.ddl, contains('CREATE TABLE "line_items"'));
+        final checkExprs = lineItems.checks
+            .map((check) => check.exprSql.replaceAll(' ', ''))
+            .toList();
+        expect(
+          checkExprs,
+          contains(
+            predicate<String>(
+              (expr) => expr.contains('price') && expr.contains('>0'),
+            ),
+          ),
+        );
+        expect(
+          checkExprs,
+          contains(
+            predicate<String>(
+              (expr) => expr.contains('qty') && expr.contains('>0'),
+            ),
+          ),
+        );
+        expect(statusColumn.defaultExpr, contains('active'));
+        expect(totalColumn.generatedStored, isTrue);
+        final generatedExpr = totalColumn.generatedExpr!.replaceAll(' ', '');
+        expect(generatedExpr, contains('price'));
+        expect(generatedExpr, contains('qty'));
+        expect(generatedExpr, contains('*'));
       },
     );
 
@@ -628,7 +677,20 @@ ORDER BY dept
       await exec("INSERT INTO events VALUES (1, 'launch')");
 
       final auditRows = await queryAllRows('SELECT tag FROM audit');
+      final schema = await bridge.loadSchema();
+      final trigger = schema.triggers.singleWhere(
+        (item) => item.name == 'events_ins_audit',
+      );
+
       expect(auditRows.single['tag'], 'I');
+      expect(trigger.targetName, 'events');
+      expect(trigger.targetKind, 'table');
+      expect(trigger.timing.toLowerCase(), 'after');
+      expect(trigger.events, contains('insert'));
+      expect(trigger.forEachRow, isTrue);
+      expect(trigger.temporary, isFalse);
+      expect(trigger.actionSql, contains('INSERT INTO audit(tag)'));
+      expect(trigger.ddl, contains('CREATE TRIGGER "events_ins_audit"'));
     });
 
     test('supports temp tables and temp views', skip: skipReason, () async {
@@ -639,12 +701,25 @@ ORDER BY dept
       );
 
       final tempRows = await queryAllRows('SELECT value FROM temp_summary');
+      final tempSchema = await bridge.loadSchema();
+      final tempTable = tempSchema.objectNamed('temp_results');
+      final tempView = tempSchema.objectNamed('temp_summary');
+
       expect(tempRows.single['value'], 'ephemeral');
+      expect(tempTable, isNotNull);
+      expect(tempTable!.temporary, isTrue);
+      expect(tempTable.ddl, contains('CREATE TEMP TABLE "temp_results"'));
+      expect(tempView, isNotNull);
+      expect(tempView!.temporary, isTrue);
+      expect(tempView.ddl, contains('CREATE TEMP VIEW "temp_summary"'));
 
       await bridge.openDatabase(dbPath);
       await expectBridgeFailure(
         () => queryAllRows('SELECT value FROM temp_summary'),
       );
+      final reopenedSchema = await bridge.loadSchema();
+      expect(reopenedSchema.objectNamed('temp_results'), isNull);
+      expect(reopenedSchema.objectNamed('temp_summary'), isNull);
     });
 
     test('supports planner introspection', skip: skipReason, () async {
@@ -1088,6 +1163,7 @@ ORDER BY o.order_id, i.sku
     test(
       'imports every workbook from the checked-in Excel fixture pack',
       skip: skipReason,
+      timeout: const Timeout(Duration(minutes: 2)),
       () async {
         final fixturePackPath = resolveExcelFixturePackPath();
         final workbookFiles =

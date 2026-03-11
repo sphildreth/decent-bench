@@ -194,6 +194,11 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
       SchemaObjectSummary(
         name: 'tasks',
         kind: SchemaObjectKind.table,
+        ddl:
+            'CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, CHECK (length(title) > 0));',
+        checks: const <SchemaCheckConstraint>[
+          SchemaCheckConstraint(name: '', exprSql: 'length(title) > 0'),
+        ],
         columns: const <SchemaColumn>[
           SchemaColumn(
             name: 'id',
@@ -209,7 +214,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
           SchemaColumn(
             name: 'title',
             type: 'TEXT',
-            notNull: false,
+            notNull: true,
             unique: false,
             primaryKey: false,
             refTable: null,
@@ -256,6 +261,22 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
         columns: <String>['title'],
         unique: false,
         kind: 'btree',
+        ddl: 'CREATE INDEX idx_tasks_title ON tasks (title);',
+      ),
+    ],
+    triggers: const <TriggerSummary>[
+      TriggerSummary(
+        name: 'tasks_after_insert',
+        targetName: 'tasks',
+        targetKind: 'table',
+        timing: 'after',
+        events: <String>['insert'],
+        eventsMask: 1,
+        forEachRow: true,
+        temporary: false,
+        actionSql: "INSERT INTO task_audit(action) VALUES ('insert')",
+        ddl:
+            "CREATE TRIGGER tasks_after_insert AFTER INSERT ON tasks FOR EACH ROW EXECUTE FUNCTION decentdb_exec_sql('INSERT INTO task_audit(action) VALUES (''insert'')');",
       ),
     ],
     loadedAt: DateTime(2026, 3, 9),

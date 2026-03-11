@@ -102,6 +102,9 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
                                   relatedIndexes: schema.indexesForObject(
                                     object.name,
                                   ),
+                                  relatedTriggers: schema.triggersForObject(
+                                    object.name,
+                                  ),
                                 ),
                               ),
                           ],
@@ -137,8 +140,10 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
                                   relatedIndexes: schema.indexesForObject(
                                     object.name,
                                   ),
+                                  relatedTriggers: schema.triggersForObject(
+                                    object.name,
+                                  ),
                                   includeConstraints: false,
-                                  includeTriggers: false,
                                 ),
                               ),
                           ],
@@ -192,6 +197,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
   List<Widget> _buildObjectChildren({
     required SchemaObjectSummary object,
     required List<IndexSummary> relatedIndexes,
+    required List<TriggerSummary> relatedTriggers,
     bool includeConstraints = true,
     bool includeTriggers = true,
   }) {
@@ -278,16 +284,30 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
           onSelectNode: widget.onSelectNode,
           onShowContextMenu: widget.onShowNodeMenu,
           onExpansionChanged: _setExpanded,
-          children: <Widget>[
-            _LeafNode(
-              nodeId: 'trigger:${object.name}:not-exposed',
-              icon: Icons.info_outline,
-              label: 'Not exposed by current DecentDB Dart schema API',
-              selected:
-                  widget.selectedNodeId == 'trigger:${object.name}:not-exposed',
-              onTap: widget.onSelectNode,
-            ),
-          ],
+          children: relatedTriggers.isEmpty
+              ? <Widget>[
+                  _LeafNode(
+                    nodeId: 'trigger:${object.name}:none',
+                    icon: Icons.horizontal_rule,
+                    label: 'No triggers',
+                    selected: false,
+                    enabled: false,
+                    onTap: widget.onSelectNode,
+                  ),
+                ]
+              : <Widget>[
+                  for (final trigger in relatedTriggers)
+                    _LeafNode(
+                      nodeId: 'trigger:${object.name}:${trigger.name}',
+                      icon: Icons.bolt_outlined,
+                      label:
+                          '${trigger.name} (${trigger.timing.toUpperCase()} ${trigger.events.join(", ")})',
+                      selected:
+                          widget.selectedNodeId ==
+                          'trigger:${object.name}:${trigger.name}',
+                      onTap: widget.onSelectNode,
+                    ),
+                ],
         ),
       );
     }
@@ -311,6 +331,19 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
           ),
         );
       }
+    }
+    for (var i = 0; i < object.checks.length; i++) {
+      final check = object.checks[i];
+      nodes.add(
+        _LeafNode(
+          nodeId: 'constraint:${object.name}:check:$i',
+          icon: Icons.rule_outlined,
+          label: check.summary,
+          selected:
+              widget.selectedNodeId == 'constraint:${object.name}:check:$i',
+          onTap: widget.onSelectNode,
+        ),
+      );
     }
     if (nodes.isNotEmpty) {
       return nodes;

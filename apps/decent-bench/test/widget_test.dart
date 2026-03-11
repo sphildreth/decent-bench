@@ -10,6 +10,7 @@ import 'package:decent_bench/features/workspace/presentation/preferences_dialog.
 import 'package:decent_bench/features/workspace/presentation/shell/schema_explorer_pane.dart';
 import 'package:decent_bench/features/workspace/presentation/shell/results_pane.dart';
 import 'package:decent_bench/features/workspace/presentation/shell/status_bar.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -200,6 +201,51 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Excel Import Wizard'), findsOneWidget);
+  });
+
+  testWidgets('schema explorer reports a table node on secondary tap', (
+    tester,
+  ) async {
+    String? shownNodeId;
+    Offset? shownPosition;
+
+    _configureDesktopViewport(tester);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Material(
+            child: SchemaExplorerPane(
+              schema: FakeWorkspaceGateway().snapshot,
+              databasePath: '/tmp/schema-menu.ddb',
+              selectedNodeId: null,
+              onSelectNode: (_) {},
+              onShowNodeMenu: (nodeId, position) {
+                shownNodeId = nodeId;
+                shownPosition = position;
+              },
+              onRefresh: () {},
+              isLoading: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final tasksFinder = find.text('tasks').first;
+    await tester.tapAt(
+      tester.getCenter(tasksFinder),
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pump();
+
+    expect(shownNodeId, 'table:tasks');
+    expect(shownPosition, isNotNull);
   });
 
   testWidgets('execution plan tab renders EXPLAIN rows', (tester) async {
