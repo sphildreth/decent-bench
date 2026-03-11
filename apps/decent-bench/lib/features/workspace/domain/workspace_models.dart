@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'sql_error_location.dart';
+
 enum QueryPhase {
   idle,
   opening,
@@ -35,27 +37,67 @@ class QueryErrorDetails {
     required this.stage,
     required this.message,
     this.code,
+    this.location,
   });
 
   final QueryErrorStage stage;
   final String message;
   final String? code;
+  final QueryErrorLocation? location;
 
   factory QueryErrorDetails.fromError(
     Object error, {
     required QueryErrorStage stage,
+    String? executedSql,
+    String? bufferText,
+    int bufferStartOffset = 0,
   }) {
     if (error is QueryErrorDetails) {
-      return error;
+      if (error.location != null ||
+          executedSql == null ||
+          bufferText == null ||
+          executedSql.trim().isEmpty) {
+        return error;
+      }
+      return QueryErrorDetails(
+        stage: error.stage,
+        message: error.message,
+        code: error.code,
+        location: resolveQueryErrorLocation(
+          message: error.message,
+          executedSql: executedSql,
+          bufferText: bufferText,
+          bufferStartOffset: bufferStartOffset,
+        ),
+      );
     }
+    final message = error is BridgeFailure ? error.message : error.toString();
+    final code = error is BridgeFailure ? error.code : null;
+    final location =
+        executedSql != null &&
+            bufferText != null &&
+            executedSql.trim().isNotEmpty
+        ? resolveQueryErrorLocation(
+            message: message,
+            executedSql: executedSql,
+            bufferText: bufferText,
+            bufferStartOffset: bufferStartOffset,
+          )
+        : null;
     if (error is BridgeFailure) {
       return QueryErrorDetails(
         stage: stage,
-        message: error.message,
-        code: error.code,
+        message: message,
+        code: code,
+        location: location,
       );
     }
-    return QueryErrorDetails(stage: stage, message: error.toString());
+    return QueryErrorDetails(
+      stage: stage,
+      message: message,
+      code: code,
+      location: location,
+    );
   }
 
   String get stageLabel {
@@ -79,6 +121,9 @@ class QueryErrorDetails {
       ..writeln('Message: $message');
     if (code != null) {
       buffer.writeln('Code: $code');
+    }
+    if (location != null) {
+      buffer.writeln('Location: ${location!.shortLabel}');
     }
     if (sql != null && sql.trim().isNotEmpty) {
       buffer

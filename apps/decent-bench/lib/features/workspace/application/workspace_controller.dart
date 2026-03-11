@@ -387,7 +387,23 @@ class WorkspaceController extends ChangeNotifier {
 
   Future<void> runActiveTab() => runTab(activeTabId);
 
-  Future<void> runTab(String tabId) async {
+  Future<void> runActiveSql(
+    String sql, {
+    int bufferStartOffset = 0,
+    String description = 'selected SQL',
+  }) => runTab(
+    activeTabId,
+    sqlOverride: sql,
+    sqlBufferStartOffset: bufferStartOffset,
+    sqlOverrideDescription: description,
+  );
+
+  Future<void> runTab(
+    String tabId, {
+    String? sqlOverride,
+    int sqlBufferStartOffset = 0,
+    String sqlOverrideDescription = 'selected SQL',
+  }) async {
     final tab = tabById(tabId);
     if (tab == null || !canRunTab(tabId)) {
       return;
@@ -403,7 +419,12 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
 
-    final trimmedSql = tab.sql.trim();
+    final effectiveSourceSql = sqlOverride ?? tab.sql;
+    final trimmedSql = effectiveSourceSql.trim();
+    final isAlternateSql = sqlOverride != null;
+    final effectiveBufferStartOffset = isAlternateSql
+        ? sqlBufferStartOffset
+        : effectiveSourceSql.length - effectiveSourceSql.trimLeft().length;
     if (trimmedSql.isEmpty) {
       _setTabError(
         tabId,
@@ -431,7 +452,9 @@ class WorkspaceController extends ChangeNotifier {
         resultRows: const <Map<String, Object?>>[],
         cursorId: null,
         error: null,
-        statusMessage: 'Executing SQL...',
+        statusMessage: isAlternateSql
+            ? 'Executing $sqlOverrideDescription...'
+            : 'Executing SQL...',
         lastSql: trimmedSql,
         lastParameterJson: tab.parameterJson,
         lastParams: params,
@@ -445,7 +468,9 @@ class WorkspaceController extends ChangeNotifier {
         messageHistory: _appendMessage(
           current.messageHistory,
           QueryMessageLevel.info,
-          'Executing SQL...',
+          isAlternateSql
+              ? 'Executing $sqlOverrideDescription...'
+              : 'Executing SQL...',
           timestamp: startedAt,
         ),
       ),
@@ -528,6 +553,9 @@ class WorkspaceController extends ChangeNotifier {
           final failure = QueryErrorDetails.fromError(
             error,
             stage: QueryErrorStage.opening,
+            executedSql: trimmedSql,
+            bufferText: tab.sql,
+            bufferStartOffset: effectiveBufferStartOffset,
           );
           final updated = current.copyWith(
             phase: QueryPhase.failed,

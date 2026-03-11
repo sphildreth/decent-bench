@@ -604,6 +604,7 @@ class AppConfig {
       'tools_format_sql': 'Ctrl+Shift+F',
       'tools_new_query_tab': 'Ctrl+T',
       'tools_run_query': 'Ctrl+Enter',
+      'tools_run_buffer': 'Ctrl+Alt+Enter',
       'tools_stop_query': 'Esc',
       'view_reset_layout': 'Ctrl+Shift+R',
       'view_zoom_in': 'Ctrl+=',

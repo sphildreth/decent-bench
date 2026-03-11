@@ -48,6 +48,13 @@ class SqlEditorPane extends StatelessWidget {
     required this.onFindNext,
     required this.onFindPrevious,
     required this.onCloseFind,
+    required this.runLabel,
+    required this.formatLabel,
+    required this.onRunBuffer,
+    this.editorContextLabel,
+    this.errorLocationLabel,
+    this.errorMessage,
+    this.showRunBufferButton = false,
   });
 
   final List<QueryTabState> tabs;
@@ -75,6 +82,7 @@ class SqlEditorPane extends StatelessWidget {
   final VoidCallback onRunQuery;
   final VoidCallback onStopQuery;
   final VoidCallback onFormatSql;
+  final VoidCallback onRunBuffer;
   final ValueChanged<SqlSnippet> onInsertSnippet;
   final ValueChanged<AutocompleteSuggestion> onApplyAutocomplete;
   final int selectedAutocompleteIndex;
@@ -87,6 +95,12 @@ class SqlEditorPane extends StatelessWidget {
   final VoidCallback onFindNext;
   final VoidCallback onFindPrevious;
   final VoidCallback onCloseFind;
+  final String runLabel;
+  final String formatLabel;
+  final String? editorContextLabel;
+  final String? errorLocationLabel;
+  final String? errorMessage;
+  final bool showRunBufferButton;
 
   @override
   Widget build(BuildContext context) {
@@ -114,6 +128,10 @@ class SqlEditorPane extends StatelessWidget {
         onFormatSql: onFormatSql,
         onNewTab: onNewTab,
         onInsertSnippet: onInsertSnippet,
+        runLabel: runLabel,
+        formatLabel: formatLabel,
+        onRunBuffer: onRunBuffer,
+        showRunBufferButton: showRunBufferButton,
       ),
       padding: EdgeInsets.zero,
       child: Column(
@@ -182,6 +200,8 @@ class SqlEditorPane extends StatelessWidget {
                             lineCount: _lineCount(sqlController.text),
                             controller: editorScrollController,
                             zoomFactor: zoomFactor,
+                            errorLineNumber: activeTab.error?.location?.line,
+                            errorMessage: errorMessage,
                           ),
                           Expanded(
                             child: Shortcuts(
@@ -268,6 +288,20 @@ class SqlEditorPane extends StatelessWidget {
                     label: 'Elapsed ${activeTab.elapsed!.inMilliseconds} ms',
                   ),
                 const SizedBox(width: 8),
+                if (editorContextLabel != null) ...<Widget>[
+                  _StateChip(label: editorContextLabel!),
+                  const SizedBox(width: 8),
+                ],
+                if (errorLocationLabel != null) ...<Widget>[
+                  _StateChip(
+                    label: 'Error $errorLocationLabel',
+                    backgroundColor: tokens.colors.error.withValues(
+                      alpha: 0.16,
+                    ),
+                    textColor: tokens.colors.error,
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 _StateChip(label: 'Zoom ${(zoomFactor * 100).round()}%'),
               ],
             ),
@@ -376,6 +410,10 @@ class _EditorToolbar extends StatelessWidget {
     required this.onFormatSql,
     required this.onNewTab,
     required this.onInsertSnippet,
+    required this.runLabel,
+    required this.formatLabel,
+    required this.onRunBuffer,
+    required this.showRunBufferButton,
   });
 
   final bool canRun;
@@ -386,6 +424,10 @@ class _EditorToolbar extends StatelessWidget {
   final VoidCallback onFormatSql;
   final VoidCallback onNewTab;
   final ValueChanged<SqlSnippet> onInsertSnippet;
+  final String runLabel;
+  final String formatLabel;
+  final VoidCallback onRunBuffer;
+  final bool showRunBufferButton;
 
   @override
   Widget build(BuildContext context) {
@@ -397,8 +439,14 @@ class _EditorToolbar extends StatelessWidget {
         FilledButton.icon(
           onPressed: canRun ? onRunQuery : null,
           icon: Icon(Icons.play_arrow_rounded, size: tokens.metrics.iconSize),
-          label: const Text('Run'),
+          label: Text(runLabel),
         ),
+        if (showRunBufferButton)
+          OutlinedButton.icon(
+            onPressed: canRun ? onRunBuffer : null,
+            icon: Icon(Icons.subject_outlined, size: tokens.metrics.iconSize),
+            label: const Text('Run Buffer'),
+          ),
         OutlinedButton.icon(
           onPressed: canStop ? onStopQuery : null,
           icon: Icon(Icons.stop_rounded, size: tokens.metrics.iconSize),
@@ -410,7 +458,7 @@ class _EditorToolbar extends StatelessWidget {
             Icons.auto_fix_high_rounded,
             size: tokens.metrics.iconSize,
           ),
-          label: const Text('Format'),
+          label: Text(formatLabel),
         ),
         OutlinedButton.icon(
           onPressed: onNewTab,
@@ -536,11 +584,15 @@ class _LineNumberGutter extends StatelessWidget {
     required this.lineCount,
     required this.controller,
     required this.zoomFactor,
+    this.errorLineNumber,
+    this.errorMessage,
   });
 
   final int lineCount;
   final ScrollController controller;
   final double zoomFactor;
+  final int? errorLineNumber;
+  final String? errorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -548,7 +600,7 @@ class _LineNumberGutter extends StatelessWidget {
     final lineHeight =
         (tokens.fonts.editorSize * zoomFactor) * tokens.fonts.lineHeight;
     return Container(
-      width: 48,
+      width: kSqlEditorGutterWidth,
       color: tokens.editor.gutterBackground,
       child: ClipRect(
         child: AnimatedBuilder(
@@ -562,25 +614,54 @@ class _LineNumberGutter extends StatelessWidget {
                 child: Column(
                   children: <Widget>[
                     for (var index = 0; index < lineCount; index++)
-                      SizedBox(
-                        height: lineHeight,
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: Text(
-                              '${index + 1}',
-                              textAlign: TextAlign.right,
-                              style: TextStyle(
-                                fontSize:
-                                    tokens.fonts.editorSize * zoomFactor - 1,
-                                fontFamily: tokens.fonts.editorFamily,
-                                height: 1,
-                                color: tokens.editor.gutterText,
-                              ),
+                      Builder(
+                        builder: (context) {
+                          final isErrorLine = errorLineNumber == index + 1;
+                          final row = Container(
+                            height: lineHeight,
+                            color: isErrorLine
+                                ? tokens.colors.error.withValues(alpha: 0.14)
+                                : null,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: <Widget>[
+                                if (isErrorLine)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 4),
+                                    child: Icon(
+                                      Icons.error_outline,
+                                      size: 12,
+                                      color: tokens.colors.error,
+                                    ),
+                                  ),
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: Text(
+                                    '${index + 1}',
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      fontSize:
+                                          tokens.fonts.editorSize * zoomFactor -
+                                          1,
+                                      fontFamily: tokens.fonts.editorFamily,
+                                      height: 1,
+                                      color: isErrorLine
+                                          ? tokens.colors.error
+                                          : tokens.editor.gutterText,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ),
+                          );
+                          if (!isErrorLine) {
+                            return row;
+                          }
+                          return Tooltip(
+                            message: errorMessage ?? 'Query error',
+                            child: row,
+                          );
+                        },
                       ),
                   ],
                 ),
@@ -746,7 +827,9 @@ class _AutocompletePopup extends StatelessWidget {
     final charWidth = textPainter.width;
 
     final rawLeft =
-        48 + kSqlEditorContentPadding.left + (columnIndex * charWidth);
+        kSqlEditorGutterWidth +
+        kSqlEditorContentPadding.left +
+        (columnIndex * charWidth);
     final rawTop =
         kSqlEditorContentPadding.top +
         (lineIndex * lineHeight) -
@@ -791,9 +874,11 @@ class _PreviousAutocompleteIntent extends Intent {
 }
 
 class _StateChip extends StatelessWidget {
-  const _StateChip({required this.label});
+  const _StateChip({required this.label, this.backgroundColor, this.textColor});
 
   final String label;
+  final Color? backgroundColor;
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
@@ -801,15 +886,15 @@ class _StateChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: tokens.editor.tabInactiveBackground,
+        color: backgroundColor ?? tokens.editor.tabInactiveBackground,
         border: Border.all(color: tokens.colors.border),
         borderRadius: BorderRadius.circular(tokens.metrics.borderRadius),
       ),
       child: Text(
         label,
-        style: Theme.of(
-          context,
-        ).textTheme.bodySmall?.copyWith(color: tokens.editor.tabInactiveText),
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: textColor ?? tokens.editor.tabInactiveText,
+        ),
       ),
     );
   }

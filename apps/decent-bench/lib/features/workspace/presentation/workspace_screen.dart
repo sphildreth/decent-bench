@@ -6,6 +6,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
@@ -16,6 +17,8 @@ import '../application/workspace_controller.dart';
 import '../application/workspace_shell_controller.dart';
 import '../domain/app_config.dart';
 import '../domain/sql_autocomplete.dart';
+import '../domain/sql_execution_target.dart';
+import '../domain/sql_editor_selection.dart';
 import '../domain/sql_formatter.dart';
 import '../domain/workspace_file_entry.dart';
 import '../domain/workspace_models.dart';
@@ -64,7 +67,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   );
 
   late final SqlHighlightingTextEditingController _sqlController =
-      SqlHighlightingTextEditingController();
+      SqlHighlightingTextEditingController()
+        ..addListener(_handleSqlEditorStateChanged);
   late final TextEditingController _paramsController = TextEditingController();
   late final TextEditingController _findController = TextEditingController();
   late final FocusNode _sqlFocusNode = FocusNode(debugLabel: 'sql-editor')
@@ -107,7 +111,17 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   bool _nativeMenuAvailable = false;
   bool _didCheckNativeMenuAvailability = false;
   bool _didProcessStartupLaunchOptions = false;
+  bool _pendingSqlEditorStateRebuild = false;
   int _autocompleteSelectionIndex = 0;
+  SqlExecutionTarget _lastSqlExecutionTarget = const SqlExecutionTarget(
+    kind: SqlExecutionTargetKind.buffer,
+    sql: '',
+    startOffset: 0,
+    endOffset: 0,
+    startLine: 1,
+    startColumn: 1,
+    lineCount: 0,
+  );
   final Map<String, ResultsGridInteractionState> _resultsStateByTabId =
       <String, ResultsGridInteractionState>{};
 
@@ -142,6 +156,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       ..dispose();
     _findController.dispose();
     _paramsController.dispose();
+    _sqlController.removeListener(_handleSqlEditorStateChanged);
     _sqlController.dispose();
     super.dispose();
   }
@@ -150,6 +165,35 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (mounted) {
       setState(() {});
     }
+  }
+
+  void _handleSqlEditorStateChanged() {
+    final currentTarget = _sqlExecutionTarget();
+    final shouldRebuild =
+        currentTarget.kind != _lastSqlExecutionTarget.kind ||
+        currentTarget.startOffset != _lastSqlExecutionTarget.startOffset ||
+        currentTarget.endOffset != _lastSqlExecutionTarget.endOffset ||
+        currentTarget.lineCount != _lastSqlExecutionTarget.lineCount;
+    _lastSqlExecutionTarget = currentTarget;
+    if (!mounted || !shouldRebuild) {
+      return;
+    }
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.idle ||
+        phase == SchedulerPhase.postFrameCallbacks) {
+      setState(() {});
+      return;
+    }
+    if (_pendingSqlEditorStateRebuild) {
+      return;
+    }
+    _pendingSqlEditorStateRebuild = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pendingSqlEditorStateRebuild = false;
+      if (mounted) {
+        setState(() {});
+      }
+    });
   }
 
   void _onResultsScroll() {
@@ -187,6 +231,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         final selectedAutocompleteIndex = _selectedAutocompleteIndexFor(
           autocompleteResult,
         );
+        final sqlExecutionTarget = _sqlExecutionTarget();
+        final sqlSelection = _sqlSelectionInfo();
         final shellPreferences = _shellController.preferences;
         final resultsState = _resultsStateFor(activeTab.id);
         final usePlaceholderContent = _usePlaceholderContent(controller);
@@ -272,15 +318,29 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                     findController: _findController,
                                     findFocusNode: _findFocusNode,
                                     findStatusLabel: _findStatusLabel(),
+                                    runLabel: sqlExecutionTarget.runLabel,
+                                    formatLabel:
+                                        sqlSelection.hasRunnableSelection
+                                        ? 'Format Selection'
+                                        : 'Format',
+                                    editorContextLabel:
+                                        sqlExecutionTarget.contextLabel,
+                                    errorLocationLabel:
+                                        activeTab.error?.location?.shortLabel,
+                                    errorMessage: activeTab.error?.message,
+                                    showRunBufferButton:
+                                        !sqlExecutionTarget.isBufferTarget &&
+                                        resolveSqlBufferTarget(
+                                          _sqlController.value,
+                                        ).hasRunnableSql,
                                     onSqlChanged: _handleSqlChanged,
                                     onParamsChanged:
                                         controller.updateActiveParameterJson,
                                     onSelectTab: controller.selectTab,
                                     onCloseTab: controller.closeTab,
                                     onNewTab: () => controller.createTab(),
-                                    onRunQuery: () {
-                                      controller.runActiveTab();
-                                    },
+                                    onRunQuery: _runPrimarySqlTarget,
+                                    onRunBuffer: _runEntireSqlBuffer,
                                     onStopQuery: () {
                                       controller.cancelActiveQuery();
                                     },
@@ -735,6 +795,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       schema: controller.schema,
       config: controller.config,
     );
+  }
+
+  SqlEditorSelectionInfo _sqlSelectionInfo() {
+    return resolveSqlEditorSelectionInfo(_sqlController.value);
+  }
+
+  SqlExecutionTarget _sqlExecutionTarget() {
+    return resolveSqlExecutionTarget(_sqlController.value);
   }
 
   int _selectedAutocompleteIndexFor(AutocompleteResult result) {
@@ -1673,9 +1741,16 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         ),
         command(
           id: 'tools_run_query',
-          label: 'Run Query',
+          label: _sqlExecutionTarget().runLabel,
           icon: Icons.play_arrow_outlined,
-          onInvoke: controller.runActiveTab,
+          onInvoke: _runPrimarySqlTarget,
+          enabled: controller.canRunActiveTab,
+        ),
+        command(
+          id: 'tools_run_buffer',
+          label: 'Run Buffer',
+          icon: Icons.subject_outlined,
+          onInvoke: _runEntireSqlBuffer,
           enabled: controller.canRunActiveTab,
         ),
         command(
@@ -1687,7 +1762,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         ),
         command(
           id: 'tools_format_sql',
-          label: 'Format SQL',
+          label: _sqlSelectionInfo().hasRunnableSelection
+              ? 'Format Selection'
+              : 'Format SQL',
           icon: Icons.auto_fix_high_outlined,
           onInvoke: () async => _formatActiveSql(),
         ),
@@ -2247,15 +2324,40 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   void _formatActiveSql() {
+    final selection = _sqlSelectionInfo();
     final formatted = _sqlFormatter.format(
-      _sqlController.text,
+      selection.hasRunnableSelection
+          ? selection.selectedText
+          : _sqlController.text,
       settings: widget.controller.config.editorSettings,
     );
-    _sqlController.value = TextEditingValue(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
+    _sqlController.value = replaceSelectedTextOrAll(
+      _sqlController.value,
+      replacement: formatted,
+      useSelection: selection.hasRunnableSelection,
     );
-    widget.controller.updateActiveSql(formatted);
+    widget.controller.updateActiveSql(_sqlController.text);
+  }
+
+  Future<void> _runPrimarySqlTarget() async {
+    final executionTarget = _sqlExecutionTarget();
+    if (!executionTarget.isBufferTarget) {
+      await widget.controller.runActiveSql(
+        executionTarget.sql,
+        bufferStartOffset: executionTarget.startOffset,
+        description: switch (executionTarget.kind) {
+          SqlExecutionTargetKind.selection => 'selected SQL',
+          SqlExecutionTargetKind.statement => 'statement',
+          SqlExecutionTargetKind.buffer => 'SQL',
+        },
+      );
+      return;
+    }
+    await widget.controller.runActiveTab();
+  }
+
+  Future<void> _runEntireSqlBuffer() async {
+    await widget.controller.runActiveTab();
   }
 
   void _insertSnippet(SqlSnippet snippet) {

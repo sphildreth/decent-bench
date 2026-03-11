@@ -388,6 +388,100 @@ void main() {
     );
   });
 
+  test(
+    'runActiveSql executes selected SQL without overwriting the tab draft',
+    () async {
+      final dbPath =
+          '${Directory.systemTemp.path}/workbench-${DateTime.now().microsecondsSinceEpoch}.ddb';
+      final gateway = FakeWorkspaceGateway();
+      final controller = WorkspaceController(
+        gateway: gateway,
+        configStore: InMemoryConfigStore(),
+        workspaceStateStore: InMemoryWorkspaceStateStore(),
+      );
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+
+      controller.updateActiveSql(
+        'SELECT id, title FROM tasks ORDER BY id;\nSELECT id, name FROM projects ORDER BY id;',
+      );
+
+      await controller.runActiveSql(
+        'SELECT id, name FROM projects ORDER BY id',
+      );
+
+      expect(
+        controller.activeTab.sql,
+        'SELECT id, title FROM tasks ORDER BY id;\nSELECT id, name FROM projects ORDER BY id;',
+      );
+      expect(
+        controller.activeTab.lastSql,
+        'SELECT id, name FROM projects ORDER BY id',
+      );
+      expect(controller.activeTab.resultRows.single['name'], 'Phase 3');
+      expect(
+        gateway.lastRunQuerySql,
+        'EXPLAIN SELECT id, name FROM projects ORDER BY id',
+      );
+    },
+  );
+
+  test(
+    'runActiveSql maps syntax failures back to the selected statement location',
+    () async {
+      final dbPath =
+          '${Directory.systemTemp.path}/workbench-${DateTime.now().microsecondsSinceEpoch}.ddb';
+      final controller = WorkspaceController(
+        gateway: FakeWorkspaceGateway(),
+        configStore: InMemoryConfigStore(),
+        workspaceStateStore: InMemoryWorkspaceStateStore(),
+      );
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+
+      const sql =
+          'SELECT id, title FROM tasks;\nBROKEN SELECT * FROM projects;';
+      controller.updateActiveSql(sql);
+
+      await controller.runActiveSql(
+        'BROKEN SELECT * FROM projects;',
+        bufferStartOffset: sql.indexOf('BROKEN'),
+        description: 'statement',
+      );
+
+      expect(controller.activeTab.phase, QueryPhase.failed);
+      expect(controller.activeTab.error, isNotNull);
+      expect(controller.activeTab.error!.location, isNotNull);
+      expect(controller.activeTab.error!.location!.line, 2);
+      expect(controller.activeTab.error!.location!.column, 1);
+    },
+  );
+
+  test(
+    'runActiveTab preserves line and column offsets after leading whitespace',
+    () async {
+      final dbPath =
+          '${Directory.systemTemp.path}/workbench-${DateTime.now().microsecondsSinceEpoch}.ddb';
+      final controller = WorkspaceController(
+        gateway: FakeWorkspaceGateway(),
+        configStore: InMemoryConfigStore(),
+        workspaceStateStore: InMemoryWorkspaceStateStore(),
+      );
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+
+      controller.updateActiveSql('\n  BROKEN SELECT * FROM tasks;');
+
+      await controller.runActiveTab();
+
+      expect(controller.activeTab.phase, QueryPhase.failed);
+      expect(controller.activeTab.error, isNotNull);
+      expect(controller.activeTab.error!.location, isNotNull);
+      expect(controller.activeTab.error!.location!.line, 2);
+      expect(controller.activeTab.error!.location!.column, 3);
+    },
+  );
+
   test('reopening the same database restores persisted tab drafts', () async {
     final dbPath =
         '${Directory.systemTemp.path}/workbench-${DateTime.now().microsecondsSinceEpoch}.ddb';

@@ -1,171 +1,177 @@
-# Decent Bench
+<p align="center">
+  <img
+    src="assets/logo-256x256.png"
+    alt="Decent Bench logo"
+  >
+</p>
 
-> The GUI for DecentDB.
+<h1 align="center">Decent Bench</h1>
 
-Decent Bench is a cross-platform desktop app (Flutter) for power users who need
-to work directly with **DecentDB**: open or create a database, inspect schema,
-run the full pinned DecentDB SQL surface, export shaped results, and import
-SQLite, Excel, and MariaDB/MySQL-style SQL dump sources through guided
-workflows.
+<p align="center"><strong>The DecentDB desktop workbench.</strong></p>
+
+<p align="center">
+  Import Excel, SQLite, and MySQL/MariaDB-style SQL dumps into DecentDB,
+  inspect schema, iterate on SQL in a multi-tab editor, and export shaped
+  results from a fast local-first desktop app built with Flutter.
+</p>
+
+<p align="center">
+  <a href="https://github.com/sphildreth/decent-bench/actions/workflows/flutter-phase1.yml">
+    <img
+      alt="CI"
+      src="https://github.com/sphildreth/decent-bench/actions/workflows/flutter-phase1.yml/badge.svg"
+    >
+  </a>
+  <a href="LICENSE">
+    <img
+      alt="License: Apache 2.0"
+      src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square"
+    >
+  </a>
+  <img
+    alt="Flutter desktop"
+    src="https://img.shields.io/badge/Flutter-desktop-02569B?style=flat-square&logo=flutter&logoColor=white"
+  >
+  <img
+    alt="DecentDB v1.6.x"
+    src="https://img.shields.io/badge/DecentDB-v1.6.x-6f42c1?style=flat-square"
+  >
+</p>
+
+<p align="center">
+  <a href="#highlights">Highlights</a> •
+  <a href="#project-status">Status</a> •
+  <a href="#supported-file-types">Supported file types</a> •
+  <a href="#quick-start">Quick start</a> •
+  <a href="#repository-tour">Repository tour</a> •
+  <a href="#roadmap">Roadmap</a> •
+  <a href="#contributing">Contributing</a>
+</p>
+
+## What is Decent Bench?
+
+Decent Bench is a cross-platform desktop app for people who want a
+**DecentDB-first** workflow:
+
+- open or create a local DecentDB database
+- drag and drop a file to open it or launch the right import wizard
+- inspect schema without leaving the app
+- run the pinned DecentDB SQL surface in a multi-tab editor
+- export shaped query results when the data is ready
+
+The product direction and implementation contract live in
+[`design/PRD.md`](design/PRD.md) and [`design/SPEC.md`](design/SPEC.md).
+Current engine compatibility is pinned to **DecentDB `v1.6.x`**, and the
+canonical DecentDB desktop file extension is **`.ddb`**.
+
+## Highlights
+
+- **DecentDB-first, local-first workflow** with fast open/create, recent files,
+  and drag-and-drop import entry.
+- **Import wizards for SQLite, Excel, and SQL dumps** with preview,
+  rename/type-override transforms, progress reporting, warnings, and summary
+  actions.
+- **Modern SQL workbench** with multiple tabs, per-tab results and errors,
+  schema-aware autocomplete, snippets, and deterministic formatting.
+- **Responsive by design** with background import work, paged results, and
+  best-effort query cancellation instead of full default materialization.
+- **Desktop-friendly packaging** with a repeatable native-library staging helper
+  for Linux, macOS, and Windows bundles.
+- **Config and workspace persistence** stored as TOML plus per-database
+  workspace state.
 
 ## Project status
 
-**Pre-alpha / active implementation.** Phase 7 is implemented and runnable
-under `apps/decent-bench/`.
+> **Pre-alpha / active implementation.** The app under `apps/decent-bench/`
+> is already runnable and covers the core MVP loop: import or open a database,
+> inspect schema, run SQL, stream/page through results, and export to CSV.
 
-Current engine capability baseline: **DecentDB v1.6.x**.
-Canonical DecentDB desktop file extension: **`.ddb`**.
+### Current feature matrix
 
-### Implemented now (Phase 7)
+| Area | Status | Details |
+| --- | --- | --- |
+| Open / create DecentDB files | ✅ Implemented | Open existing `.ddb` files or create new ones from the desktop app. |
+| Drag and drop | ✅ Implemented | `.ddb` opens directly; `.db`, `.sqlite`, `.sqlite3`, `.xlsx`, and `.sql` launch the matching workflow. |
+| SQLite import wizard | ✅ Implemented | Table selection, schema preview, rename/type overrides, progress, cancellation, and summary actions. |
+| Excel import wizard | ✅ Implemented | Workbook and worksheet selection, header-row handling, type inference, rename/type overrides, and warnings. |
+| SQL dump import wizard | ✅ Implemented | MVP-lite support for common MariaDB/MySQL-style `CREATE TABLE` plus `INSERT ... VALUES` flows. |
+| Schema browser | ✅ Implemented | Tables, views, columns, indexes, and exposed constraint metadata loaded through the DecentDB adapter. |
+| SQL editor | ✅ Implemented | Multi-tab editor with isolated per-tab results, errors, positional parameters, and keyboard-driven workflows. |
+| Autocomplete / snippets / formatter | ✅ Implemented | Schema-aware completions, user-editable snippets, and deterministic SQL formatting. |
+| Results grid | ✅ Implemented | Paged results instead of full default materialization. |
+| Export | ✅ CSV now | CSV export is live; JSON, Parquet, and Excel export are deferred. |
+| Config and workspace restore | ✅ Implemented | TOML-backed app config plus per-database workspace tab restoration. |
+| Legacy `.xls` import | ⚠️ Not yet implemented | Legacy workbooks are detected and surfaced with a conversion hint to save as `.xlsx`. |
 
-- open an existing DecentDB file or create a new one
-- drag and drop a `.ddb` file to open it immediately
-- drag and drop a `.db`, `.sqlite`, or `.sqlite3` file to launch the SQLite
-  import wizard
-- drag and drop an `.xlsx` file to launch the Excel import wizard
-- drag and drop a `.sql` file to launch the SQL dump import wizard
-- inspect SQLite sources in the background before import
-- inspect Excel workbooks in the background before import
-- inspect MariaDB/MySQL-style `.sql` dumps in the background with
-  auto-detect, UTF-8, and Latin-1 decode options
-- run a six-step SQLite import wizard for source, target, preview, transforms,
-  execution, and summary
-- run a six-step Excel import wizard for source, target, preview, transforms,
-  execution, and summary
-- run a six-step SQL dump import wizard for source, target, preview,
-  transforms, execution, and summary
-- select SQLite tables to import, rename target tables and columns, and apply
-  per-column type overrides limited to DecentDB native types
-- select Excel worksheets to import, toggle header-row handling, rename target
-  tables and columns, and apply per-column type overrides limited to DecentDB
-  native types
-- select parsed SQL dump tables to import, rename target tables and columns,
-  and apply per-column type overrides limited to DecentDB native types
-- map representative SQLite affinities to DecentDB types, including boolean,
-  decimal, blob, and timestamp-oriented cases
-- infer representative Excel column types for integers, booleans, floats,
-  timestamps, and safe text fallbacks
-- parse representative SQL dump `CREATE TABLE` plus `INSERT ... VALUES`
-  statements, infer DecentDB target types for common MySQL/MariaDB column
-  types, and preserve unsupported statements as warnings
-- preview sample SQLite rows before import and surface warnings for `STRICT`,
-  `WITHOUT ROWID`, skipped composite indexes, and skipped foreign keys to
-  unselected tables
-- preview sample Excel rows before import and surface warnings for formula-text
-  handling and unsupported legacy `.xls` workbooks
-- preview sample SQL dump rows before import and surface warnings for skipped
-  `SET`, `LOCK TABLES`, `ALTER TABLE`, and other unsupported statements
-- execute SQLite imports in a background worker with progress updates and
-  best-effort cancellation plus rollback-oriented summary messaging
-- execute Excel imports in a background worker with progress updates and
-  best-effort cancellation plus rollback-oriented summary messaging
-- execute SQL dump imports in a background worker with progress updates and
-  rollback-oriented summary messaging
-- open the imported database or launch a starter query from the import summary
-- inspect schema metadata loaded through the DecentDB adapter for tables, views,
-  columns, indexes, and exposed constraint details
-- harden native-library startup with deterministic runtime resolution order and
-  actionable missing-library diagnostics
-- stage the DecentDB native library into desktop bundles through a repeatable
-  packaging helper for Linux, macOS, and Windows outputs
-- run SQL in multiple editor tabs with per-tab positional parameters
-- keep per-tab results, errors, and CSV export state isolated
-- restore query tabs when reopening the same DecentDB file
-- switch tabs and move between editor/results with keyboard shortcuts
-- author SQL with schema-aware autocomplete for objects, columns, functions,
-  keywords, and snippets
-- manage user-editable SQL snippets with default DecentDB-oriented starters
-- format selected SQL or whole documents deterministically while preserving
-  comments and string literals
-- page large result sets instead of materializing everything by default
-- best-effort query cancellation
-- export query results to CSV
-- persist recent files, export defaults, editor settings, and SQL snippets in
-  TOML
-- persist workspace tab drafts separately from global config
-- run broader unit, smoke, widget, and integration tests for the MVP workflow,
-  including native-library resolution and larger paging/schema scenarios
+## Supported file types
 
-### Not implemented yet
+| File type | Current behavior | Notes |
+| --- | --- | --- |
+| `.ddb` | Open directly | Main DecentDB workspace format. |
+| `.db`, `.sqlite`, `.sqlite3` | Import now | SQLite import wizard runs in the background and previews tables before import. |
+| `.xlsx` | Import now | Excel import wizard supports worksheet selection and inferred DecentDB type mapping. |
+| `.sql` | Import now | Targets common MariaDB/MySQL-style dumps and preserves unsupported statements as warnings when possible. |
+| `.xls` | Recognized, not imported | Convert to `.xlsx` first. |
+| Anything else | Not supported | The app should surface a clear unsupported-type path. |
 
-- JSON, Parquet, and Excel export
-- legacy binary `.xls` workbook parsing
-
-For the full planned product scope, read:
-
-- [design/PRD.md](/home/steven/source/decent-bench/design/PRD.md)
-- [design/SPEC.md](/home/steven/source/decent-bench/design/SPEC.md)
-- [design/IMPLEMENTATION_PHASES.md](/home/steven/source/decent-bench/design/IMPLEMENTATION_PHASES.md)
-
-## Engine baseline
-
-- Decent Bench tracks the **DecentDB `v1.6.x` compatibility line**.
-- The official DecentDB SQL reference for that line is the normative SQL
-  contract for the app.
-- Patch upgrades inside `v1.6.x` do not require doc churn unless they change
-  capability surface, validation expectations, or packaging assumptions.
-
-## Repository layout
-
-```text
-apps/decent-bench/              Flutter desktop app
-.github/workflows/              CI workflows
-design/                         Product docs, roadmap, and ADRs
-design/adr/                     Architecture Decision Records
-THIRD_PARTY_NOTICES.md          Third-party attribution tracking
-LICENSE                         Apache 2.0 license
-AGENTS.md                       Repo workflow and guardrails
-```
-
-## Source of truth
-
-- Product requirements: [design/PRD.md](/home/steven/source/decent-bench/design/PRD.md)
-- Product specification: [design/SPEC.md](/home/steven/source/decent-bench/design/SPEC.md)
-- Delivery phases: [design/IMPLEMENTATION_PHASES.md](/home/steven/source/decent-bench/design/IMPLEMENTATION_PHASES.md)
-- ADR policy and decisions: [design/adr/README.md](/home/steven/source/decent-bench/design/adr/README.md)
-- Repo workflow and validation rules: [AGENTS.md](/home/steven/source/decent-bench/AGENTS.md)
-
-## Developer onboarding
+## Quick start
 
 ### Prerequisites
 
 - Git
 - Flutter stable with desktop tooling enabled for your OS
-- the native toolchain required by Flutter desktop on your platform
-- Nim, for building the local DecentDB native library
-- a local DecentDB checkout placed as a sibling repo, or an equivalent update
-  to the path dependency in `apps/decent-bench/pubspec.yaml`
+- The native toolchain required by Flutter desktop on your platform
+- Nim, to build the local DecentDB native library
+- A sibling `decentdb` checkout, or an equivalent update to the local path
+  dependency in `apps/decent-bench/pubspec.yaml`
 
 ### Expected checkout layout
 
-The current Flutter app depends on the upstream Dart binding via a local path:
-
-```text
-decent-bench/apps/decent-bench/pubspec.yaml -> ../../../decentdb/bindings/dart/dart
-```
-
-The simplest layout is:
+The current Flutter app consumes the upstream Dart binding from a sibling local
+checkout:
 
 ```text
 /path/to/source/decent-bench
 /path/to/source/decentdb
 ```
 
-### Bootstrap
+`apps/decent-bench/pubspec.yaml` currently points to:
 
-1. Build the DecentDB native library:
+```text
+../../../decentdb/bindings/dart/dart
+```
+
+### Bootstrap
 
 ```bash
 cd ../decentdb
 nimble build_lib
-```
 
-2. Install Flutter dependencies:
-
-```bash
 cd ../decent-bench/apps/decent-bench
 flutter pub get
 ```
+
+### Run locally
+
+Use the native library filename that matches your platform:
+`libc_api.so` on Linux, `libc_api.dylib` on macOS, and `c_api.dll` on Windows.
+
+```bash
+cd apps/decent-bench
+DECENTDB_NATIVE_LIB=/path/to/decentdb/build/<platform-native-lib> flutter run -d linux
+DECENTDB_NATIVE_LIB=/path/to/decentdb/build/<platform-native-lib> flutter run -d macos
+DECENTDB_NATIVE_LIB=/path/to/decentdb/build/<platform-native-lib> flutter run -d windows
+```
+
+The app resolves the native DecentDB library in this order:
+
+1. `DECENTDB_NATIVE_LIB`
+2. A bundled desktop-runner location
+3. A sibling `../decentdb/build/` checkout discovered from the app working
+   directory
+
+If the sibling build is present and resolves correctly, you can often omit
+`DECENTDB_NATIVE_LIB` during local development.
 
 ### Validate
 
@@ -177,28 +183,6 @@ DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter test
 DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter test integration_test
 ```
 
-If `flutter` is not on `PATH`, use its full path instead.
-
-### Run locally
-
-From `apps/decent-bench/`, pick the desktop target you want:
-
-```bash
-DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter run -d linux
-DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter run -d macos
-DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter run -d windows
-```
-
-The app resolves the native DecentDB library in this order:
-
-1. `DECENTDB_NATIVE_LIB`
-2. a bundled desktop-runner location
-3. a sibling `../decentdb/build/` checkout discovered from the app working
-   directory
-
-If the sibling build is present and resolves correctly, you can omit
-`DECENTDB_NATIVE_LIB` when launching locally.
-
 ### Package desktop builds
 
 Build the Flutter desktop bundle first, then stage the DecentDB native library
@@ -207,6 +191,7 @@ into the generated output:
 ```bash
 cd apps/decent-bench
 flutter build linux
+
 dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle
 dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle --verify-only
 ```
@@ -217,19 +202,30 @@ Equivalent bundle roots:
 - Windows: `build/windows/x64/runner/Release`
 
 The staging helper uses the same resolution contract as the app. See
-[design/adr/0009-desktop-native-library-packaging-and-resolution.md](/home/steven/source/decent-bench/design/adr/0009-desktop-native-library-packaging-and-resolution.md).
+[`design/adr/0009-desktop-native-library-packaging-and-resolution.md`](design/adr/0009-desktop-native-library-packaging-and-resolution.md).
 
-### Local config and workspace state
+### Command-line startup path
 
-Global config is stored as TOML at:
+Packaged desktop builds expose a narrow CLI entry for import flows:
+
+```bash
+dbench --import /path/to/source.xlsx
+```
+
+That startup path reuses the same file-kind detection rules as drag and drop and
+opens the matching import wizard after initialization completes. See
+[`design/adr/0013-desktop-cli-import-launch-and-binary-name.md`](design/adr/0013-desktop-cli-import-launch-and-binary-name.md).
+
+## Configuration and workspace state
+
+Global app config is stored as TOML at:
 
 - Linux: `~/.config/decent-bench/config.toml`
 - macOS: `~/Library/Application Support/Decent Bench/config.toml`
 - Windows: `%APPDATA%\Decent Bench\config.toml`
 
 `config.toml` currently stores recent files, CSV defaults, editor settings, and
-SQL snippets. See
-[design/adr/0005-editor-config-and-snippet-persistence.md](/home/steven/source/decent-bench/design/adr/0005-editor-config-and-snippet-persistence.md).
+SQL snippets.
 
 Per-database workspace state is stored separately under:
 
@@ -239,63 +235,149 @@ Per-database workspace state is stored separately under:
 
 That workspace-state store restores query tabs only when the same database is
 opened again. See
-[design/adr/0004-workspace-state-persistence.md](/home/steven/source/decent-bench/design/adr/0004-workspace-state-persistence.md).
+[`design/adr/0004-workspace-state-persistence.md`](design/adr/0004-workspace-state-persistence.md)
+and
+[`design/adr/0005-editor-config-and-snippet-persistence.md`](design/adr/0005-editor-config-and-snippet-persistence.md).
 
-## Manual Verification
+## Architecture and source of truth
 
-Use this checklist before cutting or reviewing an MVP build:
+If repository docs ever appear to disagree, treat the implementation scope in
+[`design/SPEC.md`](design/SPEC.md) as authoritative over the PRD.
 
-- Large query paging:
-  run a query that returns thousands of rows, load more pages, and confirm the
-  window stays responsive while row counts and running/completed state stay
-  accurate
-- Cancellation:
-  run a longer query, cancel it, and confirm the tab reports cancelled or
-  partial results without blocking the next execution
-- Long-running imports:
-  run SQLite, Excel, and SQL dump imports with enough data to show progress,
-  cancel at least one run, and confirm the summary reports rollback-oriented
-  status clearly
-- Export behavior:
-  export CSV with headers on and off plus a custom delimiter, then confirm the
-  file contents match the visible result shape
-- Packaged startup:
-  build a desktop bundle, run
-  `dart run tool/stage_decentdb_native.dart --bundle <bundle-path> --verify-only`,
-  then launch the packaged app without `DECENTDB_NATIVE_LIB` and confirm it
-  resolves the bundled library path
+Primary documents:
 
-### Contributing
+- [`design/PRD.md`](design/PRD.md) — product goals, user journeys, and non-goals
+- [`design/SPEC.md`](design/SPEC.md) — implementation scope and MVP contract
+- [`design/IMPLEMENTATION_PHASES.md`](design/IMPLEMENTATION_PHASES.md) — phased
+  delivery plan and status
+- [`design/adr/README.md`](design/adr/README.md) — ADR policy and workflow
+- [`AGENTS.md`](AGENTS.md) — repository guardrails and coding-agent workflow
 
-Read these before making non-trivial changes:
+At a high level, the app is organized around:
 
-1. [design/PRD.md](/home/steven/source/decent-bench/design/PRD.md)
-2. [design/SPEC.md](/home/steven/source/decent-bench/design/SPEC.md)
-3. [design/IMPLEMENTATION_PHASES.md](/home/steven/source/decent-bench/design/IMPLEMENTATION_PHASES.md)
-4. [AGENTS.md](/home/steven/source/decent-bench/AGENTS.md)
+- a Flutter desktop shell in `apps/decent-bench/`
+- a DecentDB Dart binding adapter over the native library
+- import pipelines for SQLite, Excel, and SQL dumps
+- a multi-tab SQL workspace with paged results and CSV export
+- TOML-backed config plus per-database workspace persistence
 
-Important repo expectations:
+## Repository tour
 
-- keep changes small and testable
-- keep heavy work off the UI thread
-- prefer paging/streaming over full materialization
-- create an ADR for lasting architectural or product-impacting decisions
-- only add Apache-2.0-compatible dependencies
-- update `THIRD_PARTY_NOTICES.md` when required by a dependency license
+| Path | What it contains |
+| --- | --- |
+| `apps/decent-bench/` | Flutter desktop app source, tests, packaging helper, and desktop runner folders |
+| `apps/decent-bench/lib/` | App shell, theme system, workspace feature code, dialogs, controllers, and infrastructure |
+| `apps/decent-bench/test/` | Unit and widget tests for app startup, workspace logic, config, formatting, autocomplete, and native-library resolution |
+| `apps/decent-bench/integration_test/` | Higher-level integration coverage for the desktop workflow |
+| `design/` | PRD, SPEC, roadmap, and architecture docs |
+| `design/adr/` | Architecture Decision Records for long-lived product and technical choices |
+| `.github/workflows/` | CI that runs analysis, tests, integration tests, and desktop package verification |
+| `assets/` | Shared project assets, including the repository logo |
+| `test-data/` | Sample data used during development and testing |
+| `themes/` | Theme-related assets and supporting material |
+| `THIRD_PARTY_NOTICES.md` | Dependency attribution and license tracking |
 
-Recent ADRs relevant to the current implementation:
+## Quality gates and manual verification
 
-- [design/adr/0004-workspace-state-persistence.md](/home/steven/source/decent-bench/design/adr/0004-workspace-state-persistence.md)
-- [design/adr/0005-editor-config-and-snippet-persistence.md](/home/steven/source/decent-bench/design/adr/0005-editor-config-and-snippet-persistence.md)
-- [design/adr/0006-sqlite-import-entry-and-worker-architecture.md](/home/steven/source/decent-bench/design/adr/0006-sqlite-import-entry-and-worker-architecture.md)
-- [design/adr/0008-sql-dump-import-mvp-parser-and-warning-contract.md](/home/steven/source/decent-bench/design/adr/0008-sql-dump-import-mvp-parser-and-warning-contract.md)
-- [design/adr/0009-desktop-native-library-packaging-and-resolution.md](/home/steven/source/decent-bench/design/adr/0009-desktop-native-library-packaging-and-resolution.md)
-- [design/adr/0007-excel-import-parser-and-legacy-workbook-handling.md](/home/steven/source/decent-bench/design/adr/0007-excel-import-parser-and-legacy-workbook-handling.md)
+The repository already checks important developer workflows in CI, and local
+validation should still focus on the behavior that matters most:
+
+- Run a large query and confirm paging keeps the UI responsive.
+- Cancel a longer-running query and confirm the tab reports cancellation or
+  partial results cleanly.
+- Run SQLite, Excel, and SQL dump imports large enough to show progress, then
+  verify summary messaging and cancellation behavior.
+- Export CSV with different header and delimiter settings and verify the file
+  matches the visible result shape.
+- Verify packaged builds can resolve the staged native library without relying
+  on `DECENTDB_NATIVE_LIB`.
+
+## Roadmap
+
+Implemented today:
+
+- open/create DecentDB workspaces
+- drag-and-drop open/import flows
+- SQLite, Excel, and SQL dump import wizards
+- schema browsing for the pinned DecentDB compatibility line
+- multi-tab SQL editing with autocomplete, snippets, and formatter support
+- paged results, best-effort cancellation, and CSV export
+- TOML-backed settings and workspace restoration
+- native-library packaging support for Linux, macOS, and Windows
+
+Planned / not yet implemented:
+
+- JSON, Parquet, and Excel export
+- legacy binary `.xls` parsing
+- computed-column import transforms
+- broader import/connectivity surface beyond the current MVP-lite scope
+
+For the full product direction, read [`design/PRD.md`](design/PRD.md),
+[`design/SPEC.md`](design/SPEC.md), and
+[`design/IMPLEMENTATION_PHASES.md`](design/IMPLEMENTATION_PHASES.md).
+
+## Contributing
+
+Before making a non-trivial change, read:
+
+1. [`design/PRD.md`](design/PRD.md)
+2. [`design/SPEC.md`](design/SPEC.md)
+3. [`design/IMPLEMENTATION_PHASES.md`](design/IMPLEMENTATION_PHASES.md)
+4. [`AGENTS.md`](AGENTS.md)
+
+Project expectations:
+
+- Keep changes small, reviewable, and testable.
+- Keep heavy work off the UI thread.
+- Prefer paging/streaming over full materialization.
+- Create an ADR for lasting architectural or product-impacting decisions.
+- Only add Apache-2.0-compatible dependencies.
+- Update `THIRD_PARTY_NOTICES.md` when a dependency license requires it.
+
+Recommended local validation for meaningful changes:
+
+```bash
+cd apps/decent-bench
+flutter analyze
+DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter test
+DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter test integration_test
+```
+
+## FAQ
+
+### Is this a general-purpose database admin tool?
+
+No. Decent Bench is intentionally **DecentDB-first**. The core workflow is to
+open or create a local DecentDB file, import supported sources into it, inspect
+schema, run SQL, and export results.
+
+### Does the app load entire query results into memory?
+
+No by default. Paging/streaming is a core design constraint, and the results
+experience is built around paged retrieval rather than full materialization.
+
+### Can I import legacy `.xls` Excel files?
+
+Not yet. The current app detects legacy workbooks and surfaces a conversion hint
+so you can save them as `.xlsx` first.
+
+### What should I do if the native library is not found?
+
+First point `DECENTDB_NATIVE_LIB` at the built DecentDB native library. If
+you are packaging a build, use
+`dart run tool/stage_decentdb_native.dart --bundle <bundle-path>` and verify the
+bundle with `--verify-only`.
+
+### Can I script import startup from the command line?
+
+Yes. Packaged desktop builds expose `dbench --import <path>` to launch the
+matching import wizard on startup.
 
 ## License
 
-Decent Bench is licensed under the Apache License 2.0. See `LICENSE`.
+Decent Bench is licensed under the Apache License 2.0. See [`LICENSE`](LICENSE).
 
 ## Third-party notices
 
-See `THIRD_PARTY_NOTICES.md` for dependency attributions and license tracking.
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for dependency
+attributions and license tracking.

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../app/theme_system/decent_bench_theme_extension.dart';
 
 const EdgeInsets kSqlEditorContentPadding = EdgeInsets.all(16);
+const double kSqlEditorGutterWidth = 60;
 
 class SqlCodeEditor extends StatelessWidget {
   const SqlCodeEditor({

@@ -35,6 +35,7 @@ class CommandToolbar extends StatelessWidget {
               _divider(context),
               _toolbarButton('tools_new_query_tab'),
               _toolbarButton('tools_run_query'),
+              _toolbarButton('tools_run_buffer'),
               _toolbarButton('tools_stop_query'),
               _toolbarButton('tools_format_sql'),
             ],

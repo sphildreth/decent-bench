@@ -144,6 +144,7 @@ class NativeAppMenuHost extends StatelessWidget {
           PlatformMenuItemGroup(
             members: <PlatformMenuItem>[
               _platformCommandItem('tools_run_query'),
+              _platformCommandItem('tools_run_buffer'),
               _platformCommandItem('tools_stop_query'),
               _platformCommandItem('tools_format_sql'),
               _platformCommandItem('tools_new_query_tab'),
@@ -314,6 +315,7 @@ class AppMenuBar extends StatelessWidget {
           SubmenuButton(
             menuChildren: <Widget>[
               _commandItem('tools_run_query'),
+              _commandItem('tools_run_buffer'),
               _commandItem('tools_stop_query'),
               _commandItem('tools_format_sql'),
               _commandItem('tools_new_query_tab'),

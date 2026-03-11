@@ -59,6 +59,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
     'tools_format_sql': 'Format SQL',
     'tools_new_query_tab': 'New Query Tab',
     'tools_run_query': 'Run Query',
+    'tools_run_buffer': 'Run Buffer',
     'tools_stop_query': 'Stop Query',
     'view_reset_layout': 'Reset Layout',
     'view_zoom_in': 'Zoom In',
