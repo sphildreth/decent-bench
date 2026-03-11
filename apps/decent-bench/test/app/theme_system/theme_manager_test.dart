@@ -5,6 +5,8 @@ import 'package:decent_bench/features/workspace/domain/app_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('built-in fallback theme loads when external theme fails', () async {
     final directory = await Directory.systemTemp.createTemp(
       'decent-bench-themes-invalid-',

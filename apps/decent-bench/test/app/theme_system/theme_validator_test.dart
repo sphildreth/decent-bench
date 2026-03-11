@@ -1,19 +1,19 @@
-import 'package:decent_bench/app/theme_system/built_in_theme_sources.dart';
 import 'package:decent_bench/app/theme_system/theme_parser.dart';
 import 'package:decent_bench/app/theme_system/theme_presets.dart';
 import 'package:decent_bench/app/theme_system/theme_validator.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   const parser = ThemeParser();
   const validator = ThemeValidator();
 
-  test('valid theme TOML loads successfully', () {
-    final parsed = parser.parse(
-      kClassicDarkThemeSource,
-      sourceLabel: 'classic-dark.toml',
+  test('valid theme TOML loads successfully', () async {
+    final themeSource = await rootBundle.loadString(
+      'assets/themes/classic-dark.toml',
     );
+    final parsed = parser.parse(themeSource, sourceLabel: 'classic-dark.toml');
 
     expect(parsed.isSuccess, isTrue);
     final result = validator.validate(
@@ -28,9 +28,12 @@ void main() {
     expect(result.theme!.sqlSyntax.keyword, const Color(0xFFC586C0));
   });
 
-  test('invalid color format is rejected', () {
+  test('invalid color format is rejected', () async {
+    final themeSource = await rootBundle.loadString(
+      'assets/themes/classic-dark.toml',
+    );
     final parsed = parser.parse(
-      kClassicDarkThemeSource.replaceFirst('#7C5CFF', '#12345'),
+      themeSource.replaceFirst('#7C5CFF', '#12345'),
       sourceLabel: 'broken.toml',
     );
     final result = validator.validate(

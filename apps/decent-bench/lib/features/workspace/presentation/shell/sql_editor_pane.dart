@@ -6,6 +6,7 @@ import '../../domain/app_config.dart';
 import '../../domain/sql_autocomplete.dart';
 import '../../domain/workspace_models.dart';
 import 'shell_pane_frame.dart';
+import 'sql_code_editor.dart';
 
 class SqlEditorPane extends StatelessWidget {
   const SqlEditorPane({
@@ -22,6 +23,7 @@ class SqlEditorPane extends StatelessWidget {
     required this.autocompleteResult,
     required this.snippets,
     required this.zoomFactor,
+    required this.indentSpaces,
     required this.showFindBar,
     required this.findController,
     required this.findFocusNode,
@@ -60,6 +62,7 @@ class SqlEditorPane extends StatelessWidget {
   final AutocompleteResult autocompleteResult;
   final List<SqlSnippet> snippets;
   final double zoomFactor;
+  final int indentSpaces;
   final bool showFindBar;
   final TextEditingController findController;
   final FocusNode findFocusNode;
@@ -220,31 +223,14 @@ class SqlEditorPane extends StatelessWidget {
                                         },
                                       ),
                                 },
-                                child: TextField(
-                                  focusNode: focusNode,
+                                child: SqlCodeEditor(
                                   controller: sqlController,
+                                  focusNode: focusNode,
                                   scrollController: editorScrollController,
                                   undoController: undoController,
                                   onChanged: onSqlChanged,
-                                  expands: true,
-                                  maxLines: null,
-                                  minLines: null,
-                                  textAlignVertical: TextAlignVertical.top,
-                                  style: editorStyle,
-                                  cursorColor: themeTokens.editor.cursor,
-                                  decoration: InputDecoration(
-                                    border: InputBorder.none,
-                                    contentPadding: const EdgeInsets.all(16),
-                                    hintText:
-                                        'SELECT *\nFROM your_table\nLIMIT 100;',
-                                    hintStyle: TextStyle(
-                                      color: themeTokens.editor.whitespace,
-                                      fontFamily:
-                                          themeTokens.fonts.editorFamily,
-                                    ),
-                                    filled: true,
-                                    fillColor: themeTokens.editor.background,
-                                  ),
+                                  zoomFactor: zoomFactor,
+                                  indentSpaces: indentSpaces,
                                 ),
                               ),
                             ),
@@ -559,6 +545,8 @@ class _LineNumberGutter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = context.decentBenchTheme;
+    final lineHeight =
+        (tokens.fonts.editorSize * zoomFactor) * tokens.fonts.lineHeight;
     return Container(
       width: 48,
       color: tokens.editor.gutterBackground,
@@ -569,22 +557,33 @@ class _LineNumberGutter extends StatelessWidget {
             final offset = controller.hasClients ? controller.offset : 0.0;
             return Transform.translate(
               offset: Offset(0, -offset),
-              child: Column(
-                children: <Widget>[
-                  for (var index = 0; index < lineCount; index++)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(0, 2, 8, 2),
-                      child: Text(
-                        '${index + 1}',
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                          fontSize: tokens.fonts.editorSize * zoomFactor - 1,
-                          fontFamily: tokens.fonts.editorFamily,
-                          color: tokens.editor.gutterText,
+              child: Padding(
+                padding: EdgeInsets.only(top: kSqlEditorContentPadding.top),
+                child: Column(
+                  children: <Widget>[
+                    for (var index = 0; index < lineCount; index++)
+                      SizedBox(
+                        height: lineHeight,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Text(
+                              '${index + 1}',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                fontSize:
+                                    tokens.fonts.editorSize * zoomFactor - 1,
+                                fontFamily: tokens.fonts.editorFamily,
+                                height: 1,
+                                color: tokens.editor.gutterText,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             );
           },
@@ -746,9 +745,13 @@ class _AutocompletePopup extends StatelessWidget {
     )..layout();
     final charWidth = textPainter.width;
 
-    final rawLeft = 48 + 16 + (columnIndex * charWidth);
+    final rawLeft =
+        48 + kSqlEditorContentPadding.left + (columnIndex * charWidth);
     final rawTop =
-        16 + (lineIndex * lineHeight) - editorScrollOffset + lineHeight;
+        kSqlEditorContentPadding.top +
+        (lineIndex * lineHeight) -
+        editorScrollOffset +
+        lineHeight;
     final clampedLeft = rawLeft
         .clamp(8.0, maxWidth - popupWidth - 8.0)
         .toDouble();

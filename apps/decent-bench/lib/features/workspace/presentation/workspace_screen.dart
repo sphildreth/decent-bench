@@ -264,6 +264,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                     autocompleteResult: autocompleteResult,
                                     snippets: controller.config.snippets,
                                     zoomFactor: shellPreferences.editorZoom,
+                                    indentSpaces: controller
+                                        .config
+                                        .editorSettings
+                                        .indentSpaces,
                                     showFindBar: _showFindBar,
                                     findController: _findController,
                                     findFocusNode: _findFocusNode,

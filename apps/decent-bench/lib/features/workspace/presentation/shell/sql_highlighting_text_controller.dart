@@ -68,11 +68,12 @@ class SqlHighlightingTextEditingController extends TextEditingController {
     required bool withComposing,
   }) {
     final theme = context.decentBenchTheme;
-    final baseStyle = (style ?? const TextStyle()).copyWith(
+    final incomingStyle = style ?? const TextStyle();
+    final baseStyle = incomingStyle.copyWith(
       color: theme.sqlSyntax.identifier,
-      fontFamily: theme.fonts.editorFamily,
-      fontSize: theme.fonts.editorSize,
-      height: theme.fonts.lineHeight,
+      fontFamily: incomingStyle.fontFamily ?? theme.fonts.editorFamily,
+      fontSize: incomingStyle.fontSize ?? theme.fonts.editorSize,
+      height: incomingStyle.height ?? theme.fonts.lineHeight,
     );
     final spans = <InlineSpan>[];
     final source = text;

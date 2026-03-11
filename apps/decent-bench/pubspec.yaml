@@ -26,3 +26,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/themes/classic-dark.toml
+    - assets/themes/classic-light.toml

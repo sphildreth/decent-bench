@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
-import 'built_in_theme_sources.dart';
+import 'built_in_theme_assets.dart';
 import 'decent_bench_theme.dart';
 import 'theme_parser.dart';
 import 'theme_presets.dart';
@@ -35,12 +35,17 @@ class ThemeDiscoveryResult {
 }
 
 class ThemeDiscoveryService {
-  ThemeDiscoveryService({ThemeParser? parser, ThemeValidator? validator})
-    : _parser = parser ?? const ThemeParser(),
-      _validator = validator ?? const ThemeValidator();
+  ThemeDiscoveryService({
+    ThemeParser? parser,
+    ThemeValidator? validator,
+    AssetBundle? assetBundle,
+  }) : _parser = parser ?? const ThemeParser(),
+       _validator = validator ?? const ThemeValidator(),
+       _assetBundle = assetBundle ?? rootBundle;
 
   final ThemeParser _parser;
   final ThemeValidator _validator;
+  final AssetBundle _assetBundle;
 
   Future<ThemeDiscoveryResult> discover({
     String? configuredThemesDirectory,
@@ -52,26 +57,14 @@ class ThemeDiscoveryService {
     final builtInThemes = <String, DecentBenchTheme>{};
     final availableThemes = <String, DecentBenchTheme>{};
 
-    _loadBuiltInTheme(
-      sourceLabel: 'builtin:classic-dark',
-      themeSource: kClassicDarkThemeSource,
-      themeId: 'classic-dark',
-      themeName: 'Classic Dark',
-      builtInThemes: builtInThemes,
-      availableThemes: availableThemes,
-      logs: logs,
-      brightness: Brightness.dark,
-    );
-    _loadBuiltInTheme(
-      sourceLabel: 'builtin:classic-light',
-      themeSource: kClassicLightThemeSource,
-      themeId: 'classic-light',
-      themeName: 'Classic Light',
-      builtInThemes: builtInThemes,
-      availableThemes: availableThemes,
-      logs: logs,
-      brightness: Brightness.light,
-    );
+    for (final asset in kBuiltInThemeAssets) {
+      await _loadBuiltInTheme(
+        asset: asset,
+        builtInThemes: builtInThemes,
+        availableThemes: availableThemes,
+        logs: logs,
+      );
+    }
 
     final directory = Directory(resolvedThemesDirectory);
     if (!await directory.exists()) {
@@ -175,28 +168,38 @@ class ThemeDiscoveryService {
     return p.join(home, '.decent-bench', 'themes');
   }
 
-  void _loadBuiltInTheme({
-    required String sourceLabel,
-    required String themeSource,
-    required String themeId,
-    required String themeName,
+  Future<void> _loadBuiltInTheme({
+    required BuiltInThemeAsset asset,
     required Map<String, DecentBenchTheme> builtInThemes,
     required Map<String, DecentBenchTheme> availableThemes,
     required List<String> logs,
-    required Brightness brightness,
-  }) {
+  }) async {
     final emergencyTheme = buildEmergencyTheme(
-      brightness: brightness,
-      id: themeId,
-      name: themeName,
+      brightness: asset.brightness,
+      id: asset.id,
+      name: asset.name,
     );
+
+    late final String themeSource;
+    try {
+      themeSource = await _assetBundle.loadString(asset.assetPath);
+    } catch (error) {
+      logs.add(
+        'Failed to load built-in theme asset ${asset.assetPath}; using emergency fallback. $error',
+      );
+      builtInThemes[asset.id] = emergencyTheme;
+      availableThemes[asset.id] = emergencyTheme;
+      return;
+    }
+
+    final sourceLabel = 'builtin:${asset.assetPath}';
     final parseResult = _parser.parse(themeSource, sourceLabel: sourceLabel);
     if (!parseResult.isSuccess) {
       logs.add(
-        'Failed to parse built-in theme $themeId; using emergency fallback. ${parseResult.error}',
+        'Failed to parse built-in theme ${asset.id}; using emergency fallback. ${parseResult.error}',
       );
-      builtInThemes[themeId] = emergencyTheme;
-      availableThemes[themeId] = emergencyTheme;
+      builtInThemes[asset.id] = emergencyTheme;
+      availableThemes[asset.id] = emergencyTheme;
       return;
     }
 
@@ -210,10 +213,10 @@ class ThemeDiscoveryService {
     }
     if (!validation.isSuccess) {
       logs.add(
-        'Built-in theme $themeId failed validation; using emergency fallback. ${validation.error}',
+        'Built-in theme ${asset.id} failed validation; using emergency fallback. ${validation.error}',
       );
-      builtInThemes[themeId] = emergencyTheme;
-      availableThemes[themeId] = emergencyTheme;
+      builtInThemes[asset.id] = emergencyTheme;
+      availableThemes[asset.id] = emergencyTheme;
       return;
     }
 
