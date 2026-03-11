@@ -1,0 +1,4 @@
+{"event_id": 1, "ts": "2026-03-11T08:15:00Z", "level": "INFO", "user_id": 1, "action": "login"}
+{"event_id": 2, "ts": "2026-03-11T08:16:12Z", "level": "WARN", "user_id": 2, "action": "password_retry"}
+{"event_id": 3, "ts": "2026-03-11T08:17:44Z", "level": "INFO", "user_id": 1, "action": "query_run", "rows": 245}
+{"event_id": 4, "ts": "2026-03-11T08:18:03Z", "level": "ERROR", "user_id": 3, "action": "import_failed", "reason": "invalid delimiter"}

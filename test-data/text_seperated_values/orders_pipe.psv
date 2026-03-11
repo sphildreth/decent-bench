@@ -1,0 +1,5 @@
+order_id|customer_id|order_date|region|total_amount|status
+10001|1|2025-03-01|NA|199.95|paid
+10002|2|2025-03-02|EU|89.5|pending
+10003|1|2025-03-03|NA|18.25|paid
+10004|4|2025-03-03|APAC|1200.0|refunded

@@ -1,0 +1,5 @@
+product_id	sku	name	category	price	in_stock
+101	LAP-1001	Laptop 14	Computers	899.99	14
+102	MON-2401	24in Monitor	Displays	179.49	33
+103	KEY-7777	Mechanical Keyboard	Peripherals	99.95	120
+104	DOC-9000	USB-C Dock	Accessories	149.0	7

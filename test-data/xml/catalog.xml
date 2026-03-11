@@ -1,0 +1,2 @@
+<?xml version='1.0' encoding='utf-8'?>
+<catalog><metadata><generated_on>2026-03-11</generated_on></metadata><books><book id="b1" category="database"><title>Practical SQL</title><author>A. Writer</author><price>39.95</price></book><book id="b2" category="integration"><title>XML in Action</title><author>B. Author</author><price>29.50</price></book><book id="b3" category="analytics"><title>Data Pipelines</title><author>C. Builder</author><price>49.00</price></book></books></catalog>

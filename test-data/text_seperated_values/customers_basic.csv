@@ -1,0 +1,5 @@
+customer_id,name,email,signup_date,is_active,lifetime_value
+1,Alice Carter,alice@example.com,2025-01-14,True,1234.56
+2,Bob Smith,bob@example.com,2024-11-02,True,987.1
+3,Carla Gomez,carla@example.com,2023-06-28,False,42.0
+4,Dinesh Patel,dinesh@example.com,2025-02-01,True,4500.75

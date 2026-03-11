@@ -1,0 +1,51 @@
+{
+  "exported_at": "2026-03-11T08:00:00Z",
+  "store": {
+    "store_id": 7,
+    "name": "Downtown",
+    "region": "NA"
+  },
+  "orders": [
+    {
+      "order_id": 5001,
+      "customer": {
+        "customer_id": 1,
+        "name": "Alice Carter"
+      },
+      "items": [
+        {
+          "sku": "LAP-1001",
+          "qty": 1,
+          "unit_price": 899.99
+        },
+        {
+          "sku": "DOC-9000",
+          "qty": 1,
+          "unit_price": 149.0
+        }
+      ],
+      "shipping": {
+        "method": "ground",
+        "cost": 15.99
+      }
+    },
+    {
+      "order_id": 5002,
+      "customer": {
+        "customer_id": 2,
+        "name": "Bob Smith"
+      },
+      "items": [
+        {
+          "sku": "KEY-7777",
+          "qty": 2,
+          "unit_price": 99.95
+        }
+      ],
+      "shipping": {
+        "method": "air",
+        "cost": 25.0
+      }
+    }
+  ]
+}
