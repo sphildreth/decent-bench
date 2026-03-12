@@ -205,6 +205,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
       _FolderBranch(
         nodeId: 'folder:${object.name}:columns',
         label: 'Columns',
+        count: object.columns.length,
         icon: Icons.view_column_outlined,
         selectedNodeId: widget.selectedNodeId,
         expandedNodes: _expandedNodes,
@@ -227,6 +228,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
       _FolderBranch(
         nodeId: 'folder:${object.name}:indexes',
         label: 'Indexes',
+        count: relatedIndexes.length,
         icon: Icons.filter_alt_outlined,
         selectedNodeId: widget.selectedNodeId,
         expandedNodes: _expandedNodes,
@@ -262,6 +264,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
         _FolderBranch(
           nodeId: 'folder:${object.name}:constraints',
           label: 'Constraints',
+          count: object.exposedConstraintSummaries.length,
           icon: Icons.rule_folder_outlined,
           selectedNodeId: widget.selectedNodeId,
           expandedNodes: _expandedNodes,
@@ -278,6 +281,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
         _FolderBranch(
           nodeId: 'folder:${object.name}:triggers',
           label: 'Triggers',
+          count: relatedTriggers.length,
           icon: Icons.bolt_outlined,
           selectedNodeId: widget.selectedNodeId,
           expandedNodes: _expandedNodes,
@@ -375,6 +379,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
           _FolderBranch(
             nodeId: 'folder:sample.customers:columns',
             label: 'Columns',
+            count: 3,
             icon: Icons.view_column_outlined,
             selectedNodeId: widget.selectedNodeId,
             expandedNodes: _expandedNodes,
@@ -414,6 +419,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
           _FolderBranch(
             nodeId: 'folder:sample.orders:columns',
             label: 'Columns',
+            count: 3,
             icon: Icons.view_column_outlined,
             selectedNodeId: widget.selectedNodeId,
             expandedNodes: _expandedNodes,
@@ -458,6 +464,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
           _FolderBranch(
             nodeId: 'folder:sample.active_orders:columns',
             label: 'Columns',
+            count: 2,
             icon: Icons.view_column_outlined,
             selectedNodeId: widget.selectedNodeId,
             expandedNodes: _expandedNodes,
@@ -574,6 +581,7 @@ class _SectionBranch extends StatelessWidget {
     final theme = Theme.of(context);
     final tokens = context.decentBenchTheme;
     return DecoratedBox(
+      key: ValueKey<String>('schema.branch.$nodeId.$expanded'),
       decoration: BoxDecoration(
         border: Border.all(color: tokens.colors.border),
         color: tokens.sidebar.headerBackground,
@@ -583,18 +591,23 @@ class _SectionBranch extends StatelessWidget {
         initiallyExpanded: expanded,
         tilePadding: const EdgeInsets.symmetric(horizontal: 8),
         childrenPadding: const EdgeInsets.only(left: 10, right: 6, bottom: 6),
-        leading: Icon(
-          icon,
-          size: tokens.metrics.iconSize,
-          color: tokens.sidebar.headerText,
-        ),
         title: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => onSelected(nodeId),
+          onTapDown: (_) => onSelected(nodeId),
+          onDoubleTap: () {
+            onSelected(nodeId);
+            onExpansionChanged(nodeId, !expanded);
+          },
           onSecondaryTapDown: (details) =>
               onShowContextMenu(nodeId, details.globalPosition),
           child: Row(
             children: <Widget>[
+              Icon(
+                icon,
+                size: tokens.metrics.iconSize,
+                color: tokens.sidebar.headerText,
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   title,
@@ -659,6 +672,7 @@ class _FolderBranch extends StatelessWidget {
     required this.nodeId,
     required this.label,
     required this.icon,
+    this.count,
     required this.selectedNodeId,
     required this.expandedNodes,
     required this.onSelectNode,
@@ -670,6 +684,7 @@ class _FolderBranch extends StatelessWidget {
   final String nodeId;
   final String label;
   final IconData icon;
+  final int? count;
   final String? selectedNodeId;
   final Set<String> expandedNodes;
   final ValueChanged<String> onSelectNode;
@@ -683,6 +698,7 @@ class _FolderBranch extends StatelessWidget {
       nodeId: nodeId,
       label: label,
       icon: icon,
+      count: count,
       selectedNodeId: selectedNodeId,
       expandedNodes: expandedNodes,
       onSelectNode: onSelectNode,
@@ -699,6 +715,7 @@ class _BranchNode extends StatelessWidget {
     required this.nodeId,
     required this.label,
     required this.icon,
+    this.count,
     required this.selectedNodeId,
     required this.expandedNodes,
     required this.onSelectNode,
@@ -711,6 +728,7 @@ class _BranchNode extends StatelessWidget {
   final String nodeId;
   final String label;
   final IconData icon;
+  final int? count;
   final String? selectedNodeId;
   final Set<String> expandedNodes;
   final ValueChanged<String> onSelectNode;
@@ -722,38 +740,56 @@ class _BranchNode extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = selectedNodeId == nodeId;
+    final expanded = expandedNodes.contains(nodeId);
     final theme = Theme.of(context);
     final tokens = context.decentBenchTheme;
     return Container(
+      key: ValueKey<String>('schema.branch.$nodeId.$expanded'),
       margin: EdgeInsets.only(left: inset, bottom: 4),
       color: selected ? tokens.sidebar.itemSelectedBackground : null,
       child: ExpansionTile(
         key: PageStorageKey<String>(nodeId),
-        initiallyExpanded: expandedNodes.contains(nodeId),
+        initiallyExpanded: expanded,
         tilePadding: const EdgeInsets.symmetric(horizontal: 8),
         childrenPadding: const EdgeInsets.only(left: 12, bottom: 4),
         collapsedShape: const RoundedRectangleBorder(),
         shape: const RoundedRectangleBorder(),
-        leading: Icon(
-          icon,
-          size: tokens.metrics.iconSize,
-          color: selected
-              ? tokens.sidebar.itemSelectedText
-              : tokens.sidebar.itemText,
-        ),
         title: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => onSelectNode(nodeId),
+          onTapDown: (_) => onSelectNode(nodeId),
+          onDoubleTap: () {
+            onSelectNode(nodeId);
+            onExpansionChanged(nodeId, !expanded);
+          },
           onSecondaryTapDown: (details) =>
               onShowContextMenu(nodeId, details.globalPosition),
-          child: Text(
-            label,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected
-                  ? tokens.sidebar.itemSelectedText
-                  : tokens.sidebar.itemText,
-            ),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                icon,
+                size: tokens.metrics.iconSize,
+                color: selected
+                    ? tokens.sidebar.itemSelectedText
+                    : tokens.sidebar.itemText,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: selected
+                        ? tokens.sidebar.itemSelectedText
+                        : tokens.sidebar.itemText,
+                  ),
+                ),
+              ),
+              if (count != null)
+                _CountBadge(
+                  key: ValueKey<String>('schema.count.$nodeId'),
+                  count: count!,
+                ),
+            ],
           ),
         ),
         onExpansionChanged: (value) => onExpansionChanged(nodeId, value),
@@ -824,7 +860,7 @@ class _LeafNode extends StatelessWidget {
 }
 
 class _CountBadge extends StatelessWidget {
-  const _CountBadge({required this.count});
+  const _CountBadge({super.key, required this.count});
 
   final int count;
 

@@ -248,6 +248,180 @@ void main() {
     expect(shownPosition, isNotNull);
   });
 
+  testWidgets('schema explorer shows child totals for tables and views', (
+    tester,
+  ) async {
+    final schema = FakeWorkspaceGateway().snapshot;
+
+    _configureDesktopViewport(tester);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Material(
+            child: SchemaExplorerPane(
+              schema: schema,
+              databasePath: '/tmp/schema-counts.ddb',
+              selectedNodeId: null,
+              onSelectNode: (_) {},
+              onShowNodeMenu: (_, _) {},
+              onRefresh: () {},
+              isLoading: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final tasksBranch = find.byKey(const PageStorageKey<String>('table:tasks'));
+    final tasksRect = tester.getRect(tasksBranch);
+    await tester.tapAt(
+      Offset(tasksRect.right - 20, tasksRect.top + (tasksRect.height / 2)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('schema.count.folder:tasks:columns'),
+        ),
+        matching: find.text('2'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('schema.count.folder:tasks:indexes'),
+        ),
+        matching: find.text('1'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('schema.count.folder:tasks:constraints'),
+        ),
+        matching: find.text('5'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('schema.count.folder:tasks:triggers'),
+        ),
+        matching: find.text('1'),
+      ),
+      findsOneWidget,
+    );
+
+    final viewBranch = find.byKey(
+      const PageStorageKey<String>('view:active_tasks'),
+    );
+    await tester.ensureVisible(viewBranch);
+    final viewRect = tester.getRect(viewBranch);
+    await tester.tapAt(
+      Offset(viewRect.right - 20, viewRect.top + (viewRect.height / 2)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('schema.count.folder:active_tasks:columns'),
+        ),
+        matching: find.text('2'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('schema.count.folder:active_tasks:indexes'),
+        ),
+        matching: find.text('0'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('schema.count.folder:active_tasks:triggers'),
+        ),
+        matching: find.text('0'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('schema explorer double click toggles a branch row', (
+    tester,
+  ) async {
+    final schema = FakeWorkspaceGateway().snapshot;
+
+    _configureDesktopViewport(tester);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Material(
+            child: SchemaExplorerPane(
+              schema: schema,
+              databasePath: '/tmp/schema-double-click.ddb',
+              selectedNodeId: null,
+              onSelectNode: (_) {},
+              onShowNodeMenu: (_, _) {},
+              onRefresh: () {},
+              isLoading: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const columnsCountKey = ValueKey<String>(
+      'schema.count.folder:tasks:columns',
+    );
+    expect(find.byKey(columnsCountKey), findsNothing);
+
+    final tasksBranch = find.byKey(const PageStorageKey<String>('table:tasks'));
+    final tasksRect = tester.getRect(tasksBranch);
+    final branchPoint = Offset(
+      tasksRect.left + 24,
+      tasksRect.top + (tasksRect.height / 2),
+    );
+
+    await tester.tapAt(branchPoint);
+    await tester.pump(kDoubleTapMinTime);
+    await tester.tapAt(branchPoint);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(columnsCountKey), findsOneWidget);
+
+    final expandedTasksRect = tester.getRect(tasksBranch);
+    final collapsePoint = Offset(
+      expandedTasksRect.left + 24,
+      expandedTasksRect.top + 20,
+    );
+
+    await tester.tapAt(collapsePoint);
+    await tester.pump(kDoubleTapMinTime);
+    await tester.tapAt(collapsePoint);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(columnsCountKey), findsNothing);
+  });
+
   testWidgets('execution plan tab renders EXPLAIN rows', (tester) async {
     final verticalScrollController = ScrollController();
     final horizontalScrollController = ScrollController();
