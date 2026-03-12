@@ -6,12 +6,18 @@ class GenericImportFixtureEntry {
     required this.formatKey,
     this.options,
     this.extractWrappedSource = false,
+    this.expectedTableNames,
+    this.expectedRowCountsByTable = const <String, int>{},
+    this.requiredColumnsByTable = const <String, List<String>>{},
   });
 
   final String relativePath;
   final ImportFormatKey formatKey;
   final GenericImportOptions? options;
   final bool extractWrappedSource;
+  final List<String>? expectedTableNames;
+  final Map<String, int> expectedRowCountsByTable;
+  final Map<String, List<String>> requiredColumnsByTable;
 }
 
 class GenericInspectionFixtureEntry {
@@ -203,6 +209,11 @@ const List<GenericImportFixtureEntry> genericImportRoundTripFixtures =
       GenericImportFixtureEntry(
         relativePath: 'test-data/xml/01_basic_flat.xml',
         formatKey: ImportFormatKey.xml,
+        expectedTableNames: <String>['employees'],
+        expectedRowCountsByTable: <String, int>{'employees': 3},
+        requiredColumnsByTable: <String, List<String>>{
+          'employees': <String>['id', 'name', 'role'],
+        },
       ),
       GenericImportFixtureEntry(
         relativePath: 'test-data/xml/02_attributes.xml',
@@ -231,6 +242,18 @@ const List<GenericImportFixtureEntry> genericImportRoundTripFixtures =
       GenericImportFixtureEntry(
         relativePath: 'test-data/xml/07_large_dataset.xml',
         formatKey: ImportFormatKey.xml,
+        expectedTableNames: <String>['records'],
+        expectedRowCountsByTable: <String, int>{'records': 10000},
+        requiredColumnsByTable: <String, List<String>>{
+          'records': <String>[
+            'attr_id',
+            'uuid',
+            'value',
+            'status',
+            'metadata__source',
+            'metadata__retry_count',
+          ],
+        },
       ),
       GenericImportFixtureEntry(
         relativePath: 'test-data/xml/08_wide_elements.xml',

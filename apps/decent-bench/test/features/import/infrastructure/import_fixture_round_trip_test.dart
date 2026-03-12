@@ -151,6 +151,36 @@ void main() {
               reason:
                   'Expected at least one selected import table for ${fixture.relativePath}',
             );
+            final expectedTableNames = fixture.expectedTableNames;
+            if (expectedTableNames != null) {
+              expect(
+                selectedTables.map((table) => table.targetName).toSet(),
+                equals(expectedTableNames.toSet()),
+                reason: 'Unexpected preview tables for ${fixture.relativePath}',
+              );
+            }
+            for (final table in selectedTables) {
+              final expectedRowCount =
+                  fixture.expectedRowCountsByTable[table.targetName];
+              if (expectedRowCount != null) {
+                expect(
+                  table.rowCount,
+                  expectedRowCount,
+                  reason:
+                      'Unexpected preview row count for ${fixture.relativePath}:${table.targetName}',
+                );
+              }
+              final requiredColumns =
+                  fixture.requiredColumnsByTable[table.targetName];
+              if (requiredColumns != null) {
+                expect(
+                  table.columns.map((column) => column.sourceName),
+                  containsAll(requiredColumns),
+                  reason:
+                      'Unexpected preview columns for ${fixture.relativePath}:${table.targetName}',
+                );
+              }
+            }
 
             final request = GenericImportRequest(
               jobId: _jobIdFor(fixture.relativePath),
@@ -219,6 +249,16 @@ void main() {
                     for (final column in table.columns)
                       (name: column.targetName, targetType: column.targetType),
                   ]);
+              final expectedRowCount =
+                  fixture.expectedRowCountsByTable[table.targetName];
+              if (expectedRowCount != null) {
+                expect(
+                  actualRows,
+                  hasLength(expectedRowCount),
+                  reason:
+                      'Unexpected imported row count for ${fixture.relativePath}:${table.targetName}',
+                );
+              }
 
               expect(
                 actualSignatures,

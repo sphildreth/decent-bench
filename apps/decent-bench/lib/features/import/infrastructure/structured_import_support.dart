@@ -7,6 +7,16 @@ import 'package:xml/xml.dart';
 import '../domain/import_models.dart';
 import 'type_inference_service.dart';
 
+class _StructuredSourceSnapshot {
+  const _StructuredSourceSnapshot({
+    required this.value,
+    this.preferredTableName,
+  });
+
+  final dynamic value;
+  final String? preferredTableName;
+}
+
 MaterializedImportSource materializeStructuredSourceSync({
   required String sourcePath,
   required ImportFormatDefinition format,
@@ -19,20 +29,20 @@ MaterializedImportSource materializeStructuredSourceSync({
   }
 
   final warnings = <String>[];
-  final rootName = typeInferenceService.sanitizeIdentifier(
-    p.basenameWithoutExtension(sourcePath),
-    fallbackPrefix: 'document',
-  );
   final source = _readStructuredSource(
     sourcePath: sourcePath,
     format: format,
     options: options,
     warnings: warnings,
   );
+  final rootName = typeInferenceService.sanitizeIdentifier(
+    source.preferredTableName ?? p.basenameWithoutExtension(sourcePath),
+    fallbackPrefix: 'document',
+  );
 
   final tables = options.structuredStrategy == StructuredImportStrategy.flatten
-      ? _flattenToTables(source: source, rootName: rootName)
-      : _normalizeToTables(source: source, rootName: rootName);
+      ? _flattenToTables(source: source.value, rootName: rootName)
+      : _normalizeToTables(source: source.value, rootName: rootName);
 
   return MaterializedImportSource(
     sourcePath: sourcePath,
@@ -98,7 +108,7 @@ GenericImportInspection inspectStructuredSourceSync({
   );
 }
 
-dynamic _readStructuredSource({
+_StructuredSourceSnapshot _readStructuredSource({
   required String sourcePath,
   required ImportFormatDefinition format,
   required GenericImportOptions options,
@@ -110,22 +120,98 @@ dynamic _readStructuredSource({
 
   switch (format.key) {
     case ImportFormatKey.json:
-      return jsonDecode(text);
+      return _StructuredSourceSnapshot(value: jsonDecode(text));
     case ImportFormatKey.ndjson:
-      return LineSplitter.split(text)
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty)
-          .map<dynamic>((line) => jsonDecode(line))
-          .toList(growable: false);
+      return _StructuredSourceSnapshot(
+        value: LineSplitter.split(text)
+            .map((line) => line.trim())
+            .where((line) => line.isNotEmpty)
+            .map<dynamic>((line) => jsonDecode(line))
+            .toList(growable: false),
+      );
     case ImportFormatKey.xml:
       final document = XmlDocument.parse(text);
-      final root = document.rootElement;
-      return <String, Object?>{root.name.local: _xmlElementToObject(root)};
+      return _projectXmlRoot(document.rootElement);
     default:
       throw StateError(
         'Unsupported structured source format: ${format.key.name}',
       );
   }
+}
+
+_StructuredSourceSnapshot _projectXmlRoot(XmlElement root) {
+  final rootValue = _xmlElementToObject(root);
+  if (rootValue is Map<String, Object?>) {
+    final collapsed = _collapseSingleRepeatedXmlCollection(
+      rootName: root.name.local,
+      rootValue: rootValue,
+    );
+    if (collapsed != null) {
+      return collapsed;
+    }
+  }
+  return _StructuredSourceSnapshot(
+    value: rootValue,
+    preferredTableName: root.name.local,
+  );
+}
+
+_StructuredSourceSnapshot? _collapseSingleRepeatedXmlCollection({
+  required String rootName,
+  required Map<String, Object?> rootValue,
+}) {
+  if (rootValue.length != 1) {
+    return null;
+  }
+  final entry = rootValue.entries.single;
+  final records = entry.value;
+  if (records is! List) {
+    return null;
+  }
+  return _StructuredSourceSnapshot(
+    value: records,
+    preferredTableName: _preferredXmlCollectionTableName(
+      rootName: rootName,
+      repeatedElementName: entry.key,
+    ),
+  );
+}
+
+String _preferredXmlCollectionTableName({
+  required String rootName,
+  required String repeatedElementName,
+}) {
+  final normalizedRoot = rootName.toLowerCase();
+  final normalizedRepeated = repeatedElementName.toLowerCase();
+  if (_singularizeXmlName(normalizedRoot) ==
+      _singularizeXmlName(normalizedRepeated)) {
+    return rootName;
+  }
+  return _pluralizeXmlName(repeatedElementName);
+}
+
+String _singularizeXmlName(String value) {
+  if (value.endsWith('ies') && value.length > 3) {
+    return '${value.substring(0, value.length - 3)}y';
+  }
+  if (RegExp(r'(ches|shes|sses|xes|zes)$').hasMatch(value)) {
+    return value.substring(0, value.length - 2);
+  }
+  if (value.endsWith('s') && !value.endsWith('ss')) {
+    return value.substring(0, value.length - 1);
+  }
+  return value;
+}
+
+String _pluralizeXmlName(String value) {
+  final normalized = value.toLowerCase();
+  if (RegExp(r'[^aeiou]y$').hasMatch(normalized) && value.length > 1) {
+    return '${value.substring(0, value.length - 1)}ies';
+  }
+  if (RegExp(r'(s|x|z|ch|sh)$').hasMatch(normalized)) {
+    return '${value}es';
+  }
+  return '${value}s';
 }
 
 String _decodeStructuredText(

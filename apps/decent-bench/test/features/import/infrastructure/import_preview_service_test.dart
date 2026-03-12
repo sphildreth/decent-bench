@@ -63,6 +63,30 @@ void main() {
     );
   }
 
+  String resolveXmlFixturePath(String filename) {
+    final candidates = <String>[
+      p.normalize(
+        p.join(
+          Directory.current.path,
+          '..',
+          '..',
+          'test-data',
+          'xml',
+          filename,
+        ),
+      ),
+      p.normalize(p.join(Directory.current.path, 'test-data', 'xml', filename)),
+    ];
+    for (final candidate in candidates) {
+      if (File(candidate).existsSync()) {
+        return candidate;
+      }
+    }
+    throw StateError(
+      'Could not locate test-data/xml/$filename from ${Directory.current.path}',
+    );
+  }
+
   setUp(() async {
     service = ImportPreviewService();
     tempDir = await Directory.systemTemp.createTemp(
@@ -215,6 +239,38 @@ void main() {
       isTrue,
     );
   });
+
+  test(
+    'projects repeated XML root elements into one record table by default',
+    () async {
+      final inspection = await service.inspect(
+        sourcePath: resolveXmlFixturePath('07_large_dataset.xml'),
+        format: registry.forKey(ImportFormatKey.xml),
+        options: defaultGenericImportOptionsFor(ImportFormatKey.xml),
+      );
+
+      expect(inspection.tables, hasLength(1));
+      final table = inspection.tables.single;
+      expect(table.targetName, 'records');
+      expect(table.rowCount, 10000);
+      expect(
+        table.columns.map((column) => column.sourceName),
+        containsAll(<String>[
+          'attr_id',
+          'uuid',
+          'value',
+          'status',
+          'metadata__source',
+          'metadata__retry_count',
+        ]),
+      );
+      expect(table.previewRows.first, containsPair('attr_id', '1'));
+      expect(
+        table.previewRows.first,
+        containsPair('metadata__source', 'system_1'),
+      );
+    },
+  );
 
   test('extracts multiple HTML tables', () async {
     final file = File(p.join(tempDir.path, 'tables.html'))
