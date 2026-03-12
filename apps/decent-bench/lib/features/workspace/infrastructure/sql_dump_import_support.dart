@@ -46,6 +46,112 @@ SqlDumpImportInspection inspectSqlDumpSourceFile(
   );
 }
 
+class SqlDumpMaterializedTableData {
+  const SqlDumpMaterializedTableData({
+    required this.sourceName,
+    required this.targetName,
+    required this.rows,
+  });
+
+  final String sourceName;
+  final String targetName;
+  final List<Map<String, Object?>> rows;
+}
+
+class SqlDumpMaterializedSource {
+  const SqlDumpMaterializedSource({
+    required this.sourcePath,
+    required this.requestedEncoding,
+    required this.resolvedEncoding,
+    required this.tables,
+    required this.warnings,
+    required this.skippedStatements,
+    required this.totalStatements,
+  });
+
+  final String sourcePath;
+  final String requestedEncoding;
+  final String resolvedEncoding;
+  final List<SqlDumpMaterializedTableData> tables;
+  final List<String> warnings;
+  final List<SqlDumpImportSkippedStatement> skippedStatements;
+  final int totalStatements;
+}
+
+SqlDumpMaterializedSource materializeSqlDumpSourceFile(
+  String sourcePath, {
+  required String encoding,
+  required List<SqlDumpImportTableDraft> tables,
+}) {
+  final file = File(sourcePath);
+  if (!file.existsSync()) {
+    throw BridgeFailure('SQL dump source file does not exist: $sourcePath');
+  }
+
+  final inspection = inspectSqlDumpSourceFile(sourcePath, encoding: encoding);
+  final decoded = _decodeSqlDumpSource(file, encoding: encoding);
+  final statements = _splitSqlStatements(decoded.text);
+  final selectedBySource = <String, SqlDumpImportTableDraft>{
+    for (final table in tables.where((table) => table.selected))
+      table.sourceName: table,
+  };
+  final rowsBySource = <String, List<Map<String, Object?>>>{
+    for (final table in selectedBySource.values)
+      table.sourceName: <Map<String, Object?>>[],
+  };
+
+  for (var ordinal = 0; ordinal < statements.length; ordinal++) {
+    final parsed = _tryParseInsertSafely(statements[ordinal], ordinal + 1);
+    final insert = parsed?.insert;
+    if (insert == null) {
+      continue;
+    }
+
+    final tableDraft = selectedBySource[insert.tableName];
+    if (tableDraft == null) {
+      continue;
+    }
+
+    final sourceColumns =
+        insert.columnNames ??
+        <String>[for (final column in tableDraft.columns) column.sourceName];
+    final sourceIndexes = <String, int>{
+      for (var index = 0; index < sourceColumns.length; index++)
+        sourceColumns[index]: index,
+    };
+
+    for (final row in insert.rows) {
+      rowsBySource[tableDraft.sourceName]!.add(<String, Object?>{
+        for (final column in tableDraft.columns)
+          column.targetName: _adaptImportValue(
+            sourceIndexes.containsKey(column.sourceName) &&
+                    sourceIndexes[column.sourceName]! < row.length
+                ? row[sourceIndexes[column.sourceName]!]
+                : null,
+            column.targetType,
+          ),
+      });
+    }
+  }
+
+  return SqlDumpMaterializedSource(
+    sourcePath: sourcePath,
+    requestedEncoding: encoding,
+    resolvedEncoding: inspection.resolvedEncoding,
+    tables: <SqlDumpMaterializedTableData>[
+      for (final table in selectedBySource.values)
+        SqlDumpMaterializedTableData(
+          sourceName: table.sourceName,
+          targetName: table.targetName,
+          rows: rowsBySource[table.sourceName]!,
+        ),
+    ],
+    warnings: inspection.warnings,
+    skippedStatements: inspection.skippedStatements,
+    totalStatements: inspection.totalStatements,
+  );
+}
+
 @pragma('vm:entry-point')
 Future<void> sqlDumpImportWorkerMain(List<Object?> bootstrap) async {
   final mainPort = bootstrap[0]! as SendPort;

@@ -152,6 +152,124 @@ class _SelectedExcelSheetContext {
   String get targetName => draft.targetName;
 }
 
+class ExcelMaterializedTableData {
+  const ExcelMaterializedTableData({
+    required this.sourceName,
+    required this.targetName,
+    required this.rows,
+  });
+
+  final String sourceName;
+  final String targetName;
+  final List<Map<String, Object?>> rows;
+}
+
+class ExcelMaterializedViewData {
+  const ExcelMaterializedViewData({
+    required this.sourceName,
+    required this.targetName,
+    required this.rowCount,
+    required this.columnNames,
+    required this.viewSql,
+  });
+
+  final String sourceName;
+  final String targetName;
+  final int rowCount;
+  final List<String> columnNames;
+  final String viewSql;
+}
+
+class ExcelMaterializedSource {
+  const ExcelMaterializedSource({
+    required this.sourcePath,
+    required this.headerRow,
+    required this.tables,
+    required this.views,
+    required this.warnings,
+  });
+
+  final String sourcePath;
+  final bool headerRow;
+  final List<ExcelMaterializedTableData> tables;
+  final List<ExcelMaterializedViewData> views;
+  final List<String> warnings;
+}
+
+ExcelMaterializedSource materializeExcelImportSourceFile({
+  required String sourcePath,
+  required bool headerRow,
+  required List<ExcelImportSheetDraft> sheets,
+}) {
+  final file = File(sourcePath);
+  if (!file.existsSync()) {
+    throw BridgeFailure('Excel source file does not exist: $sourcePath');
+  }
+
+  final request = ExcelImportRequest(
+    jobId: 'excel-materialize',
+    sourcePath: sourcePath,
+    targetPath: '',
+    importIntoExistingTarget: false,
+    replaceExistingTarget: false,
+    headerRow: headerRow,
+    sheets: sheets,
+  );
+  _validateRequestNames(request);
+
+  final loadedWorkbook = _loadWorkbookFromSource(sourcePath);
+  try {
+    final warnings = <String>[...loadedWorkbook.warnings];
+    final resolvedImports = _resolveSelectedExcelImports(
+      workbook: loadedWorkbook.workbook,
+      request: request,
+      warnings: warnings,
+    );
+    final tables = <ExcelMaterializedTableData>[];
+    final views = <ExcelMaterializedViewData>[];
+
+    for (final item in resolvedImports) {
+      if (item.isTable) {
+        tables.add(
+          ExcelMaterializedTableData(
+            sourceName: item.sheet.sourceName,
+            targetName: item.sheet.targetName,
+            rows: _materializeExcelSheetRows(
+              workbook: loadedWorkbook.workbook,
+              headerRow: headerRow,
+              sheet: item.sheet,
+              warnings: warnings,
+            ),
+          ),
+        );
+        continue;
+      }
+
+      views.add(
+        ExcelMaterializedViewData(
+          sourceName: item.sheet.sourceName,
+          targetName: item.sheet.targetName,
+          rowCount: item.sheet.rowCount,
+          columnNames: item.sheet.columns
+              .map((column) => column.targetName)
+              .toList(growable: false),
+          viewSql: item.viewSql!,
+        ),
+      );
+    }
+
+    return ExcelMaterializedSource(
+      sourcePath: sourcePath,
+      headerRow: headerRow,
+      tables: tables,
+      views: views,
+      warnings: warnings,
+    );
+  } finally {
+    loadedWorkbook.dispose();
+  }
+}
+
 Future<ExcelImportSummary> _runExcelImport({
   required ExcelImportRequest request,
   required String libraryPath,
@@ -466,6 +584,57 @@ Future<int> _copySheetData({
   }
 
   return copied;
+}
+
+List<Map<String, Object?>> _materializeExcelSheetRows({
+  required xls.Excel workbook,
+  required bool headerRow,
+  required ExcelImportSheetDraft sheet,
+  required List<String> warnings,
+}) {
+  final sourceSheet = workbook.tables[sheet.sourceName];
+  if (sourceSheet == null) {
+    throw BridgeFailure('Worksheet ${sheet.sourceName} no longer exists.');
+  }
+
+  final rows = <Map<String, Object?>>[];
+  var formulaWarningAdded = false;
+  final sheetRows = sourceSheet.rows;
+  final bounds = _resolveSheetBounds(
+    sheetRows,
+    headerRow: headerRow,
+    expectedColumnCount: sheet.columns.length,
+  );
+
+  for (
+    var rowIndex = bounds.dataStartRow;
+    rowIndex < sheetRows.length;
+    rowIndex++
+  ) {
+    final row = sheetRows[rowIndex];
+    if (_isExcelRowEmpty(row, bounds.columnCount)) {
+      continue;
+    }
+
+    rows.add(<String, Object?>{
+      for (final column in sheet.columns)
+        column.targetName: () {
+          final cellValue = _cellValueAt(row, column.sourceIndex);
+          if (!formulaWarningAdded && cellValue is xls.FormulaCellValue) {
+            warnings.add(
+              '${sheet.sourceName} contains formula cells. Formula expressions are imported as text.',
+            );
+            formulaWarningAdded = true;
+          }
+          return _adaptImportValue(
+            _normalizeExcelCellValue(cellValue),
+            column.targetType,
+          );
+        }(),
+    });
+  }
+
+  return rows;
 }
 
 const Set<String> _supportedSummaryAggregateFunctions = <String>{
