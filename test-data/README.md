@@ -126,3 +126,78 @@ Use this pack for the following checks:
 
 When adding new fixtures, keep them deterministic, small enough for routine
 test runs, and free of sensitive or licensed third-party data.
+
+
+## Test Import Runner
+
+Python script to validate DecentDB imports from test-data files.
+
+### Usage
+
+```bash
+# Dry run - discover files without importing
+python test/test_import_runner.py --dry-run --skip-import-check
+
+# Full test run (requires headless import to be implemented)
+python test/test_import_runner.py
+
+# Test specific format only
+python test/test_import_runner.py --format sqlite
+
+# Keep ddb files after test (for debugging)
+python test/test_import_runner.py --keep-ddbs
+
+# Verbose output
+python test/test_import_runner.py -v
+```
+
+### Requirements
+
+- Python 3.8+
+- DecentDB built with headless import support (`dbench --in --out`)
+
+### Test Data
+
+The runner discovers test files from `test-data/`:
+- `sqlite/` - SQLite databases
+- `html/` - HTML tables
+- `excel/` - Excel workbooks (.xlsx, .xls)
+- `json/` - JSON files
+- `xml/` - XML files
+- `delimited/` - CSV, TSV files
+
+### Validation
+
+The runner checks:
+1. Import succeeds (exit code 0)
+2. Output ddb file exists and has content
+3. Expected row/column counts (if configured)
+4. Data type recognition (if configured)
+
+### Configuration
+
+Expected results can be defined in `test-data/expected.json`:
+
+```json
+{
+  "sqlite/02_datatypes.sqlite": {
+    "tables": 1,
+    "rows": {"datatypes": 4},
+    "columns": {"datatypes": 9},
+    "types": {
+      "datatypes": {
+        "id": "INTEGER",
+        "text_col": "TEXT",
+        "real_col": "REAL"
+      }
+    }
+  }
+}
+```
+
+### Future Enhancements
+
+- Query imported ddb to verify row counts
+- Validate inferred column types
+- Test with plan files for specific import options
+- Generate test reports (JUnit XML, HTML)
