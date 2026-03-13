@@ -32,6 +32,16 @@ ROUND_TRIP_FIXTURE_SECTIONS = (
     "excelImportRoundTripFixtures",
     "sqlDumpImportRoundTripFixtures",
 )
+ACCOUNTING_ONLY_FIXTURE_SECTIONS = (
+    "genericInspectionFixtures",
+    "sqliteInspectionFixtures",
+    "detectionFixtures",
+)
+NON_IMPORT_DOCUMENTATION_FIXTURE_PATHS = {
+    "test-data/README.md",
+    "test-data/excel/README.txt",
+    "test-data/test_import_runner.py",
+}
 
 
 @dataclass
@@ -63,16 +73,47 @@ class TestResult:
     details: dict = field(default_factory=dict)
 
 
-def discover_test_files() -> list[TestFile]:
-    """Discover importable fixtures from the in-repo round-trip fixture manifest."""
+@dataclass(frozen=True)
+class CoverageFixture:
+    """Represents a non-import fixture that is still accounted for in the manifest."""
+
+    relative_path: str
+    section: str
+
+    @property
+    def name(self) -> str:
+        return Path(self.relative_path).name
+
+
+@dataclass(frozen=True)
+class FixtureAccounting:
+    """Summary of how test-data files are represented in the manifest."""
+
+    import_fixtures: tuple[TestFile, ...]
+    coverage_only_fixtures: tuple[CoverageFixture, ...]
+    uncovered_fixture_paths: tuple[str, ...]
+
+
+def _discover_manifest_relative_paths(section_names: tuple[str, ...]) -> dict[str, list[str]]:
     if not MANIFEST_PATH.exists():
         raise FileNotFoundError(f"Import fixture manifest not found: {MANIFEST_PATH}")
 
     manifest_text = MANIFEST_PATH.read_text(encoding="utf-8")
+    discovered: dict[str, list[str]] = {}
+    for section_name in section_names:
+        section_body = _extract_manifest_section(manifest_text, section_name)
+        discovered[section_name] = re.findall(
+            r"relativePath:\s*'([^']+)'", section_body
+        )
+    return discovered
+
+
+def discover_test_files() -> list[TestFile]:
+    """Discover importable fixtures from the in-repo round-trip fixture manifest."""
+    discovered = _discover_manifest_relative_paths(ROUND_TRIP_FIXTURE_SECTIONS)
     relative_paths: list[str] = []
     for section_name in ROUND_TRIP_FIXTURE_SECTIONS:
-        section_body = _extract_manifest_section(manifest_text, section_name)
-        relative_paths.extend(re.findall(r"relativePath:\s*'([^']+)'", section_body))
+        relative_paths.extend(discovered[section_name])
 
     test_files: list[TestFile] = []
     for relative_path in relative_paths:
@@ -84,6 +125,57 @@ def discover_test_files() -> list[TestFile]:
         test_files.append(TestFile(path=path, format=classify_fixture_format(path)))
 
     return sorted(test_files, key=lambda item: (item.format, str(item.path)))
+
+
+def _is_ignored_fixture_path(relative_path: str) -> bool:
+    normalized = relative_path.replace(os.sep, "/")
+    return (
+        normalized in NON_IMPORT_DOCUMENTATION_FIXTURE_PATHS
+        or "/__pycache__/" in f"/{normalized}"
+        or normalized.endswith((".pyc", ".pyo", ".ddb", ".ddb-wal", ".ddb-shm"))
+    )
+
+
+def discover_fixture_accounting() -> FixtureAccounting:
+    import_fixtures = discover_test_files()
+    accounting_paths = _discover_manifest_relative_paths(ACCOUNTING_ONLY_FIXTURE_SECTIONS)
+
+    coverage_only: list[CoverageFixture] = []
+    for section_name in ACCOUNTING_ONLY_FIXTURE_SECTIONS:
+        for relative_path in accounting_paths[section_name]:
+            path = REPO_ROOT / relative_path
+            if not path.exists():
+                raise FileNotFoundError(
+                    f"Fixture listed in manifest does not exist on disk: {relative_path}"
+                )
+            coverage_only.append(
+                CoverageFixture(relative_path=relative_path, section=section_name)
+            )
+
+    discovered_fixture_paths = {
+        str(path.relative_to(REPO_ROOT)).replace(os.sep, "/")
+        for path in TEST_DATA_DIR.rglob("*")
+        if path.is_file()
+    }
+    non_ignored_fixture_paths = {
+        relative_path
+        for relative_path in discovered_fixture_paths
+        if not _is_ignored_fixture_path(relative_path)
+    }
+    manifest_covered_paths = {
+        str(test_file.path.relative_to(REPO_ROOT)).replace(os.sep, "/")
+        for test_file in import_fixtures
+    } | {fixture.relative_path for fixture in coverage_only}
+
+    uncovered = sorted(non_ignored_fixture_paths.difference(manifest_covered_paths))
+
+    return FixtureAccounting(
+        import_fixtures=tuple(import_fixtures),
+        coverage_only_fixtures=tuple(
+            sorted(coverage_only, key=lambda item: (item.section, item.relative_path))
+        ),
+        uncovered_fixture_paths=tuple(uncovered),
+    )
 
 
 def _extract_manifest_section(source: str, section_name: str) -> str:
@@ -377,8 +469,9 @@ def main():
         print("Build the project first with: flutter build linux")
         sys.exit(1)
 
-    # Discover test files
-    test_files = discover_test_files()
+    # Discover test files and overall manifest accounting.
+    accounting = discover_fixture_accounting()
+    test_files = list(accounting.import_fixtures)
 
     if args.format:
         test_files = [f for f in test_files if f.format == args.format]
@@ -390,6 +483,28 @@ def main():
     print(f"Found {len(test_files)} import fixtures from the round-trip manifest:")
     for tf in test_files:
         print(f"  [{tf.format}] {tf.name}")
+    print()
+
+    coverage_only = accounting.coverage_only_fixtures
+    print(f"Found {len(coverage_only)} additional coverage-only fixtures:")
+    for fixture in coverage_only:
+        print(f"  [{fixture.section}] {fixture.name}")
+    print()
+
+    accounted_total = len(accounting.import_fixtures) + len(coverage_only)
+    if accounting.uncovered_fixture_paths:
+        print(
+            f"Manifest accounting check: {accounted_total} covered, "
+            f"{len(accounting.uncovered_fixture_paths)} uncovered"
+        )
+        for relative_path in accounting.uncovered_fixture_paths:
+            print(f"  [uncovered] {relative_path}")
+        sys.exit(1)
+
+    print(
+        "Manifest accounting check: "
+        f"{accounted_total} non-document test-data files are covered"
+    )
     print()
 
     if args.dry_run:
@@ -444,7 +559,15 @@ def main():
 
     # Summary
     print(f"\n{'=' * 50}")
-    print(f"Results: {passed} passed, {failed} failed, {len(test_files)} total")
+    print(f"Import results: {passed} passed, {failed} failed, {len(test_files)} total")
+    print(
+        "Coverage-only fixtures accounted for: "
+        f"{len(coverage_only)}"
+    )
+    print(
+        "Overall manifest accounting: "
+        f"{len(accounting.import_fixtures) + len(coverage_only)} covered, 0 uncovered"
+    )
 
     if failed > 0:
         print("\nFailed tests:")
