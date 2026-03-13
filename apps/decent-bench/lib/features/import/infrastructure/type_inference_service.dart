@@ -15,7 +15,7 @@ class TypeInferenceService {
     for (final key in orderedKeys) {
       final values = rows.map((row) => row[key]).toList(growable: false);
       final containsNulls = values.any((value) => value == null);
-      final inferred = inferTargetType(values);
+      final inferred = inferTargetType(values, columnName: key);
       columns.add(
         ImportColumnDraft(
           sourceName: key,
@@ -29,18 +29,27 @@ class TypeInferenceService {
     return columns;
   }
 
-  String inferTargetType(Iterable<Object?> values) {
+  String inferTargetType(Iterable<Object?> values, {String? columnName}) {
     final nonNull = values
         .where((value) => value != null)
         .toList(growable: false);
     if (nonNull.isEmpty) {
       return 'TEXT';
     }
-    if (nonNull.every((value) => value is bool || _looksLikeBool(value))) {
+    if (_allValuesAreBooleans(nonNull, columnName: columnName)) {
       return 'BOOLEAN';
     }
     if (nonNull.every(_isUuidLike)) {
       return 'UUID';
+    }
+    if (_shouldAttemptTimestampInference(nonNull, columnName: columnName) &&
+        nonNull.every(
+          (value) => _isTimestampLike(
+            value,
+            allowEpoch: _looksLikeTemporalColumnName(columnName),
+          ),
+        )) {
+      return 'TIMESTAMP';
     }
     if (nonNull.every(_isIntegerLike)) {
       if (nonNull.any(_hasLeadingZeroString)) {
@@ -48,11 +57,11 @@ class TypeInferenceService {
       }
       return 'INTEGER';
     }
+    if (_allValuesAreDecimals(nonNull, columnName: columnName)) {
+      return 'DECIMAL(18,6)';
+    }
     if (nonNull.every(_isDoubleLike)) {
       return 'FLOAT64';
-    }
-    if (nonNull.every(_isTimestampLike)) {
-      return 'TIMESTAMP';
     }
     if (nonNull.every((value) => value is Uint8List)) {
       return 'BLOB';
@@ -74,22 +83,7 @@ class TypeInferenceService {
       return '$value';
     }
     if (targetType == 'BOOLEAN') {
-      if (value is bool) {
-        return value;
-      }
-      if (value is num && (value == 0 || value == 1)) {
-        return value == 1;
-      }
-      if (value is String) {
-        final normalized = value.trim().toLowerCase();
-        if (const <String>{'true', '1', 'yes', 'y'}.contains(normalized)) {
-          return true;
-        }
-        if (const <String>{'false', '0', 'no', 'n'}.contains(normalized)) {
-          return false;
-        }
-      }
-      return value;
+      return _coerceBooleanValue(value);
     }
     if (targetType == 'INTEGER') {
       if (value is int) {
@@ -104,16 +98,7 @@ class TypeInferenceService {
       return value;
     }
     if (targetType == 'FLOAT64') {
-      if (value is double) {
-        return value;
-      }
-      if (value is num) {
-        return value.toDouble();
-      }
-      if (value is String) {
-        return double.tryParse(value.trim()) ?? value;
-      }
-      return value;
+      return _tryParseFloat64Value(value) ?? value;
     }
     if (targetType == 'BLOB') {
       if (value is Uint8List) {
@@ -128,10 +113,7 @@ class TypeInferenceService {
       if (value is DateTime) {
         return value.toUtc();
       }
-      if (value is String) {
-        return DateTime.tryParse(value.trim())?.toUtc() ?? value;
-      }
-      return value;
+      return _tryParseTimestampValue(value, allowEpoch: true) ?? value;
     }
     if (isDecimalTargetType(targetType)) {
       if (value is num) {
@@ -178,21 +160,29 @@ class TypeInferenceService {
     return result;
   }
 
-  bool _looksLikeBool(Object? value) {
-    if (value is! String) {
+  bool _allValuesAreBooleans(List<Object?> values, {String? columnName}) {
+    if (values.isEmpty) {
       return false;
     }
-    final normalized = value.trim().toLowerCase();
-    return const <String>{
-      'true',
-      'false',
-      'yes',
-      'no',
-      '1',
-      '0',
-      'y',
-      'n',
-    }.contains(normalized);
+    if (!values.every((value) => _normalizedBooleanToken(value) != null)) {
+      return false;
+    }
+
+    final numericOnly = values.every(_isNumericBooleanValue);
+    if (!numericOnly) {
+      return true;
+    }
+
+    if (_looksLikeBooleanColumnName(columnName)) {
+      return true;
+    }
+
+    return values
+            .map(_normalizedBooleanToken)
+            .whereType<String>()
+            .toSet()
+            .length >
+        1;
   }
 
   bool _isIntegerLike(Object? value) {
@@ -214,17 +204,333 @@ class TypeInferenceService {
   }
 
   bool _isDoubleLike(Object? value) {
-    if (value is num) {
-      return true;
-    }
-    return value is String && double.tryParse(value.trim()) != null;
+    return _tryParseFloat64Value(value) != null;
   }
 
-  bool _isTimestampLike(Object? value) {
+  bool _allValuesAreDecimals(List<Object?> values, {String? columnName}) {
+    if (!_looksLikeDecimalColumnName(columnName) || values.isEmpty) {
+      return false;
+    }
+    return values.every(_isFixedPrecisionDecimalLike) &&
+        values.any(_hasDecimalPoint);
+  }
+
+  bool _shouldAttemptTimestampInference(
+    List<Object?> values, {
+    String? columnName,
+  }) {
+    if (_looksLikeTemporalColumnName(columnName)) {
+      return true;
+    }
+    return values.any(_hasExplicitTemporalShape);
+  }
+
+  bool _isTimestampLike(Object? value, {required bool allowEpoch}) {
+    return _tryParseTimestampValue(value, allowEpoch: allowEpoch) != null;
+  }
+
+  bool _hasExplicitTemporalShape(Object? value) {
     if (value is DateTime) {
       return true;
     }
-    return value is String && DateTime.tryParse(value.trim()) != null;
+    if (value is! String) {
+      return false;
+    }
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return false;
+    }
+    return RegExp(r'^\d{4}-\d{1,2}-\d{1,2}(?:[ T]|$)').hasMatch(trimmed) ||
+        RegExp(r'^\d{1,2}\/\d{1,2}\/\d{4}(?:[ T]|$)').hasMatch(trimmed) ||
+        RegExp(r'^\d{1,2}\.\d{1,2}\.\d{4}(?:[ T]|$)').hasMatch(trimmed) ||
+        RegExp(r'^\d{1,2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?$').hasMatch(trimmed);
+  }
+
+  bool _isFixedPrecisionDecimalLike(Object? value) {
+    if (value is num) {
+      final asDouble = value.toDouble();
+      return asDouble.isFinite;
+    }
+    if (value is! String) {
+      return false;
+    }
+    final trimmed = value.trim();
+    return RegExp(r'^-?\d+(?:\.\d+)?$').hasMatch(trimmed);
+  }
+
+  bool _hasDecimalPoint(Object? value) {
+    if (value is num) {
+      return value is double || value.toString().contains('.');
+    }
+    return value is String && value.contains('.');
+  }
+
+  double? _tryParseFloat64Value(Object? value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+    if (value is! String) {
+      return null;
+    }
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    switch (trimmed.toLowerCase()) {
+      case 'inf':
+      case '+inf':
+      case 'infinity':
+      case '+infinity':
+        return double.infinity;
+      case '-inf':
+      case '-infinity':
+        return double.negativeInfinity;
+      case 'nan':
+      case '#num!':
+        return double.nan;
+    }
+    return double.tryParse(trimmed);
+  }
+
+  Object? _coerceBooleanValue(Object? value) {
+    final normalized = _normalizedBooleanToken(value);
+    return switch (normalized) {
+      'true' => true,
+      'false' => false,
+      _ => value,
+    };
+  }
+
+  String? _normalizedBooleanToken(Object? value) {
+    if (value is bool) {
+      return value ? 'true' : 'false';
+    }
+    if (value is int) {
+      if (value == 1) {
+        return 'true';
+      }
+      if (value == 0) {
+        return 'false';
+      }
+      return null;
+    }
+    if (value is double && value == value.roundToDouble()) {
+      return _normalizedBooleanToken(value.toInt());
+    }
+    if (value is! String) {
+      return null;
+    }
+    return switch (value.trim().toLowerCase()) {
+      'true' ||
+      't' ||
+      '1' ||
+      'yes' ||
+      'y' ||
+      'on' ||
+      'enabled' ||
+      'active' => 'true',
+      'false' ||
+      'f' ||
+      '0' ||
+      'no' ||
+      'n' ||
+      'off' ||
+      'disabled' ||
+      'inactive' => 'false',
+      _ => null,
+    };
+  }
+
+  bool _isNumericBooleanValue(Object? value) {
+    if (value is int) {
+      return value == 0 || value == 1;
+    }
+    if (value is double && value == value.roundToDouble()) {
+      return value == 0 || value == 1;
+    }
+    if (value is! String) {
+      return false;
+    }
+    return value.trim() == '0' || value.trim() == '1';
+  }
+
+  DateTime? _tryParseTimestampValue(Object? value, {required bool allowEpoch}) {
+    if (value is DateTime) {
+      return value.toUtc();
+    }
+    if (value is int) {
+      return allowEpoch ? _tryParseEpochTimestamp(value) : null;
+    }
+    if (value is double && value == value.roundToDouble()) {
+      return allowEpoch ? _tryParseEpochTimestamp(value.toInt()) : null;
+    }
+    if (value is! String) {
+      return null;
+    }
+
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+
+    final parsed = DateTime.tryParse(trimmed);
+    if (parsed != null) {
+      return parsed.toUtc();
+    }
+
+    final slashParsed = _tryParseSlashDateTime(trimmed);
+    if (slashParsed != null) {
+      return slashParsed;
+    }
+
+    final dotParsed = _tryParseDotDateTime(trimmed);
+    if (dotParsed != null) {
+      return dotParsed;
+    }
+
+    final timeOnlyParsed = _tryParseTimeOnlyDateTime(trimmed);
+    if (timeOnlyParsed != null) {
+      return timeOnlyParsed;
+    }
+
+    if (!allowEpoch) {
+      return null;
+    }
+    final asInteger = int.tryParse(trimmed);
+    if (asInteger == null) {
+      return null;
+    }
+    return _tryParseEpochTimestamp(asInteger);
+  }
+
+  DateTime? _tryParseTimeOnlyDateTime(String value) {
+    final match = RegExp(
+      r'^(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?$',
+    ).firstMatch(value);
+    if (match == null) {
+      return null;
+    }
+    final microsRaw = match.group(4) ?? '';
+    final micros = microsRaw.isEmpty
+        ? 0
+        : int.parse(microsRaw.padRight(6, '0').substring(0, 6));
+    return _buildUtcTimestamp(
+      year: 0,
+      month: 1,
+      day: 1,
+      hour: int.parse(match.group(1)!),
+      minute: int.parse(match.group(2)!),
+      second: int.tryParse(match.group(3) ?? '0') ?? 0,
+      microsecond: micros,
+    );
+  }
+
+  DateTime? _tryParseSlashDateTime(String value) {
+    final match = RegExp(
+      r'^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$',
+    ).firstMatch(value);
+    if (match == null) {
+      return null;
+    }
+    return _buildUtcTimestamp(
+      year: int.parse(match.group(3)!),
+      month: int.parse(match.group(1)!),
+      day: int.parse(match.group(2)!),
+      hour: int.tryParse(match.group(4) ?? '0') ?? 0,
+      minute: int.tryParse(match.group(5) ?? '0') ?? 0,
+      second: int.tryParse(match.group(6) ?? '0') ?? 0,
+    );
+  }
+
+  DateTime? _tryParseDotDateTime(String value) {
+    final match = RegExp(
+      r'^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$',
+    ).firstMatch(value);
+    if (match == null) {
+      return null;
+    }
+    return _buildUtcTimestamp(
+      year: int.parse(match.group(3)!),
+      month: int.parse(match.group(2)!),
+      day: int.parse(match.group(1)!),
+      hour: int.tryParse(match.group(4) ?? '0') ?? 0,
+      minute: int.tryParse(match.group(5) ?? '0') ?? 0,
+      second: int.tryParse(match.group(6) ?? '0') ?? 0,
+    );
+  }
+
+  DateTime? _buildUtcTimestamp({
+    required int year,
+    required int month,
+    required int day,
+    int hour = 0,
+    int minute = 0,
+    int second = 0,
+    int microsecond = 0,
+  }) {
+    try {
+      final parsed = DateTime.utc(
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        0,
+        microsecond,
+      );
+      if (parsed.year != year ||
+          parsed.month != month ||
+          parsed.day != day ||
+          parsed.hour != hour ||
+          parsed.minute != minute ||
+          parsed.second != second ||
+          parsed.microsecond != microsecond) {
+        return null;
+      }
+      return parsed;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  DateTime? _tryParseEpochTimestamp(int value) {
+    if (value >= 0 && value <= 4102444800) {
+      return DateTime.fromMillisecondsSinceEpoch(value * 1000, isUtc: true);
+    }
+    if (value >= 0 && value <= 4102444800000) {
+      return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
+    }
+    return null;
+  }
+
+  bool _looksLikeTemporalColumnName(String? columnName) {
+    if (columnName == null) {
+      return false;
+    }
+    final normalized = columnName.trim().toLowerCase();
+    return RegExp(
+      r'(^|_)(date|time|datetime|timestamp|epoch)(_|$)|_at$',
+    ).hasMatch(normalized);
+  }
+
+  bool _looksLikeBooleanColumnName(String? columnName) {
+    if (columnName == null) {
+      return false;
+    }
+    final normalized = columnName.trim().toLowerCase();
+    return RegExp(
+      r'(^is_|^has_|(^|_)(bool|boolean|flag|enabled|disabled|active|inactive)(_|$))',
+    ).hasMatch(normalized);
+  }
+
+  bool _looksLikeDecimalColumnName(String? columnName) {
+    if (columnName == null) {
+      return false;
+    }
+    return RegExp(
+      r'(^|_)(decimal|numeric)(_|$)',
+    ).hasMatch(columnName.trim().toLowerCase());
   }
 
   bool _isUuidLike(Object? value) {
@@ -232,7 +538,7 @@ class TypeInferenceService {
       return false;
     }
     return RegExp(
-      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
     ).hasMatch(value.trim());
   }
 }

@@ -187,6 +187,22 @@ void main() {
                       'Unexpected preview columns for ${fixture.relativePath}:${table.targetName}',
                 );
               }
+              final expectedColumnTypes =
+                  fixture.expectedColumnTypesByTable[table.targetName];
+              if (expectedColumnTypes != null) {
+                final previewColumnTypes = <String, String>{
+                  for (final column in table.columns)
+                    column.targetName: column.targetType,
+                };
+                for (final entry in expectedColumnTypes.entries) {
+                  expect(
+                    previewColumnTypes[entry.key],
+                    entry.value,
+                    reason:
+                        'Unexpected preview type for ${fixture.relativePath}:${table.targetName}.${entry.key}',
+                  );
+                }
+              }
             }
 
             final request = GenericImportRequest(
@@ -225,6 +241,9 @@ void main() {
             );
 
             await bridge.openDatabase(request.targetPath);
+            final schema = fixture.expectedColumnTypesByTable.isEmpty
+                ? null
+                : await bridge.loadSchema();
             for (final table in selectedTables) {
               final materializedTable = materializedBySourceId[table.sourceId];
               expect(
@@ -265,6 +284,29 @@ void main() {
                   reason:
                       'Unexpected imported row count for ${fixture.relativePath}:${table.targetName}',
                 );
+              }
+              final expectedColumnTypes =
+                  fixture.expectedColumnTypesByTable[table.targetName];
+              if (expectedColumnTypes != null) {
+                final importedObject = schema!.objectNamed(table.targetName);
+                expect(
+                  importedObject,
+                  isNotNull,
+                  reason:
+                      'Missing imported schema for ${fixture.relativePath}:${table.targetName}',
+                );
+                final importedColumnTypes = <String, String>{
+                  for (final column in importedObject!.columns)
+                    column.name: _normalizeImportedSchemaType(column.type),
+                };
+                for (final entry in expectedColumnTypes.entries) {
+                  expect(
+                    importedColumnTypes[entry.key],
+                    entry.value,
+                    reason:
+                        'Unexpected imported type for ${fixture.relativePath}:${table.targetName}.${entry.key}',
+                  );
+                }
               }
 
               expect(

@@ -9,6 +9,7 @@ class GenericImportFixtureEntry {
     this.expectedTableNames,
     this.expectedRowCountsByTable = const <String, int>{},
     this.requiredColumnsByTable = const <String, List<String>>{},
+    this.expectedColumnTypesByTable = const <String, Map<String, String>>{},
   });
 
   final String relativePath;
@@ -18,6 +19,7 @@ class GenericImportFixtureEntry {
   final List<String>? expectedTableNames;
   final Map<String, int> expectedRowCountsByTable;
   final Map<String, List<String>> requiredColumnsByTable;
+  final Map<String, Map<String, String>> expectedColumnTypesByTable;
 }
 
 class GenericInspectionFixtureEntry {
@@ -167,6 +169,92 @@ const Map<String, Map<String, String>> _allTypesMediumColumnTypes =
         'emoji': 'TEXT',
         'json': 'TEXT',
         'xml': 'TEXT',
+      },
+    };
+
+const List<String> _htmlDataTypesTestTableNames = <String>[
+  'basic_types',
+  'bool_types',
+  'datetime_types',
+  'text_types',
+  'numeric_edge_cases',
+  'null_handling',
+  'enum_types',
+];
+
+const Map<String, int> _htmlDataTypesTestRowCounts = <String, int>{
+  'basic_types': 5,
+  'bool_types': 10,
+  'datetime_types': 8,
+  'text_types': 6,
+  'numeric_edge_cases': 5,
+  'null_handling': 8,
+  'enum_types': 10,
+};
+
+const Map<String, Map<String, String>> _htmlDataTypesTestColumnTypes =
+    <String, Map<String, String>>{
+      'basic_types': <String, String>{
+        'id': 'INTEGER',
+        'tinyint_col': 'INTEGER',
+        'float_col': 'FLOAT64',
+        'real_col': 'FLOAT64',
+        'double_col': 'FLOAT64',
+        'numeric_col': 'DECIMAL(18,6)',
+        'decimal_col': 'DECIMAL(18,6)',
+        'date_col': 'TIMESTAMP',
+        'time_col': 'TIMESTAMP',
+        'datetime_col': 'TIMESTAMP',
+        'timestamp_col': 'TIMESTAMP',
+        'bool_col': 'BOOLEAN',
+        'json_col': 'TEXT',
+        'uuid_col': 'UUID',
+      },
+      'bool_types': <String, String>{
+        'bool_as_int': 'BOOLEAN',
+        'bool_as_text': 'TEXT',
+        'bool_as_char': 'TEXT',
+        'bool_as_word': 'TEXT',
+      },
+      'datetime_types': <String, String>{
+        'iso_date': 'TIMESTAMP',
+        'us_date': 'TIMESTAMP',
+        'eu_date': 'TIMESTAMP',
+        'iso_datetime': 'TIMESTAMP',
+        'unix_timestamp': 'TIMESTAMP',
+        'epoch_millis': 'TIMESTAMP',
+        'natural_language': 'TEXT',
+      },
+      'text_types': <String, String>{
+        'unicode': 'TEXT',
+        'emoji': 'TEXT',
+        'html': 'TEXT',
+        'json': 'TEXT',
+        'xml': 'TEXT',
+        'base64': 'TEXT',
+      },
+      'numeric_edge_cases': <String, String>{
+        'zero': 'INTEGER',
+        'negative_zero': 'FLOAT64',
+        'positive': 'FLOAT64',
+        'negative': 'FLOAT64',
+        'very_small': 'FLOAT64',
+        'very_large': 'FLOAT64',
+        'infinity': 'FLOAT64',
+        'minus_infinity': 'FLOAT64',
+        'nan': 'FLOAT64',
+      },
+      'null_handling': <String, String>{
+        'null_int': 'INTEGER',
+        'null_real': 'FLOAT64',
+        'null_text': 'TEXT',
+        'empty_vs_null': 'TEXT',
+      },
+      'enum_types': <String, String>{
+        'status': 'TEXT',
+        'priority': 'TEXT',
+        'category': 'TEXT',
+        'role': 'TEXT',
       },
     };
 
@@ -368,6 +456,44 @@ const List<GenericImportFixtureEntry> genericImportRoundTripFixtures =
       GenericImportFixtureEntry(
         relativePath: 'test-data/html/08_nested_tables.html',
         formatKey: ImportFormatKey.htmlTable,
+      ),
+      GenericImportFixtureEntry(
+        relativePath: 'test-data/html/09_data_types_test.html',
+        formatKey: ImportFormatKey.htmlTable,
+        expectedTableNames: _htmlDataTypesTestTableNames,
+        expectedRowCountsByTable: _htmlDataTypesTestRowCounts,
+        requiredColumnsByTable: <String, List<String>>{
+          'basic_types': <String>[
+            'date_col',
+            'time_col',
+            'datetime_col',
+            'timestamp_col',
+            'bool_col',
+            'uuid_col',
+          ],
+          'bool_types': <String>[
+            'bool_as_int',
+            'bool_as_text',
+            'bool_as_char',
+            'bool_as_word',
+          ],
+          'datetime_types': <String>[
+            'iso_date',
+            'us_date',
+            'eu_date',
+            'unix_timestamp',
+            'epoch_millis',
+          ],
+          'numeric_edge_cases': <String>[
+            'zero',
+            'negative_zero',
+            'infinity',
+            'minus_infinity',
+            'nan',
+          ],
+          'null_handling': <String>['null_int', 'null_real', 'empty_vs_null'],
+        },
+        expectedColumnTypesByTable: _htmlDataTypesTestColumnTypes,
       ),
       GenericImportFixtureEntry(
         relativePath: 'test-data/html/report_tables.html',

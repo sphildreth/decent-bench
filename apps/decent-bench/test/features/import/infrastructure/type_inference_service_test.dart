@@ -9,9 +9,14 @@ void main() {
   test('infers common DecentDB target types', () {
     expect(service.inferTargetType(<Object?>['1', '2', '3']), 'INTEGER');
     expect(service.inferTargetType(<Object?>['true', 'false']), 'BOOLEAN');
-    expect(service.inferTargetType(<Object?>['2026-03-11T04:00:00Z']), 'TIMESTAMP');
     expect(
-      service.inferTargetType(<Object?>['d290f1ee-6c54-4b01-90e6-d701748f0851']),
+      service.inferTargetType(<Object?>['2026-03-11T04:00:00Z']),
+      'TIMESTAMP',
+    );
+    expect(
+      service.inferTargetType(<Object?>[
+        'd290f1ee-6c54-4b01-90e6-d701748f0851',
+      ]),
       'UUID',
     );
     expect(service.inferTargetType(<Object?>[Uint8List(2)]), 'BLOB');
@@ -21,12 +26,80 @@ void main() {
     expect(service.inferTargetType(<Object?>['0012', '0013']), 'TEXT');
   });
 
+  test('uses column-name hints for booleans and timestamps', () {
+    expect(
+      service.inferTargetType(<Object?>[
+        '0',
+        '1',
+        '0',
+      ], columnName: 'bool_flag'),
+      'BOOLEAN',
+    );
+    expect(
+      service.inferTargetType(<Object?>['0', '0', '0'], columnName: 'zero'),
+      'INTEGER',
+    );
+    expect(
+      service.inferTargetType(<Object?>[
+        '1705315800',
+        '1708437930',
+      ], columnName: 'unix_timestamp'),
+      'TIMESTAMP',
+    );
+    expect(
+      service.inferTargetType(<Object?>[
+        '01/15/2024',
+        '02/20/2024',
+      ], columnName: 'us_date'),
+      'TIMESTAMP',
+    );
+    expect(
+      service.inferTargetType(<Object?>[
+        '15.01.2024',
+        '20.02.2024',
+      ], columnName: 'eu_date'),
+      'TIMESTAMP',
+    );
+    expect(
+      service.inferTargetType(<Object?>[
+        '10:30:00',
+        '14:45:30',
+      ], columnName: 'time_col'),
+      'TIMESTAMP',
+    );
+  });
+
+  test('infers decimal and float edge-case columns safely', () {
+    expect(
+      service.inferTargetType(<Object?>[
+        '98066.01',
+        '13944.24',
+        '0.00',
+      ], columnName: 'numeric_col'),
+      'DECIMAL(18,6)',
+    );
+    expect(
+      service.inferTargetType(<Object?>[
+        'Infinity',
+        'INF',
+        '1.79E+308',
+        '1.0E+999',
+      ], columnName: 'infinity'),
+      'FLOAT64',
+    );
+    expect(
+      service.inferTargetType(<Object?>['NaN', '#NUM!'], columnName: 'nan'),
+      'FLOAT64',
+    );
+  });
+
   test('sanitizes and deduplicates identifiers', () {
     expect(
-      service.distinctTargetNames(
-        <String>['Order ID', 'Order ID', '2nd value'],
-        fallbackPrefix: 'column',
-      ),
+      service.distinctTargetNames(<String>[
+        'Order ID',
+        'Order ID',
+        '2nd value',
+      ], fallbackPrefix: 'column'),
       <String>['Order_ID', 'Order_ID_2', 'column_2nd_value'],
     );
   });
