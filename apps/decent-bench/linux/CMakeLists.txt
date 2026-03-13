@@ -57,6 +57,24 @@ pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+# Build the standalone headless import helper that the Linux launcher
+# re-execs for --in/--out so packaged CLI imports do not require GTK/display.
+find_program(DART_EXECUTABLE dart REQUIRED)
+set(HEADLESS_IMPORT_PROJECT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")
+set(HEADLESS_IMPORT_SCRIPT "${HEADLESS_IMPORT_PROJECT_DIR}/bin/headless_import.dart")
+set(HEADLESS_IMPORT_BUILD_DIR "${PROJECT_BINARY_DIR}/headless_cli")
+set(HEADLESS_IMPORT_BUNDLE_DIR "${HEADLESS_IMPORT_BUILD_DIR}/bundle")
+set(HEADLESS_IMPORT_EXECUTABLE "${HEADLESS_IMPORT_BUNDLE_DIR}/bin/headless_import")
+add_custom_target(headless_import_helper ALL
+  COMMAND "${DART_EXECUTABLE}" build cli
+    --target "${HEADLESS_IMPORT_SCRIPT}"
+    --output "${HEADLESS_IMPORT_BUILD_DIR}"
+  WORKING_DIRECTORY "${HEADLESS_IMPORT_PROJECT_DIR}"
+  BYPRODUCTS "${HEADLESS_IMPORT_EXECUTABLE}"
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} headless_import_helper)
+
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
@@ -92,6 +110,13 @@ set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib")
 
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)
+install(PROGRAMS "${HEADLESS_IMPORT_EXECUTABLE}"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
+  RENAME "dbench_headless"
+  COMPONENT Runtime)
+install(DIRECTORY "${HEADLESS_IMPORT_BUNDLE_DIR}/lib/"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"

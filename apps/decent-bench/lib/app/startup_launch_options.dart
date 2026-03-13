@@ -176,7 +176,7 @@ String buildStartupHelpText() {
       '  --out=<path.ddb>\n'
       '      Same as above, using the inline form.\n'
       '  --plan <path.json>\n'
-      '      Apply a headless import plan. Only valid with --in and --out.\n'
+      '      Reserved for future headless import plan support. Parsed now, but rejected at execution time.\n'
       '  --plan=<path.json>\n'
       '      Same as above, using the inline form.\n'
       '  --silent\n'
@@ -194,16 +194,8 @@ String buildStartupHelpText() {
       '  Passing a .ddb path opens that database in the desktop UI.\n'
       '  `--import` always opens the interactive import wizard.\n'
       '  `--in`/`--out` are reserved for headless import.\n'
-      '  Headless import execution is not implemented yet in this build.';
-}
-
-String buildHeadlessImportUnavailableText() {
-  return 'Headless import mode is not implemented yet in this build.\n'
-      '\n'
-      'Planned syntax:\n'
-      '  dbench --in <source-path> --out <target.ddb> [--plan <plan.json>] [--silent]\n'
-      '\n'
-      'Use `dbench --help` for details.';
+      '  Headless import writes progress to stderr and a final JSON summary to stdout.\n'
+      '  `--plan` is reserved for future plan-file execution and is not implemented yet.';
 }
 
 String buildStartupCliErrorText(String message) {

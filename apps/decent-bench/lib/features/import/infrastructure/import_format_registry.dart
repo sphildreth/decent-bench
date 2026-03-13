@@ -41,7 +41,7 @@ class ImportFormatRegistry {
       label: 'Generic Delimited Text',
       family: ImportFamily.delimitedText,
       supportState: ImportSupportState.complete,
-      extensions: <String>['.txt', '.dat', '.log'],
+      extensions: <String>['.txt', '.dat', '.log', '.psv'],
       implementationKind: ImportImplementationKind.genericWizard,
       description:
           'Custom-delimited import for CSV-like text exports and logs.',

@@ -1164,6 +1164,9 @@ class _ExcelSummaryViewBuilder {
         currentRowIndex: currentRowIndex,
         rowAlias: rowAlias,
       );
+      if (node.operator == '-') {
+        return '(0 - $operand)';
+      }
       return '(${node.operator}$operand)';
     }
     if (node is _ExcelBinaryNode) {

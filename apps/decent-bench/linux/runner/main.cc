@@ -1,5 +1,8 @@
 #include <cstring>
 #include <iostream>
+#include <vector>
+
+#include <unistd.h>
 
 #include "my_application.h"
 
@@ -33,7 +36,8 @@ constexpr const char *kHelpText =
     "  --out=<path.ddb>\n"
     "      Same as above, using the inline form.\n"
     "  --plan <path.json>\n"
-    "      Apply a headless import plan. Only valid with --in and --out.\n"
+    "      Reserved for future headless import plan support. Parsed now, but "
+    "rejected at execution time.\n"
     "  --plan=<path.json>\n"
     "      Same as above, using the inline form.\n"
     "  --silent\n"
@@ -52,16 +56,10 @@ constexpr const char *kHelpText =
     "  Passing a .ddb path opens that database in the desktop UI.\n"
     "  --import always opens the interactive import wizard.\n"
     "  --in/--out are reserved for headless import.\n"
-    "  Headless import execution is not implemented yet in this build.\n";
-
-constexpr const char *kHeadlessImportUnavailableText =
-    "Headless import mode is not implemented yet in this build.\n"
-    "\n"
-    "Planned syntax:\n"
-    "  dbench --in <source-path> --out <target.ddb> [--plan <plan.json>] "
-    "[--silent]\n"
-    "\n"
-    "Use `dbench --help` for details.\n";
+    "  Headless import writes progress to stderr and a final JSON summary to "
+    "stdout.\n"
+    "  --plan is reserved for future plan-file execution and is not "
+    "implemented yet.\n";
 
 bool HasArg(int argc, char **argv, const char *short_name,
             const char *long_name) {
@@ -93,6 +91,38 @@ bool HasHeadlessArg(int argc, char **argv) {
   return false;
 }
 
+int RunHeadlessHelper(int argc, char **argv) {
+  g_autoptr(GError) error = nullptr;
+  g_autofree gchar *executable_path =
+      g_file_read_link("/proc/self/exe", &error);
+  if (executable_path == nullptr) {
+    std::cerr << "Failed to resolve the running executable path";
+    if (error != nullptr && error->message != nullptr) {
+      std::cerr << ": " << error->message;
+    }
+    std::cerr << std::endl;
+    return 1;
+  }
+
+  g_autofree gchar *bundle_dir = g_path_get_dirname(executable_path);
+  g_autofree gchar *helper_path =
+      g_build_filename(bundle_dir, "bin", "dbench_headless", nullptr);
+
+  std::vector<char *> helper_argv;
+  helper_argv.reserve(static_cast<size_t>(argc) + 1);
+  helper_argv.push_back(helper_path);
+  for (int i = 1; i < argc; ++i) {
+    helper_argv.push_back(argv[i]);
+  }
+  helper_argv.push_back(nullptr);
+
+  execv(helper_path, helper_argv.data());
+
+  std::cerr << "Failed to launch bundled headless import helper at "
+            << helper_path << std::endl;
+  return 1;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -105,8 +135,7 @@ int main(int argc, char **argv) {
     return 0;
   }
   if (HasHeadlessArg(argc, argv)) {
-    std::cerr << kHeadlessImportUnavailableText;
-    return 2;
+    return RunHeadlessHelper(argc, argv);
   }
 
   g_autoptr(MyApplication) app = my_application_new();

@@ -1,18 +1,12 @@
 import 'dart:io';
 
-import 'package:flutter/widgets.dart';
-
-import 'app/app.dart';
-import 'app/headless_import_runner.dart';
-import 'app/startup_launch_options.dart';
+import 'package:decent_bench/app/headless_import_runner.dart';
+import 'package:decent_bench/app/startup_launch_options.dart';
 
 Future<void> main(List<String> args) async {
   final cliDecision = parseStartupCliDecision(args);
+
   switch (cliDecision.behavior) {
-    case StartupCliBehavior.launchApp:
-      WidgetsFlutterBinding.ensureInitialized();
-      runApp(DecentBenchApp(startupLaunchOptions: cliDecision.launchOptions));
-      return;
     case StartupCliBehavior.runHeadlessImport:
       exit(await runHeadlessImportCli(cliDecision.headlessImportOptions!));
     case StartupCliBehavior.printHelp:
@@ -21,7 +15,11 @@ Future<void> main(List<String> args) async {
       return;
     case StartupCliBehavior.printError:
       stderr.writeln(cliDecision.output ?? '');
-      exitCode = cliDecision.exitCode;
-      return;
+      exit(cliDecision.exitCode);
+    case StartupCliBehavior.launchApp:
+      stderr.writeln(
+        'The headless import helper only supports `--in`/`--out`, `--help`, and `--version`.',
+      );
+      exit(2);
   }
 }

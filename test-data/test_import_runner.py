@@ -3,16 +3,16 @@
 Test runner for validating DecentDB imports from test-data files.
 
 Usage:
-    python test_import_runner.py [--dbench PATH] [--dry-run]
+    python test-data/test_import_runner.py [--dbench PATH] [--dry-run]
 
 Requirements:
-    - DecentDB headless import must be implemented (dbench --in --out)
     - Python 3.8+
 """
 
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,8 +22,16 @@ from pathlib import Path
 from typing import Optional
 
 
-TEST_DATA_DIR = Path(__file__).parent.parent / "test-data"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+TEST_DATA_DIR = REPO_ROOT / "test-data"
+MANIFEST_PATH = REPO_ROOT / "apps/decent-bench/test/support/import_fixture_manifest.dart"
 DBENCH_DEFAULT = "apps/decent-bench/build/linux/x64/release/bundle/dbench"
+ROUND_TRIP_FIXTURE_SECTIONS = (
+    "genericImportRoundTripFixtures",
+    "sqliteImportRoundTripFixtures",
+    "excelImportRoundTripFixtures",
+    "sqlDumpImportRoundTripFixtures",
+)
 
 
 @dataclass
@@ -51,39 +59,99 @@ class TestResult:
     message: str
     ddb_path: Optional[Path] = None
     error: Optional[str] = None
+    report: Optional[dict] = None
     details: dict = field(default_factory=dict)
 
 
 def discover_test_files() -> list[TestFile]:
-    """Discover all test files in test-data directory."""
-    test_files = []
+    """Discover importable fixtures from the in-repo round-trip fixture manifest."""
+    if not MANIFEST_PATH.exists():
+        raise FileNotFoundError(f"Import fixture manifest not found: {MANIFEST_PATH}")
 
-    formats = {
-        "sqlite": ["sqlite"],
-        "html": ["html"],
-        "excel": ["xlsx", "xls"],
-        "json": ["json"],
-        "xml": ["xml"],
-        "delimited": ["csv", "tsv", "txt"],
-    }
+    manifest_text = MANIFEST_PATH.read_text(encoding="utf-8")
+    relative_paths: list[str] = []
+    for section_name in ROUND_TRIP_FIXTURE_SECTIONS:
+        section_body = _extract_manifest_section(manifest_text, section_name)
+        relative_paths.extend(re.findall(r"relativePath:\s*'([^']+)'", section_body))
 
-    for format_name, extensions in formats.items():
-        dir_path = TEST_DATA_DIR / format_name
-        if not dir_path.exists():
+    test_files: list[TestFile] = []
+    for relative_path in relative_paths:
+        path = REPO_ROOT / relative_path
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Fixture listed in manifest does not exist on disk: {relative_path}"
+            )
+        test_files.append(TestFile(path=path, format=classify_fixture_format(path)))
+
+    return sorted(test_files, key=lambda item: (item.format, str(item.path)))
+
+
+def _extract_manifest_section(source: str, section_name: str) -> str:
+    marker = f"{section_name} ="
+    marker_index = source.find(marker)
+    if marker_index == -1:
+        raise ValueError(f"Could not locate manifest section: {section_name}")
+
+    list_start = source.find("[", marker_index)
+    if list_start == -1:
+        raise ValueError(f"Could not locate list start for manifest section: {section_name}")
+
+    depth = 0
+    in_string = False
+    escape = False
+    for index in range(list_start, len(source)):
+        char = source[index]
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == "'":
+                in_string = False
             continue
 
-        for ext in extensions:
-            for file_path in dir_path.glob(f"*.{ext}"):
-                test_files.append(TestFile(path=file_path, format=format_name))
+        if char == "'":
+            in_string = True
+            continue
+        if char == "[":
+            depth += 1
+            continue
+        if char == "]":
+            depth -= 1
+            if depth == 0:
+                return source[list_start : index + 1]
 
-    return test_files
+    raise ValueError(f"Manifest section is missing a closing bracket: {section_name}")
+
+
+def classify_fixture_format(path: Path) -> str:
+    lower_name = path.name.lower()
+    lower_suffixes = [suffix.lower() for suffix in path.suffixes]
+
+    if lower_name.endswith(".sql.gz") or path.suffix.lower() == ".sql":
+        return "sql_dump"
+    if path.suffix.lower() in {".sqlite", ".sqlite3", ".db"}:
+        return "sqlite"
+    if path.suffix.lower() in {".xlsx", ".xls"}:
+        return "excel"
+    if path.suffix.lower() in {".html", ".htm"}:
+        return "html"
+    if path.suffix.lower() == ".xml":
+        return "xml"
+    if path.suffix.lower() in {".json", ".ndjson", ".jsonl"}:
+        return "json"
+    if lower_name.endswith(".csv.gz") or path.suffix.lower() in {".csv", ".tsv", ".psv"}:
+        return "delimited"
+    if ".gz" in lower_suffixes:
+        return "compressed"
+    return "other"
 
 
 def get_import_command(
     dbench_path: str, source: Path, target: Path, plan: Optional[Path] = None
 ) -> list[str]:
     """Build the dbench import command."""
-    cmd = [dbench_path, "--in", str(source), "--out", str(target)]
+    cmd = [dbench_path, "--in", str(source), "--out", str(target), "--silent"]
     if plan:
         cmd.extend(["--plan", str(plan)])
     return cmd
@@ -101,7 +169,7 @@ def run_import(
 
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout, cwd=source.parent
+            cmd, capture_output=True, text=True, timeout=timeout, cwd=REPO_ROOT
         )
 
         if result.returncode == 0:
@@ -142,13 +210,22 @@ def validate_import(ddb_path: Path, test_file: TestFile) -> dict:
 
     details["file_size"] = ddb_path.stat().st_size
 
-    # TODO: Add proper validation once we can query ddb files
-    # - Connect to ddb and query table counts
-    # - Verify row counts match expected
-    # - Check column types were inferred correctly
-    # - Verify special cases (views, calculated columns, etc.)
-
     return details
+
+
+def parse_import_report(output: str) -> Optional[dict]:
+    """Parse the final headless JSON summary from stdout/stderr text."""
+    for line in reversed(output.splitlines()):
+        candidate = line.strip()
+        if not candidate or not candidate.startswith("{"):
+            continue
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and "target_path" in parsed:
+            return parsed
+    return None
 
 
 def run_single_test(
@@ -160,14 +237,54 @@ def run_single_test(
 
     # Run import
     success, output = run_import(dbench_path, test_file.path, target_path)
+    report = parse_import_report(output)
 
     if not success:
         return TestResult(
-            file=test_file, success=False, message="Import failed", error=output
+            file=test_file,
+            success=False,
+            message="Import failed",
+            error=output,
+            report=report,
         )
 
     # Validate import
     details = validate_import(target_path, test_file)
+    details["report"] = report
+
+    if report is None:
+        return TestResult(
+            file=test_file,
+            success=False,
+            message="Validation failed",
+            ddb_path=target_path if keep_ddbs else None,
+            error="Headless import did not emit a final JSON report",
+            report=report,
+            details=details,
+        )
+
+    imported_tables = report.get("imported_tables") or []
+    database_tables = report.get("database_tables") or []
+    if not imported_tables:
+        return TestResult(
+            file=test_file,
+            success=False,
+            message="Validation failed",
+            ddb_path=target_path if keep_ddbs else None,
+            error="Headless import report contained no imported tables",
+            report=report,
+            details=details,
+        )
+    if not database_tables:
+        return TestResult(
+            file=test_file,
+            success=False,
+            message="Validation failed",
+            ddb_path=target_path if keep_ddbs else None,
+            error="Headless import report contained no database tables",
+            report=report,
+            details=details,
+        )
 
     if "error" in details:
         return TestResult(
@@ -176,26 +293,35 @@ def run_single_test(
             message="Validation failed",
             ddb_path=target_path if keep_ddbs else None,
             error=details["error"],
+            report=report,
+            details=details,
         )
 
     # Clean up unless keep_ddbs is True
-    if not keep_ddbs and target_path.exists():
-        target_path.unlink()
+    if not keep_ddbs:
+        cleanup_generated_database(target_path)
 
     return TestResult(
         file=test_file,
         success=True,
         message="Import successful",
         ddb_path=target_path if keep_ddbs else None,
+        report=report,
         details=details,
     )
+
+
+def cleanup_generated_database(path: Path) -> None:
+    for candidate in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
+        if candidate.exists():
+            candidate.unlink()
 
 
 def check_dbench_available(dbench_path: str) -> bool:
     """Check if dbench is available and supports headless import."""
     try:
         result = subprocess.run(
-            [dbench_path, "--in", "test", "--out", "test.ddb"],
+            [dbench_path, "--in", "/no/such/source.csv", "--out", "/tmp/test.ddb", "--silent"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -233,7 +359,7 @@ def main():
     )
     parser.add_argument(
         "--format",
-        help="Only test files of this format (sqlite, html, excel, json, xml, delimited)",
+        help="Only test fixtures of this format (sqlite, html, excel, json, xml, delimited, sql_dump)",
     )
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Show detailed output"
@@ -244,9 +370,7 @@ def main():
     # Resolve dbench path
     dbench_path = Path(args.dbench)
     if not dbench_path.is_absolute():
-        # Relative to repo root
-        repo_root = TEST_DATA_DIR.parent
-        dbench_path = repo_root / dbench_path
+        dbench_path = REPO_ROOT / dbench_path
 
     if not dbench_path.exists():
         print(f"Error: dbench not found at: {dbench_path}")
@@ -263,7 +387,7 @@ def main():
         print("No test files found.")
         sys.exit(0)
 
-    print(f"Found {len(test_files)} test files:")
+    print(f"Found {len(test_files)} import fixtures from the round-trip manifest:")
     for tf in test_files:
         print(f"  [{tf.format}] {tf.name}")
     print()

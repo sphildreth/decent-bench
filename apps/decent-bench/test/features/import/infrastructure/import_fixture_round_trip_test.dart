@@ -48,6 +48,7 @@ class _ResolvedFixtureSource {
 const Set<String> _nonImportDocumentationFixturePaths = <String>{
   'test-data/README.md',
   'test-data/excel/README.txt',
+  'test-data/test_import_runner.py',
 };
 
 bool _isIgnoredFixturePath(String relativePath) {

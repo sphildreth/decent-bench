@@ -236,10 +236,18 @@ void main() {
     expect(importedPath, isNull);
   });
 
-  test('builds a headless import unavailable message', () {
-    final message = buildHeadlessImportUnavailableText();
+  test('documents headless import output behavior in help text', () {
+    final message = buildStartupHelpText();
 
-    expect(message, contains('Headless import mode is not implemented yet'));
-    expect(message, contains('--in <source-path> --out <target.ddb>'));
+    expect(
+      message,
+      contains(
+        'Headless import writes progress to stderr and a final JSON summary to stdout.',
+      ),
+    );
+    expect(
+      message,
+      contains('`--plan` is reserved for future plan-file execution'),
+    );
   });
 }

@@ -5,28 +5,28 @@
 #include <gdk/gdkx.h>
 #endif
 
-#include "flutter_menu_plugin.h"
 #include "flutter/generated_plugin_registrant.h"
+#include "flutter_menu_plugin.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
-  char** dart_entrypoint_arguments;
-  FlView* view;
-  GtkWidget* content_box;
-  FlutterMenuPlugin* menu_plugin;
+  char **dart_entrypoint_arguments;
+  FlView *view;
+  GtkWidget *content_box;
+  FlutterMenuPlugin *menu_plugin;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
 // Called when first Flutter frame received.
-static void first_frame_cb(MyApplication* self, FlView* view) {
+static void first_frame_cb(MyApplication *self, FlView *view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
 // Implements GApplication::activate.
-static void my_application_activate(GApplication* application) {
-  MyApplication* self = MY_APPLICATION(application);
-  GtkWindow* window =
+static void my_application_activate(GApplication *application) {
+  MyApplication *self = MY_APPLICATION(application);
+  GtkWindow *window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
   // Use a header bar when running in GNOME as this is the common style used
@@ -38,16 +38,16 @@ static void my_application_activate(GApplication* application) {
   // if future cases occur).
   gboolean use_header_bar = TRUE;
 #ifdef GDK_WINDOWING_X11
-  GdkScreen* screen = gtk_window_get_screen(window);
+  GdkScreen *screen = gtk_window_get_screen(window);
   if (GDK_IS_X11_SCREEN(screen)) {
-    const gchar* wm_name = gdk_x11_screen_get_window_manager_name(screen);
+    const gchar *wm_name = gdk_x11_screen_get_window_manager_name(screen);
     if (g_strcmp0(wm_name, "GNOME Shell") != 0) {
       use_header_bar = FALSE;
     }
   }
 #endif
   if (use_header_bar) {
-    GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
+    GtkHeaderBar *header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
     gtk_header_bar_set_title(header_bar, "Decent Bench");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
@@ -62,7 +62,7 @@ static void my_application_activate(GApplication* application) {
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
 
-  FlView* view = fl_view_new(project);
+  FlView *view = fl_view_new(project);
   self->view = view;
   GdkRGBA background_color;
   // Background defaults to black, override it here if necessary, e.g. #00000000
@@ -71,7 +71,7 @@ static void my_application_activate(GApplication* application) {
   fl_view_set_background_color(view, &background_color);
   gtk_widget_show(GTK_WIDGET(view));
 
-  GtkWidget* content_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  GtkWidget *content_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   self->content_box = content_box;
   gtk_widget_show(content_box);
   gtk_container_add(GTK_CONTAINER(window), content_box);
@@ -84,8 +84,8 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_realize(GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
-  FlEngine* engine = fl_view_get_engine(view);
-  FlBinaryMessenger* messenger = fl_engine_get_binary_messenger(engine);
+  FlEngine *engine = fl_view_get_engine(view);
+  FlBinaryMessenger *messenger = fl_engine_get_binary_messenger(engine);
   self->menu_plugin =
       new FlutterMenuPlugin(messenger, window, GTK_BOX(content_box));
 
@@ -93,10 +93,10 @@ static void my_application_activate(GApplication* application) {
 }
 
 // Implements GApplication::local_command_line.
-static gboolean my_application_local_command_line(GApplication* application,
-                                                  gchar*** arguments,
-                                                  int* exit_status) {
-  MyApplication* self = MY_APPLICATION(application);
+static gboolean my_application_local_command_line(GApplication *application,
+                                                  gchar ***arguments,
+                                                  int *exit_status) {
+  MyApplication *self = MY_APPLICATION(application);
   // Strip out the first argument as it is the binary name.
   self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
 
@@ -114,7 +114,7 @@ static gboolean my_application_local_command_line(GApplication* application,
 }
 
 // Implements GApplication::startup.
-static void my_application_startup(GApplication* application) {
+static void my_application_startup(GApplication *application) {
   // MyApplication* self = MY_APPLICATION(object);
 
   // Perform any actions required at application startup.
@@ -123,7 +123,7 @@ static void my_application_startup(GApplication* application) {
 }
 
 // Implements GApplication::shutdown.
-static void my_application_shutdown(GApplication* application) {
+static void my_application_shutdown(GApplication *application) {
   // MyApplication* self = MY_APPLICATION(object);
 
   // Perform any actions required at application shutdown.
@@ -132,15 +132,15 @@ static void my_application_shutdown(GApplication* application) {
 }
 
 // Implements GObject::dispose.
-static void my_application_dispose(GObject* object) {
-  MyApplication* self = MY_APPLICATION(object);
+static void my_application_dispose(GObject *object) {
+  MyApplication *self = MY_APPLICATION(object);
   delete self->menu_plugin;
   self->menu_plugin = nullptr;
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 
-static void my_application_class_init(MyApplicationClass* klass) {
+static void my_application_class_init(MyApplicationClass *klass) {
   G_APPLICATION_CLASS(klass)->activate = my_application_activate;
   G_APPLICATION_CLASS(klass)->local_command_line =
       my_application_local_command_line;
@@ -149,13 +149,13 @@ static void my_application_class_init(MyApplicationClass* klass) {
   G_OBJECT_CLASS(klass)->dispose = my_application_dispose;
 }
 
-static void my_application_init(MyApplication* self) {
+static void my_application_init(MyApplication *self) {
   self->view = nullptr;
   self->content_box = nullptr;
   self->menu_plugin = nullptr;
 }
 
-MyApplication* my_application_new() {
+MyApplication *my_application_new() {
   // Set the program name to the application ID, which helps various systems
   // like GTK and desktop environments map this running application to its
   // corresponding .desktop file. This ensures better integration by allowing
