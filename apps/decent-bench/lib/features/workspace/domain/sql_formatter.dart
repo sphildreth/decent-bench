@@ -39,6 +39,7 @@ class SqlFormatter {
       (match) => '\n  ${match.group(1)!.toUpperCase()}',
     );
 
+    working = _reflowCreateTableDefinitions(working);
     working = _restoreProtectedSegments(working, protected);
     return _indentMultilineClauses(working, settings.indentSpaces).trim();
   }
@@ -127,6 +128,112 @@ class SqlFormatter {
       working = working.replaceAll('__P${i}__', protectedSegments[i]);
     }
     return working;
+  }
+
+  String _reflowCreateTableDefinitions(String sql) {
+    final pattern = RegExp(
+      r'\bCREATE\s+(?:TEMP\s+)?TABLE\b',
+      caseSensitive: false,
+    );
+    final matches = pattern.allMatches(sql).toList(growable: false);
+    if (matches.isEmpty) {
+      return sql;
+    }
+
+    final buffer = StringBuffer();
+    var cursor = 0;
+    for (final match in matches) {
+      if (match.start < cursor) {
+        continue;
+      }
+
+      final openParenIndex = _findCreateTableOpenParen(sql, match.end);
+      if (openParenIndex < 0) {
+        continue;
+      }
+      final closeParenIndex = _findMatchingParen(sql, openParenIndex);
+      if (closeParenIndex < 0) {
+        continue;
+      }
+
+      final definitions = _splitTopLevelCommaSeparated(
+        sql.substring(openParenIndex + 1, closeParenIndex),
+      );
+      if (definitions.length <= 1) {
+        continue;
+      }
+
+      buffer.write(sql.substring(cursor, openParenIndex + 1));
+      buffer
+        ..write('\n')
+        ..write(definitions.join(',\n'));
+      cursor = closeParenIndex;
+    }
+
+    if (cursor == 0) {
+      return sql;
+    }
+    buffer.write(sql.substring(cursor));
+    return buffer.toString();
+  }
+
+  int _findCreateTableOpenParen(String sql, int start) {
+    final openParenIndex = sql.indexOf('(', start);
+    if (openParenIndex < 0) {
+      return -1;
+    }
+    final between = sql.substring(start, openParenIndex);
+    if (RegExp(r'\bAS\b', caseSensitive: false).hasMatch(between)) {
+      return -1;
+    }
+    return openParenIndex;
+  }
+
+  int _findMatchingParen(String sql, int openParenIndex) {
+    var depth = 0;
+    for (var index = openParenIndex; index < sql.length; index++) {
+      final current = sql[index];
+      if (current == '(') {
+        depth++;
+      } else if (current == ')') {
+        depth--;
+        if (depth == 0) {
+          return index;
+        }
+      }
+    }
+    return -1;
+  }
+
+  List<String> _splitTopLevelCommaSeparated(String input) {
+    final parts = <String>[];
+    var depth = 0;
+    var segmentStart = 0;
+    for (var index = 0; index < input.length; index++) {
+      final current = input[index];
+      if (current == '(') {
+        depth++;
+        continue;
+      }
+      if (current == ')') {
+        if (depth > 0) {
+          depth--;
+        }
+        continue;
+      }
+      if (current == ',' && depth == 0) {
+        final part = input.substring(segmentStart, index).trim();
+        if (part.isNotEmpty) {
+          parts.add(part);
+        }
+        segmentStart = index + 1;
+      }
+    }
+    final tail = input.substring(segmentStart).trim();
+    if (tail.isNotEmpty) {
+      parts.add(tail);
+    }
+    return parts;
   }
 
   String _indentMultilineClauses(String sql, int indentSpaces) {

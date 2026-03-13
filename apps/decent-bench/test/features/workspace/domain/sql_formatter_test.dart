@@ -27,4 +27,22 @@ void main() {
     expect(formatted, contains('\nFROM tasks'));
     expect(formatted, contains('\nWHERE id = 1'));
   });
+
+  test('reflows create table column definitions across lines', () {
+    final formatted = formatter.format(
+      'create table "basic_types"("id" INT64, "tinyint_col" INT64, "numeric_col" DECIMAL(18, 6), "uuid_col" UUID);',
+      settings: EditorSettings.defaults().copyWith(
+        formatUppercaseKeywords: false,
+      ),
+    );
+
+    expect(
+      formatted,
+      'create table "basic_types"(\n'
+      '"id" INT64,\n'
+      '"tinyint_col" INT64,\n'
+      '"numeric_col" DECIMAL(18, 6),\n'
+      '"uuid_col" UUID);',
+    );
+  });
 }
