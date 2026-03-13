@@ -1,4 +1,4 @@
-name: Flutter MVP
+name: Flutter Build
 
 on:
   push:
@@ -21,8 +21,10 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install Nim
-        run: sudo apt-get update && sudo apt-get install --yes nim
+      - name: Set up Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: stable
 
       - name: Resolve latest DecentDB v1.6.x tag
         id: decentdb-tag
@@ -36,8 +38,24 @@ jobs:
       - name: Check out DecentDB ${{ steps.decentdb-tag.outputs.tag }}
         run: git clone --depth 1 --branch "${{ steps.decentdb-tag.outputs.tag }}" https://github.com/sphildreth/decentdb.git ../decentdb
 
+      - name: Build libpg_query (Linux)
+        working-directory: ../decentdb
+        shell: bash
+        run: |
+          if [ ! -d "/tmp/libpg_query" ]; then
+            git clone --depth 1 https://github.com/pganalyze/libpg_query.git /tmp/libpg_query
+            make -C /tmp/libpg_query
+          fi
+          mkdir -p build/lib
+          cp /tmp/libpg_query/libpg_query.a build/lib/
+
+      - name: Install DecentDB Nim dependencies
+        working-directory: ../decentdb
+        run: nimble setup -y
+
       - name: Build DecentDB native library
         working-directory: ../decentdb
+        shell: bash
         run: nimble build_lib
 
       - name: Flutter pub get
@@ -89,17 +107,10 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install Nim on Linux
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes nim
-
-      - name: Install Nim on macOS
-        if: runner.os == 'macOS'
-        run: brew install nim
-
-      - name: Install Nim on Windows
-        if: runner.os == 'Windows'
-        run: choco install nim --yes --no-progress
+      - name: Set up Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: stable
 
       - name: Resolve latest DecentDB v1.6.x tag
         id: decentdb-tag
@@ -113,8 +124,52 @@ jobs:
       - name: Check out DecentDB ${{ steps.decentdb-tag.outputs.tag }}
         run: git clone --depth 1 --branch "${{ steps.decentdb-tag.outputs.tag }}" https://github.com/sphildreth/decentdb.git ../decentdb
 
+      - name: Build libpg_query (Linux)
+        if: runner.os == 'Linux'
+        working-directory: ../decentdb
+        shell: bash
+        run: |
+          if [ ! -d "/tmp/libpg_query" ]; then
+            git clone --depth 1 https://github.com/pganalyze/libpg_query.git /tmp/libpg_query
+            make -C /tmp/libpg_query
+          fi
+          mkdir -p build/lib
+          cp /tmp/libpg_query/libpg_query.a build/lib/
+
+      - name: Build libpg_query (macOS)
+        if: runner.os == 'macOS'
+        working-directory: ../decentdb
+        shell: bash
+        run: |
+          if [ ! -d "/tmp/libpg_query" ]; then
+            git clone --depth 1 https://github.com/pganalyze/libpg_query.git /tmp/libpg_query
+            make -C /tmp/libpg_query
+          fi
+          mkdir -p build/lib
+          cp /tmp/libpg_query/libpg_query.a build/lib/
+
+      - name: Build libpg_query (Windows)
+        if: runner.os == 'Windows'
+        working-directory: ../decentdb
+        shell: bash
+        run: |
+          repo_root="$PWD"
+          if [ ! -d "/tmp/libpg_query" ]; then
+            git clone --depth 1 https://github.com/pganalyze/libpg_query.git /tmp/libpg_query
+            cd /tmp/libpg_query
+            make
+          fi
+          cd /tmp/libpg_query
+          mkdir -p "$repo_root/build/lib"
+          cp libpg_query.a "$repo_root/build/lib/"
+
+      - name: Install DecentDB Nim dependencies
+        working-directory: ../decentdb
+        run: nimble setup -y
+
       - name: Build DecentDB native library
         working-directory: ../decentdb
+        shell: bash
         run: nimble build_lib
 
       - name: Flutter pub get
