@@ -10,6 +10,10 @@ void main() {
     expect(decision.output, contains('Usage:'));
     expect(decision.output, contains('dbench /path/to/workspace.ddb'));
     expect(decision.output, contains('--import <path>'));
+    expect(decision.output, contains('--in <path>'));
+    expect(decision.output, contains('--out <path.ddb>'));
+    expect(decision.output, contains('--plan <path.json>'));
+    expect(decision.output, contains('--silent'));
     expect(decision.output, contains('--version'));
   });
 
@@ -56,6 +60,105 @@ void main() {
     expect(options.openDatabasePath, isNull);
     expect(options.importSourcePath, isNull);
     expect(options.startupNotice, '`--import` expects a filename.');
+  });
+
+  test('returns a headless import decision for --in/--out', () {
+    final decision = parseStartupCliDecision(<String>[
+      '--in',
+      '/tmp/source.sqlite',
+      '--out',
+      '/tmp/output.ddb',
+    ]);
+
+    expect(decision.behavior, StartupCliBehavior.runHeadlessImport);
+    expect(decision.shouldExit, isTrue);
+    expect(decision.headlessImportOptions?.sourcePath, '/tmp/source.sqlite');
+    expect(decision.headlessImportOptions?.targetPath, '/tmp/output.ddb');
+    expect(decision.headlessImportOptions?.planPath, isNull);
+    expect(decision.headlessImportOptions?.silent, isFalse);
+  });
+
+  test('parses inline headless import options', () {
+    final decision = parseStartupCliDecision(<String>[
+      '--in=/tmp/source.xlsx',
+      '--out=/tmp/output.ddb',
+      '--plan=/tmp/import-plan.json',
+      '--silent',
+    ]);
+
+    expect(decision.behavior, StartupCliBehavior.runHeadlessImport);
+    expect(decision.headlessImportOptions?.sourcePath, '/tmp/source.xlsx');
+    expect(decision.headlessImportOptions?.targetPath, '/tmp/output.ddb');
+    expect(decision.headlessImportOptions?.planPath, '/tmp/import-plan.json');
+    expect(decision.headlessImportOptions?.silent, isTrue);
+  });
+
+  test('rejects --in without --out', () {
+    final decision = parseStartupCliDecision(<String>[
+      '--in',
+      '/tmp/source.sqlite',
+    ]);
+
+    expect(decision.behavior, StartupCliBehavior.printError);
+    expect(decision.output, contains('`--in` requires `--out`.'));
+  });
+
+  test('rejects --plan without headless import mode', () {
+    final decision = parseStartupCliDecision(<String>[
+      '--plan',
+      '/tmp/import-plan.json',
+    ]);
+
+    expect(decision.behavior, StartupCliBehavior.printError);
+    expect(
+      decision.output,
+      contains('`--plan` is only valid with `--in` and `--out`.'),
+    );
+  });
+
+  test('rejects --silent without headless import mode', () {
+    final decision = parseStartupCliDecision(<String>['--silent']);
+
+    expect(decision.behavior, StartupCliBehavior.printError);
+    expect(
+      decision.output,
+      contains('`--silent` is only valid with `--in` and `--out`.'),
+    );
+  });
+
+  test('rejects combining --import with headless import flags', () {
+    final decision = parseStartupCliDecision(<String>[
+      '--import',
+      '/tmp/source.xlsx',
+      '--in',
+      '/tmp/source.sqlite',
+      '--out',
+      '/tmp/output.ddb',
+    ]);
+
+    expect(decision.behavior, StartupCliBehavior.printError);
+    expect(
+      decision.output,
+      contains('`--import` cannot be combined with headless import flags.'),
+    );
+  });
+
+  test('rejects combining a positional .ddb path with headless flags', () {
+    final decision = parseStartupCliDecision(<String>[
+      '/tmp/workspace.ddb',
+      '--in',
+      '/tmp/source.sqlite',
+      '--out',
+      '/tmp/output.ddb',
+    ]);
+
+    expect(decision.behavior, StartupCliBehavior.printError);
+    expect(
+      decision.output,
+      contains(
+        'A positional .ddb path cannot be combined with `--import` or headless import flags.',
+      ),
+    );
   });
 
   test('dispatches a positional .ddb path to direct open', () async {
@@ -131,5 +234,12 @@ void main() {
     expect(noticeMessage, '`--import` expects a filename.');
     expect(openedPath, isNull);
     expect(importedPath, isNull);
+  });
+
+  test('builds a headless import unavailable message', () {
+    final message = buildHeadlessImportUnavailableText();
+
+    expect(message, contains('Headless import mode is not implemented yet'));
+    expect(message, contains('--in <source-path> --out <target.ddb>'));
   });
 }
