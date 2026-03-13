@@ -21,22 +21,43 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Install Linux desktop build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes clang cmake ninja-build pkg-config libgtk-3-dev
+
       - name: Set up Nim
         uses: jiro4989/setup-nim-action@v2
         with:
           nim-version: stable
 
-      - name: Resolve latest DecentDB v1.6.x tag
-        id: decentdb-tag
+      - name: Resolve locked DecentDB version
+        id: decentdb-version
         shell: bash
         run: |
           set -euo pipefail
-          tag="$(git ls-remote --tags --refs https://github.com/sphildreth/decentdb.git 'v1.6.*' | awk -F/ '{print $3}' | sort -V | tail -n 1)"
-          test -n "$tag"
+          version="$(python3 - <<'PY'
+          from pathlib import Path
+
+          lines = Path("apps/decent-bench/pubspec.lock").read_text().splitlines()
+          inside = False
+          for line in lines:
+              if line.startswith("  decentdb:"):
+                  inside = True
+                  continue
+              if inside and line.startswith("  ") and not line.startswith("    "):
+                  break
+              if inside and line.strip().startswith("version: "):
+                  print(line.split('"')[1])
+                  raise SystemExit(0)
+          raise SystemExit("decentdb version not found in apps/decent-bench/pubspec.lock")
+          PY
+          )"
+          tag="v${version}"
+          git ls-remote --tags --refs https://github.com/sphildreth/decentdb.git "${tag}" | grep -q .
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Check out DecentDB ${{ steps.decentdb-tag.outputs.tag }}
-        run: git clone --depth 1 --branch "${{ steps.decentdb-tag.outputs.tag }}" https://github.com/sphildreth/decentdb.git ../decentdb
+      - name: Check out DecentDB ${{ steps.decentdb-version.outputs.tag }}
+        run: git clone --depth 1 --branch "${{ steps.decentdb-version.outputs.tag }}" https://github.com/sphildreth/decentdb.git ../decentdb
 
       - name: Build libpg_query (Linux)
         working-directory: ../decentdb
@@ -107,22 +128,44 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Install Linux desktop build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes clang cmake ninja-build pkg-config libgtk-3-dev
+
       - name: Set up Nim
         uses: jiro4989/setup-nim-action@v2
         with:
           nim-version: stable
 
-      - name: Resolve latest DecentDB v1.6.x tag
-        id: decentdb-tag
+      - name: Resolve locked DecentDB version
+        id: decentdb-version
         shell: bash
         run: |
           set -euo pipefail
-          tag="$(git ls-remote --tags --refs https://github.com/sphildreth/decentdb.git 'v1.6.*' | awk -F/ '{print $3}' | sort -V | tail -n 1)"
-          test -n "$tag"
+          version="$(python3 - <<'PY'
+          from pathlib import Path
+
+          lines = Path("apps/decent-bench/pubspec.lock").read_text().splitlines()
+          inside = False
+          for line in lines:
+              if line.startswith("  decentdb:"):
+                  inside = True
+                  continue
+              if inside and line.startswith("  ") and not line.startswith("    "):
+                  break
+              if inside and line.strip().startswith("version: "):
+                  print(line.split('"')[1])
+                  raise SystemExit(0)
+          raise SystemExit("decentdb version not found in apps/decent-bench/pubspec.lock")
+          PY
+          )"
+          tag="v${version}"
+          git ls-remote --tags --refs https://github.com/sphildreth/decentdb.git "${tag}" | grep -q .
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Check out DecentDB ${{ steps.decentdb-tag.outputs.tag }}
-        run: git clone --depth 1 --branch "${{ steps.decentdb-tag.outputs.tag }}" https://github.com/sphildreth/decentdb.git ../decentdb
+      - name: Check out DecentDB ${{ steps.decentdb-version.outputs.tag }}
+        run: git clone --depth 1 --branch "${{ steps.decentdb-version.outputs.tag }}" https://github.com/sphildreth/decentdb.git ../decentdb
 
       - name: Build libpg_query (Linux)
         if: runner.os == 'Linux'
