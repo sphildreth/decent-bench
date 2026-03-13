@@ -174,7 +174,8 @@ std::optional<std::pair<WORD, std::wstring>> MapTriggerShortcut(int64_t key_id) 
                           std::wstring(1, static_cast<wchar_t>(key_id)));
   }
   if (key_id >= 0x00000000061 && key_id <= 0x0000000007a) {
-    const wchar_t upper = static_cast<wchar_t>(std::towupper(key_id));
+    const wchar_t upper =
+        static_cast<wchar_t>(std::towupper(static_cast<wint_t>(key_id)));
     return std::make_pair(static_cast<WORD>(upper), std::wstring(1, upper));
   }
   if (key_id == 0x0000000002d) {
@@ -421,7 +422,7 @@ void FlutterMenuPlugin::RebuildMenu(const EncodableValue* arguments) {
   DrawMenuBar(window_handle_);
 
   if (!accelerators.empty()) {
-    accelerator_table_ =
-        CreateAcceleratorTable(accelerators.data(), accelerators.size());
+    accelerator_table_ = CreateAcceleratorTable(
+        accelerators.data(), static_cast<int>(accelerators.size()));
   }
 }

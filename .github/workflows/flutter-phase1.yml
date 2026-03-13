@@ -220,8 +220,36 @@ jobs:
         run: flutter pub get
 
       - name: Flutter build ${{ matrix.flutter_target }}
+        if: runner.os != 'Windows'
         working-directory: apps/decent-bench
         run: flutter build ${{ matrix.flutter_target }}
+
+      - name: Flutter build windows
+        if: runner.os == 'Windows'
+        working-directory: apps/decent-bench
+        shell: pwsh
+        run: flutter build windows -v
+
+      - name: Dump Windows CMake diagnostics
+        if: failure() && runner.os == 'Windows'
+        working-directory: apps/decent-bench
+        shell: pwsh
+        run: |
+          $paths = @(
+            "build/windows/x64/CMakeFiles/CMakeError.log",
+            "build/windows/x64/CMakeFiles/CMakeOutput.log",
+            "build/windows/x64/CMakeFiles/CMakeConfigureLog.yaml"
+          )
+
+          foreach ($path in $paths) {
+            if (-not (Test-Path $path)) {
+              continue
+            }
+
+            Write-Host "::group::$path"
+            Get-Content $path
+            Write-Host "::endgroup::"
+          }
 
       - name: Stage DecentDB native library into bundle
         working-directory: apps/decent-bench
