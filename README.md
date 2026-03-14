@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sphildreth/decent-bench/actions/workflows/flutter-phase1.yml">
-    <img alt="CI" src="https://github.com/sphildreth/decent-bench/actions/workflows/flutter-phase1.yml/badge.svg">
+  <a href="https://github.com/sphildreth/decent-bench/actions/workflows/flutter-build.yml">
+    <img alt="CI" src="https://github.com/sphildreth/decent-bench/actions/workflows/flutter-build.yml/badge.svg">
   </a>
   <a href="https://github.com/sphildreth/decent-bench/releases">
     <img alt="Release" src="https://img.shields.io/github/v/release/sphildreth/decent-bench?style=flat-square&color=success">
