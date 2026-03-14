@@ -6,7 +6,7 @@ description = "A compact light workbench theme for dense panes, practical grids,
 
 [compatibility]
 min_decent_bench_version = "0.1.0"
-max_decent_bench_version = "0.9.x"
+max_decent_bench_version = "1.x.x"
 
 [base]
 brightness = "light"

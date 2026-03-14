@@ -1,6 +1,6 @@
 # Native Library Packaging
 
-Phase 1 development resolves the DecentDB native library in this order:
+The shipped desktop app resolves the DecentDB native library in this order:
 
 1. `DECENTDB_NATIVE_LIB`
 2. Bundled desktop-app locations for Linux, macOS, or Windows

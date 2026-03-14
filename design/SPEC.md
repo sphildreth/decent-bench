@@ -8,6 +8,8 @@ schema, run the pinned DecentDB SQL surface, and export shaped results.
 **PRD reference:** `design/PRD.md`
 
 **Pinned engine capability baseline:** DecentDB v1.6.x
+**Release status:** `v1.0.0` is the shipped MVP release for the scope in this
+document. References to "Phase 1" remain as historical delivery context.
 
 ---
 
@@ -34,8 +36,8 @@ This document distinguishes between:
 
 - **Phase 1 implementation slice**: the smallest useful, runnable slice that
   should land first
-- **MVP scope**: the required product scope for `v1`
-- **Next**: explicitly deferred beyond MVP
+- **MVP scope**: the shipped product scope for `v1.0.0`
+- **Next**: explicitly deferred beyond the shipped MVP
 
 If a feature appears in multiple documents and the scope differs, this SPEC is
 the source of truth for implementation scope.
@@ -58,7 +60,7 @@ It should include only:
 Phase 1 intentionally excludes import wizard work, autocomplete, snippets,
 formatter, JSON/Parquet/Excel export, and multi-tab editing.
 
-### 1.2 MVP (must-haves)
+### 1.2 MVP shipped in `v1.0.0` (must-haves)
 
 #### Entry + workflow
 - Drag-and-drop a file onto the app window:
@@ -888,7 +890,7 @@ A contributor can:
 8. pass the Phase 1 representative engine smoke-test matrix
 9. run analyzer and tests successfully
 
-### 16.2 MVP acceptance
+### 16.2 `v1.0.0` MVP acceptance
 
 A user can:
 

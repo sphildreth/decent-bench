@@ -9,7 +9,7 @@
 namespace {
 
 constexpr const char *kHelpText =
-    "Decent Bench 0.1.0\n"
+    "Decent Bench 1.0.0\n"
     "\n"
     "Usage:\n"
     "  dbench\n"
@@ -131,7 +131,7 @@ int main(int argc, char **argv) {
     return 0;
   }
   if (HasArg(argc, argv, "-v", "--version")) {
-    std::cout << "Decent Bench 0.1.0" << std::endl;
+    std::cout << "Decent Bench 1.0.0" << std::endl;
     return 0;
   }
   if (HasHeadlessArg(argc, argv)) {

@@ -8,6 +8,8 @@ DecentDB**, then **inspect schema** and **run the full pinned DecentDB SQL
 reference surface** to shape and export data.
 
 **Pinned engine capability baseline:** DecentDB v1.6.x
+**Release status:** `v1.0.0` is the shipped MVP release for the scope in this
+document.
 
 **Critical initial task:** Users can **drag and drop a file** (Excel, SQLite,
 DecentDB, or supported SQL dump) onto Decent Bench.
@@ -69,7 +71,7 @@ general-purpose database administration tool. Its core workflow is:
 
 ## 3. Goals and non-goals
 
-### 3.1 Goals (MVP)
+### 3.1 Goals shipped in `v1.0.0` (MVP)
 1. **Drag-and-drop entry point**
    - Drag and drop a file onto the app window.
    - Detect whether it is a DecentDB file or a supported import source.
@@ -114,8 +116,9 @@ general-purpose database administration tool. Its core workflow is:
    - Keep long-running work off the UI thread.
    - Handle large result sets via paging/virtualization.
 
-### 3.2 Next / post-MVP
-These are important, but not required for MVP:
+### 3.2 Next / post-`1.0.0`
+These are important, but were intentionally deferred beyond the shipped
+`1.0.0` MVP:
 - JSON export
 - Parquet export
 - Excel export
@@ -125,7 +128,7 @@ These are important, but not required for MVP:
 - Saved queries / workspace projects
 - More advanced SQL productivity features beyond the MVP set
 
-### 3.3 Non-goals (explicitly out of scope for MVP)
+### 3.3 Non-goals (explicitly out of scope for `v1.0.0`)
 - Managing external databases as first-class live query targets
 - Being a DBeaver-style admin or operations tool
 - Collaborative editing, shared connections, or multi-user workflows
@@ -272,7 +275,7 @@ MVP transforms are:
 
 **Basic computed columns** may be included only if implemented as a constrained,
 testable slice that does not destabilize the import workflow. If not, they move
-to post-MVP.
+to post-`1.0.0`.
 
 ### 8.5 Schema browser
 - Show schema information for the pinned DecentDB engine surface rather than
@@ -353,7 +356,7 @@ to post-MVP.
 
 ---
 
-## 10. Architecture decisions locked for MVP
+## 10. Architecture decisions locked for `v1.0.0`
 
 ### 10.1 DecentDB integration
 Decent Bench integrates with DecentDB through **Dart FFI**.
@@ -438,7 +441,7 @@ spec and ADR set:
 
 ---
 
-## 13. Acceptance criteria for MVP
+## 13. Acceptance criteria for the shipped `v1.0.0` MVP
 
 A user can:
 1. Drag and drop a file onto Decent Bench and:

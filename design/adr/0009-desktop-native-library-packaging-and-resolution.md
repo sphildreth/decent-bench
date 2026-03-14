@@ -42,7 +42,8 @@ The project therefore needs:
 
 - Require `DECENTDB_NATIVE_LIB` for all local and packaged startup
 - Modify the upstream DecentDB Dart binding package to own app-bundle staging
-- Keep sibling-checkout discovery only and treat packaged startup as post-MVP
+- Keep sibling-checkout discovery only and defer packaged startup beyond the
+  initial `v1.0.0` release
 - Introduce a new custom loader or wrapper binary around the DecentDB library
 
 ### Trade-offs

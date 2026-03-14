@@ -150,7 +150,7 @@ Example:
 ```toml
 [compatibility]
 min_decent_bench_version = "0.1.0"
-max_decent_bench_version = "0.9.x"
+max_decent_bench_version = "1.x.x"
 ```
 
 ### Recommended rules
@@ -222,7 +222,7 @@ description = "A dense, classic dark desktop theme inspired by traditional datab
 
 [compatibility]
 min_decent_bench_version = "0.1.0"
-max_decent_bench_version = "0.9.x"
+max_decent_bench_version = "1.x.x"
 
 [base]
 brightness = "dark"

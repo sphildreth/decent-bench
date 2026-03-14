@@ -1,15 +1,15 @@
 # Decent Bench — Implementation Phases
 
-**Status:** Draft  
+**Status:** Historical roadmap for the shipped `v1.0.0` MVP  
 **Last updated:** 2026-03-09  
 **Primary references:** `design/PRD.md`, `design/SPEC.md`, `design/adr/`
 
-This document defines the recommended delivery sequence for Decent Bench.
+This document records the delivery sequence that led to Decent Bench `v1.0.0`.
 
 It exists to keep implementation aligned with the product documents while
-reducing delivery risk. The project’s MVP is intentionally broader than the
-first implementation slice, so work should proceed in phases rather than trying
-to land the entire product in one step.
+reducing delivery risk. The project’s shipped MVP was intentionally broader
+than the first implementation slice, so delivery proceeded in phases rather
+than trying to land the entire product in one step.
 
 ## Goals of this roadmap
 
@@ -53,7 +53,7 @@ decision records.
   - DecentDB binding strategy
   - results paging/streaming contract
 - This implementation roadmap
-- Clear MVP vs post-MVP boundaries
+- Clear `v1.0.0` MVP vs post-`1.0.0` boundaries
 - Placeholder app structure retained until runnable scaffold begins
 
 ### Exit criteria

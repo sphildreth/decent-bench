@@ -1,7 +1,7 @@
 # Decent Bench App
 
-This directory contains the hand-authored Phase 7 Flutter app source for
-Decent Bench.
+This directory contains the shipped Flutter desktop app source for Decent
+Bench `1.0.0`, which is the project's MVP release.
 
 ## Current state
 
@@ -28,6 +28,7 @@ Decent Bench.
   than hard failures when possible
 - `docs/IMPORT_FORMATS.md` summarizes the currently implemented, partial, and
   recognized-but-unimplemented import formats
+- `CHANGELOG.md` records shipped releases starting with `1.0.0`
 - native-library resolution now prefers `DECENTDB_NATIVE_LIB`, then bundled
   desktop app locations, then a sibling `../decentdb/build/` checkout, with a
   packaging helper to stage the library into built bundles

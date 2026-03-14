@@ -1,0 +1,278 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  APP_DIR: apps/decent-bench
+
+jobs:
+  build:
+    name: Build release artifacts (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            flutter_target: linux
+            bundle_path: build/linux/x64/release/bundle
+            native_lib: ../../../decentdb/build/libc_api.so
+            archive_extension: tar.gz
+          - os: macos-latest
+            flutter_target: macos
+            bundle_path: build/macos/Build/Products/Release/decent_bench.app
+            native_lib: ../../../decentdb/build/libc_api.dylib
+            archive_extension: tar.gz
+          - os: windows-latest
+            flutter_target: windows
+            bundle_path: build/windows/x64/runner/Release
+            native_lib: ../../../decentdb/build/c_api.dll
+            archive_extension: zip
+
+    steps:
+      - name: Check out Decent Bench
+        uses: actions/checkout@v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2.21.0
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Linux desktop build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes clang cmake ninja-build pkg-config libgtk-3-dev
+
+      - name: Set up Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: stable
+
+      - name: Resolve locked DecentDB version
+        id: decentdb-version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 - <<'PY'
+          from pathlib import Path
+
+          lines = Path("apps/decent-bench/pubspec.lock").read_text().splitlines()
+          inside = False
+          for line in lines:
+              if line.startswith("  decentdb:"):
+                  inside = True
+                  continue
+              if inside and line.startswith("  ") and not line.startswith("    "):
+                  break
+              if inside and line.strip().startswith("version: "):
+                  print(line.split('"')[1])
+                  raise SystemExit(0)
+          raise SystemExit("decentdb version not found in apps/decent-bench/pubspec.lock")
+          PY
+          )"
+          tag="v${version}"
+          git ls-remote --tags --refs https://github.com/sphildreth/decentdb.git "${tag}" | grep -q .
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Check out DecentDB ${{ steps.decentdb-version.outputs.tag }}
+        run: git clone --depth 1 --branch "${{ steps.decentdb-version.outputs.tag }}" https://github.com/sphildreth/decentdb.git ../decentdb
+
+      - name: Build libpg_query (Linux)
+        if: runner.os == 'Linux'
+        working-directory: ../decentdb
+        shell: bash
+        run: |
+          if [ ! -d "/tmp/libpg_query" ]; then
+            git clone --depth 1 https://github.com/pganalyze/libpg_query.git /tmp/libpg_query
+            make -C /tmp/libpg_query
+          fi
+          mkdir -p build/lib
+          cp /tmp/libpg_query/libpg_query.a build/lib/
+
+      - name: Build libpg_query (macOS)
+        if: runner.os == 'macOS'
+        working-directory: ../decentdb
+        shell: bash
+        run: |
+          if [ ! -d "/tmp/libpg_query" ]; then
+            git clone --depth 1 https://github.com/pganalyze/libpg_query.git /tmp/libpg_query
+            make -C /tmp/libpg_query
+          fi
+          mkdir -p build/lib
+          cp /tmp/libpg_query/libpg_query.a build/lib/
+
+      - name: Build libpg_query (Windows)
+        if: runner.os == 'Windows'
+        working-directory: ../decentdb
+        shell: bash
+        run: |
+          repo_root="$PWD"
+          if [ ! -d "/tmp/libpg_query" ]; then
+            git clone --depth 1 https://github.com/pganalyze/libpg_query.git /tmp/libpg_query
+            cd /tmp/libpg_query
+            make
+          fi
+          cd /tmp/libpg_query
+          mkdir -p "$repo_root/build/lib"
+          cp libpg_query.a "$repo_root/build/lib/"
+
+      - name: Install DecentDB Nim dependencies
+        working-directory: ../decentdb
+        run: nimble setup -y
+
+      - name: Build DecentDB native library
+        working-directory: ../decentdb
+        shell: bash
+        run: nimble build_lib
+
+      - name: Flutter pub get
+        working-directory: ${{ env.APP_DIR }}
+        run: flutter pub get
+
+      - name: Flutter build ${{ matrix.flutter_target }}
+        if: runner.os != 'Windows'
+        working-directory: ${{ env.APP_DIR }}
+        run: flutter build ${{ matrix.flutter_target }}
+
+      - name: Flutter build windows
+        if: runner.os == 'Windows'
+        working-directory: ${{ env.APP_DIR }}
+        shell: pwsh
+        run: flutter build windows -v
+
+      - name: Dump Windows CMake diagnostics
+        if: failure() && runner.os == 'Windows'
+        working-directory: ${{ env.APP_DIR }}
+        shell: pwsh
+        run: |
+          $paths = @(
+            "build/windows/x64/CMakeFiles/CMakeError.log",
+            "build/windows/x64/CMakeFiles/CMakeOutput.log",
+            "build/windows/x64/CMakeFiles/CMakeConfigureLog.yaml"
+          )
+
+          foreach ($path in $paths) {
+            if (-not (Test-Path $path)) {
+              continue
+            }
+
+            Write-Host "::group::$path"
+            Get-Content $path
+            Write-Host "::endgroup::"
+          }
+
+      - name: Resolve desktop bundle path
+        id: bundle
+        working-directory: ${{ env.APP_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_path="${{ matrix.bundle_path }}"
+
+          if [ "$RUNNER_OS" = "macOS" ] && [ ! -d "$bundle_path" ]; then
+            shopt -s nullglob
+            matches=(build/macos/Build/Products/Release/*.app)
+            shopt -u nullglob
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "Expected exactly one macOS app bundle, found ${#matches[@]}." >&2
+              exit 1
+            fi
+            bundle_path="${matches[0]}"
+          fi
+
+          if [ ! -e "$bundle_path" ]; then
+            echo "Bundle path does not exist: $bundle_path" >&2
+            exit 1
+          fi
+
+          echo "path=$bundle_path" >> "$GITHUB_OUTPUT"
+
+      - name: Compute artifact name
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "name=decent-bench-${GITHUB_REF_NAME}-${RUNNER_OS}-x64.${{ matrix.archive_extension }}" >> "$GITHUB_OUTPUT"
+
+      - name: Stage DecentDB native library into bundle
+        working-directory: ${{ env.APP_DIR }}
+        run: dart run tool/stage_decentdb_native.dart --bundle "${{ steps.bundle.outputs.path }}" --source "${{ matrix.native_lib }}"
+
+      - name: Verify bundled native library
+        working-directory: ${{ env.APP_DIR }}
+        run: dart run tool/stage_decentdb_native.dart --bundle "${{ steps.bundle.outputs.path }}" --verify-only
+
+      - name: Package release artifact (Linux/macOS)
+        if: runner.os != 'Windows'
+        working-directory: ${{ env.APP_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage_root="$RUNNER_TEMP/release-stage"
+          package_root="decent-bench-${GITHUB_REF_NAME}-${RUNNER_OS}-x64"
+          stage_dir="$stage_root/$package_root"
+          bundle_path="${{ steps.bundle.outputs.path }}"
+
+          rm -rf "$stage_dir"
+          mkdir -p "$stage_dir"
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            cp -R "$bundle_path" "$stage_dir/"
+          else
+            cp -R "$bundle_path"/. "$stage_dir/"
+          fi
+
+          tar -C "$stage_root" -czf "${{ steps.artifact.outputs.name }}" "$package_root"
+
+      - name: Package release artifact (Windows)
+        if: runner.os == 'Windows'
+        working-directory: ${{ env.APP_DIR }}
+        shell: pwsh
+        run: |
+          $stageRoot = Join-Path $env:RUNNER_TEMP "release-stage"
+          $packageRoot = "decent-bench-$env:GITHUB_REF_NAME-$env:RUNNER_OS-x64"
+          $stageDir = Join-Path $stageRoot $packageRoot
+          $bundlePath = "${{ steps.bundle.outputs.path }}"
+
+          if (Test-Path $stageDir) {
+            Remove-Item -Recurse -Force $stageDir
+          }
+          New-Item -ItemType Directory -Force $stageDir | Out-Null
+          Get-ChildItem -Force $bundlePath | Copy-Item -Destination $stageDir -Recurse -Force
+          Compress-Archive -Path $stageDir -DestinationPath "${{ steps.artifact.outputs.name }}" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          path: ${{ env.APP_DIR }}/${{ steps.artifact.outputs.name }}
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - build
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            artifacts/**/decent-bench-${{ github.ref_name }}-Linux-x64.tar.gz
+            artifacts/**/decent-bench-${{ github.ref_name }}-macOS-x64.tar.gz
+            artifacts/**/decent-bench-${{ github.ref_name }}-Windows-x64.zip
