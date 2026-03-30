@@ -212,6 +212,8 @@ class DecentBenchLogger extends AppLogger {
   Future<void>? _initialization;
   Future<void> _writeChain = Future<void>.value();
   LogVerbosity _minimumLevel = LogVerbosity.warning;
+  bool _loggingDisabled = false;
+  bool _reportedLoggingFailure = false;
 
   @override
   String get logDatabasePath => _logDatabasePath;
@@ -221,20 +223,18 @@ class DecentBenchLogger extends AppLogger {
     if (minimumLevel != null) {
       _minimumLevel = minimumLevel;
     }
+    if (_loggingDisabled) {
+      return;
+    }
     final existing = _initialization;
     if (existing != null) {
       await existing;
       return;
     }
 
-    final initialization = _initializeInternal();
+    final initialization = _initializeSafely();
     _initialization = initialization;
-    try {
-      await initialization;
-    } catch (_) {
-      _initialization = null;
-      rethrow;
-    }
+    await initialization;
   }
 
   @override
@@ -279,23 +279,38 @@ class DecentBenchLogger extends AppLogger {
       elapsedNanos: elapsedNanos,
       detailsJson: mergedDetails == null ? null : jsonEncode(mergedDetails),
     );
-    _enqueueWrite(entry);
     if (level.value >= LogVerbosity.warning.value) {
       final operationSuffix = operation == null ? '' : ' [$operation]';
       debugPrint(
         '[${level.label.toUpperCase()}][$category$operationSuffix] $message',
       );
     }
+    if (_loggingDisabled) {
+      return;
+    }
+    _enqueueWrite(entry);
   }
 
   @override
   Future<void> dispose() async {
     await _writeChain.catchError((_) {});
-    final gateway = _gateway;
-    _gateway = null;
+    await _disposeGateway();
     _initialization = null;
-    if (gateway != null) {
-      await gateway.dispose();
+    _writeChain = Future<void>.value();
+  }
+
+  Future<void> _initializeSafely() async {
+    try {
+      await _initializeInternal();
+    } catch (error, stackTrace) {
+      if (await _recoverFromInitializationFailure(error, stackTrace)) {
+        return;
+      }
+      await _disableLogging(
+        'Failed to initialize application log database.',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -303,16 +318,19 @@ class DecentBenchLogger extends AppLogger {
     final file = File(_logDatabasePath);
     await file.parent.create(recursive: true);
     final gateway = _gatewayFactory();
-    await gateway.initialize();
-    await gateway.openDatabase(_logDatabasePath);
-    final schema = await gateway.loadSchema();
-    final hasLogsTable = schema.tables.any((table) => table.name == 'app_logs');
-    final hasLoggedAtIndex = schema.indexes.any(
-      (index) => index.name == 'idx_app_logs_logged_at',
-    );
-    if (!hasLogsTable) {
-      await gateway.runQuery(
-        sql: '''
+    try {
+      await gateway.initialize();
+      await gateway.openDatabase(_logDatabasePath);
+      final schema = await gateway.loadSchema();
+      final hasLogsTable = schema.tables.any(
+        (table) => table.name == 'app_logs',
+      );
+      final hasLoggedAtIndex = schema.indexes.any(
+        (index) => index.name == 'idx_app_logs_logged_at',
+      );
+      if (!hasLogsTable) {
+        await gateway.runQuery(
+          sql: '''
 CREATE TABLE IF NOT EXISTS app_logs (
   id INTEGER PRIMARY KEY,
   logged_at_utc TEXT NOT NULL,
@@ -329,59 +347,176 @@ CREATE TABLE IF NOT EXISTS app_logs (
   details_json TEXT
 );
 ''',
-        params: const <Object?>[],
-        pageSize: 1,
-      );
-    }
-    if (!hasLoggedAtIndex) {
-      await gateway.runQuery(
-        sql: '''
+          params: const <Object?>[],
+          pageSize: 1,
+        );
+      }
+      if (!hasLoggedAtIndex) {
+        await gateway.runQuery(
+          sql: '''
 CREATE INDEX IF NOT EXISTS idx_app_logs_logged_at
 ON app_logs(logged_at_utc DESC);
 ''',
-        params: const <Object?>[],
-        pageSize: 1,
+          params: const <Object?>[],
+          pageSize: 1,
+        );
+      }
+      _gateway = gateway;
+      await _persistEntryWithGateway(
+        gateway,
+        _LogEntry(
+          loggedAtUtc: DateTime.now().toUtc(),
+          level: LogVerbosity.information,
+          category: 'logging',
+          operation: 'initialize',
+          message: 'Application logging initialized.',
+          detailsJson: jsonEncode(<String, Object?>{
+            'log_database_path': _logDatabasePath,
+            'minimum_level': _minimumLevel.name,
+          }),
+        ),
       );
+    } catch (_) {
+      await gateway.dispose();
+      rethrow;
     }
-    _gateway = gateway;
-    await _persistEntryWithGateway(
-      gateway,
-      _LogEntry(
-        loggedAtUtc: DateTime.now().toUtc(),
-        level: LogVerbosity.information,
-        category: 'logging',
-        operation: 'initialize',
-        message: 'Application logging initialized.',
-        detailsJson: jsonEncode(<String, Object?>{
-          'log_database_path': _logDatabasePath,
-          'minimum_level': _minimumLevel.name,
-        }),
-      ),
-    );
   }
 
   void _enqueueWrite(_LogEntry entry) {
+    if (_loggingDisabled) {
+      return;
+    }
     _writeChain = _writeChain.then((_) => _writeEntry(entry)).catchError((
       error,
       stackTrace,
-    ) {
-      stderr.writeln('Failed to persist application log entry: $error');
-      if (stackTrace != null) {
-        stderr.writeln(stackTrace);
-      }
+    ) async {
+      await _disableLogging(
+        'Failed to persist application log entry.',
+        error: error,
+        stackTrace: stackTrace is StackTrace ? stackTrace : null,
+      );
     });
   }
 
   Future<void> _writeEntry(_LogEntry entry) async {
+    if (_loggingDisabled) {
+      return;
+    }
     try {
       await initialize();
+      if (_loggingDisabled) {
+        return;
+      }
       final gateway = _gateway;
       if (gateway == null) {
         return;
       }
       await _persistEntryWithGateway(gateway, entry);
     } catch (error, stackTrace) {
-      stderr.writeln('Failed to write application log entry: $error');
+      await _disableLogging(
+        'Failed to write application log entry.',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  Future<bool> _recoverFromInitializationFailure(
+    Object error,
+    StackTrace stackTrace,
+  ) async {
+    if (!_isRecoverableLogDatabaseFailure(error)) {
+      return false;
+    }
+
+    await _disposeGateway();
+    final deleted = await _deleteLogDatabaseFiles();
+    if (!deleted) {
+      return false;
+    }
+
+    _writeToStderrOnce(
+      'Replaced an incompatible application log database at $_logDatabasePath.',
+    );
+
+    try {
+      await _initializeInternal();
+      return true;
+    } catch (retryError, retryStackTrace) {
+      await _disableLogging(
+        'Failed to recreate the application log database after replacing a stale copy.',
+        error: retryError,
+        stackTrace: retryStackTrace,
+      );
+      return false;
+    }
+  }
+
+  bool _isRecoverableLogDatabaseFailure(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('unsupported database format version') ||
+        message.contains('database corruption') ||
+        message.contains('not a database') ||
+        message.contains('malformed');
+  }
+
+  Future<bool> _deleteLogDatabaseFiles() async {
+    var deletedAny = false;
+    for (final path in <String>[
+      _logDatabasePath,
+      '$_logDatabasePath-wal',
+      '$_logDatabasePath-shm',
+    ]) {
+      final file = File(path);
+      try {
+        if (await file.exists()) {
+          await file.delete();
+          deletedAny = true;
+        }
+      } on FileSystemException {
+        return false;
+      }
+    }
+    return deletedAny;
+  }
+
+  Future<void> _disposeGateway() async {
+    final gateway = _gateway;
+    _gateway = null;
+    if (gateway != null) {
+      await gateway.dispose();
+    }
+  }
+
+  Future<void> _disableLogging(
+    String reason, {
+    Object? error,
+    StackTrace? stackTrace,
+  }) async {
+    if (_loggingDisabled) {
+      return;
+    }
+    _loggingDisabled = true;
+    _initialization = Future<void>.value();
+    _writeChain = Future<void>.value();
+    await _disposeGateway();
+
+    final buffer = StringBuffer(reason)
+      ..write(' Logging will continue in memory only for this session.')
+      ..write(' Log database: $_logDatabasePath');
+    if (error != null) {
+      buffer.write(' Error: $error');
+    }
+    _writeToStderrOnce(buffer.toString(), stackTrace: stackTrace);
+  }
+
+  void _writeToStderrOnce(String message, {StackTrace? stackTrace}) {
+    if (_reportedLoggingFailure) {
+      return;
+    }
+    _reportedLoggingFailure = true;
+    stderr.writeln(message);
+    if (stackTrace != null) {
       stderr.writeln(stackTrace);
     }
   }

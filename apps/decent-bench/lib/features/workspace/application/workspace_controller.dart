@@ -460,6 +460,50 @@ class WorkspaceController extends ChangeNotifier {
       createIfMissing: false,
       restoreStartupQuery: true,
     );
+
+    if (hasOpenDatabase) {
+      return;
+    }
+
+    final startupRestoreError = workspaceError;
+    await _removeRecentFileFromStartupRestore(lastOpenedPath);
+    workspaceError = null;
+    workspaceMessage =
+        'Ready. Could not reopen ${p.basename(lastOpenedPath)} automatically.';
+    final details = <String, Object?>{'removed_recent_file': true};
+    if (startupRestoreError != null) {
+      details['startup_restore_error'] = startupRestoreError;
+    }
+    _logWarning(
+      'startup_restore',
+      'Skipped automatic reopen after the most recent workspace failed to open.',
+      databasePath: lastOpenedPath,
+      details: details,
+    );
+  }
+
+  Future<void> _removeRecentFileFromStartupRestore(String path) async {
+    if (!config.recentFiles.contains(path)) {
+      return;
+    }
+
+    final updatedRecentFiles = config.recentFiles
+        .where((item) => item != path)
+        .toList();
+    config = config.copyWith(recentFiles: updatedRecentFiles);
+
+    try {
+      await _configStore.save(config);
+    } catch (error, stackTrace) {
+      _logWarning(
+        'startup_restore',
+        'Failed to prune a startup workspace that could not be reopened.',
+        category: 'config',
+        databasePath: path,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   void updateActiveExportPath(String value) {

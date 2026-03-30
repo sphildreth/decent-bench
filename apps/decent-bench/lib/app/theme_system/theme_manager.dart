@@ -35,7 +35,16 @@ class ThemeManager extends ChangeNotifier {
     );
     _resolvedThemesDirectory = discovery.resolvedThemesDirectory;
     _availableThemes = discovery.availableThemes;
+    final suppressedBuiltInOverrideIds = <String>{};
     for (final log in discovery.logs) {
+      final duplicateBuiltInOverrideId = _duplicateBuiltInOverrideId(
+        log,
+        discovery.builtInThemesById.keys.toSet(),
+      );
+      if (duplicateBuiltInOverrideId != null) {
+        suppressedBuiltInOverrideIds.add(duplicateBuiltInOverrideId);
+        continue;
+      }
       final level = _logLevelForMessage(log);
       _logger.log(
         level: level,
@@ -44,6 +53,19 @@ class ThemeManager extends ChangeNotifier {
         message: log,
         details: <String, Object?>{
           'themes_dir': discovery.resolvedThemesDirectory,
+        },
+      );
+    }
+    if (suppressedBuiltInOverrideIds.isNotEmpty) {
+      final themeIds = suppressedBuiltInOverrideIds.toList()..sort();
+      _logger.info(
+        category: 'theme',
+        operation: 'discover',
+        message:
+            'Ignored ${themeIds.length} stale external built-in theme override${themeIds.length == 1 ? '' : 's'}.',
+        details: <String, Object?>{
+          'themes_dir': discovery.resolvedThemesDirectory,
+          'theme_ids': themeIds,
         },
       );
     }
@@ -115,5 +137,20 @@ class ThemeManager extends ChangeNotifier {
       return LogVerbosity.warning;
     }
     return LogVerbosity.information;
+  }
+
+  String? _duplicateBuiltInOverrideId(
+    String message,
+    Set<String> builtInThemeIds,
+  ) {
+    if (!message.startsWith('Skipping ')) {
+      return null;
+    }
+    final match = RegExp(r': Theme ([A-Za-z0-9_-]+) ').firstMatch(message);
+    if (match == null) {
+      return null;
+    }
+    final themeId = match.group(1)!;
+    return builtInThemeIds.contains(themeId) ? themeId : null;
   }
 }

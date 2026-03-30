@@ -324,6 +324,57 @@ void main() {
     },
   );
 
+  test(
+    'initialize removes the last workspace from startup restore after an open failure',
+    () async {
+      final dbPath =
+          '${Directory.systemTemp.path}/workbench-${DateTime.now().microsecondsSinceEpoch}.ddb';
+      final file = File(dbPath);
+      await file.parent.create(recursive: true);
+      await file.writeAsString('');
+
+      addTearDown(() async {
+        if (await file.exists()) {
+          await file.delete();
+        }
+      });
+
+      final logger = RecordingAppLogger();
+      final configStore = InMemoryConfigStore(
+        AppConfig.defaults().copyWith(recentFiles: <String>[dbPath]),
+      );
+      final gateway = FakeWorkspaceGateway()
+        ..openDatabaseError = const BridgeFailure(
+          'database corruption: unsupported database format version 3 on page 1; expected 8',
+          code: 'corruption',
+        );
+      final controller = WorkspaceController(
+        gateway: gateway,
+        logger: logger,
+        configStore: configStore,
+        workspaceStateStore: InMemoryWorkspaceStateStore(),
+      );
+
+      await controller.initialize();
+
+      expect(controller.databasePath, isNull);
+      expect(controller.workspaceError, isNull);
+      expect(
+        controller.workspaceMessage,
+        'Ready. Could not reopen ${file.uri.pathSegments.last} automatically.',
+      );
+      expect((await configStore.load()).recentFiles, isEmpty);
+      expect(
+        logger.entries.any(
+          (entry) =>
+              entry.operation == 'startup_restore' &&
+              entry.level == LogVerbosity.warning,
+        ),
+        isTrue,
+      );
+    },
+  );
+
   test('openDatabase refreshes schema and stores recent files', () async {
     final dbPath =
         '${Directory.systemTemp.path}/workbench-${DateTime.now().microsecondsSinceEpoch}.ddb';

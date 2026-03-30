@@ -185,6 +185,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   bool failNextExcelImport = false;
   bool holdSqlDumpImportOpen = false;
   bool failNextSqlDumpImport = false;
+  Object? openDatabaseError;
   StreamController<ExcelImportUpdate>? _excelImportController;
   StreamController<SqlDumpImportUpdate>? _sqlDumpImportController;
   StreamController<SqliteImportUpdate>? _importController;
@@ -662,6 +663,10 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
 
   @override
   Future<DatabaseSession> openDatabase(String path) async {
+    final error = openDatabaseError;
+    if (error != null) {
+      throw error;
+    }
     final file = File(path);
     if (!await file.exists()) {
       await file.parent.create(recursive: true);

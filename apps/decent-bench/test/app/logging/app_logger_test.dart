@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:decent_bench/app/logging/app_logger.dart';
 import 'package:decent_bench/features/workspace/domain/app_config.dart';
 import 'package:decent_bench/features/workspace/domain/excel_import_models.dart';
@@ -124,6 +126,58 @@ void main() {
     );
     expect(gateway.inserts, hasLength(1));
   });
+
+  test('logger recreates an incompatible log database once', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'decent-bench-log-recovery-',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    });
+
+    final logDatabasePath = '${directory.path}/decent-bench-log.ddb';
+    await File(logDatabasePath).writeAsString('stale');
+    await File('$logDatabasePath-wal').writeAsString('stale wal');
+
+    final gateway = _FakeLogGateway()
+      ..failOpenCount = 1
+      ..openError = const BridgeFailure(
+        'database corruption: unsupported database format version 3 on page 1; expected 8',
+        code: 'corruption',
+      );
+    final logger = DecentBenchLogger(
+      gatewayFactory: () => gateway,
+      logDatabasePath: logDatabasePath,
+    );
+    addTearDown(logger.dispose);
+
+    await logger.initialize();
+
+    expect(gateway.openCalls, 2);
+    expect(await File(logDatabasePath).exists(), isFalse);
+    expect(await File('$logDatabasePath-wal').exists(), isFalse);
+    expect(gateway.inserts, hasLength(1));
+  });
+
+  test('logger stops retrying after a non-recoverable initialization failure', () async {
+    final gateway = _FakeLogGateway()
+      ..openError = const BridgeFailure('permission denied', code: 'io')
+      ..failOpenForever = true;
+    final logger = DecentBenchLogger(
+      gatewayFactory: () => gateway,
+      logDatabasePath: '/tmp/decent-bench-log-test.ddb',
+    );
+    addTearDown(logger.dispose);
+
+    logger.error(category: 'workspace', operation: 'init', message: 'first');
+    logger.error(category: 'workspace', operation: 'init', message: 'second');
+    await logger.dispose();
+
+    expect(gateway.openCalls, 1);
+    expect(gateway.inserts, isEmpty);
+  });
 }
 
 class _FakeLogGateway implements WorkspaceDatabaseGateway {
@@ -131,6 +185,10 @@ class _FakeLogGateway implements WorkspaceDatabaseGateway {
   final List<_ExecutedInsert> inserts = <_ExecutedInsert>[];
   String? openedPath;
   SchemaSnapshot schema = SchemaSnapshot.empty();
+  int openCalls = 0;
+  int failOpenCount = 0;
+  Object? openError;
+  bool failOpenForever = false;
 
   @override
   String? get resolvedLibraryPath => '/tmp/libdecentdb.so';
@@ -225,6 +283,14 @@ class _FakeLogGateway implements WorkspaceDatabaseGateway {
 
   @override
   Future<DatabaseSession> openDatabase(String path) async {
+    openCalls += 1;
+    if (failOpenCount > 0) {
+      failOpenCount -= 1;
+      throw openError!;
+    }
+    if (failOpenForever && openError != null) {
+      throw openError!;
+    }
     openedPath = path;
     return DatabaseSession(path: path, engineVersion: '1.6.1');
   }
