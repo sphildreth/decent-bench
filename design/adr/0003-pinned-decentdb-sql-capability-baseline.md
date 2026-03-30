@@ -7,7 +7,7 @@
 Decent Bench treats the official SQL reference for the pinned DecentDB
 compatibility line as the normative SQL capability contract.
 
-Current project compatibility line: **DecentDB v1.6.x**.
+Current project compatibility line: **DecentDB v2.x**.
 
 The app may phase dedicated UI affordances and schema-browser coverage over
 time, but it should not intentionally narrow the SQL surface below what the
@@ -21,12 +21,18 @@ pinned engine documents as supported. This applies in particular to:
   functions, transactions, `EXPLAIN`, `EXPLAIN ANALYZE`, table-valued
   functions, and positional parameters
 
-Patch upgrades within `v1.6.x` do not require doc churn unless they change the
+Patch upgrades within `v2.x` do not require doc churn unless they change the
 documented capability surface, validation expectations, or packaging
 assumptions.
 
 Any future compatibility-line upgrade must update this ADR, the PRD/SPEC
 wording, and the representative smoke-test matrix in the same change.
+
+The schema browser should consume DecentDB's rich schema snapshot contract
+instead of synthesizing metadata from narrow projections or DDL parsing. The
+adapter should preserve upstream metadata semantics (checks, foreign keys,
+generated columns, temp-object flags, and canonical DDL) when projecting data
+into app-domain models.
 
 ### Rationale
 

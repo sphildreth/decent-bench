@@ -7,7 +7,7 @@
 schema, run the pinned DecentDB SQL surface, and export shaped results.
 **PRD reference:** `design/PRD.md`
 
-**Pinned engine capability baseline:** DecentDB v1.6.x
+**Pinned engine capability baseline:** DecentDB v2.x
 **Release status:** `v1.0.0` is the shipped MVP release for the scope in this
 document. References to "Phase 1" remain as historical delivery context.
 
@@ -87,11 +87,11 @@ formatter, JSON/Parquet/Excel export, and multi-tab editing.
 - MVP object classes:
   - tables
   - views
-  - temp tables/views where exposed by the engine and adapter
+  - temp tables/views
   - columns
-  - indexes, including richer index metadata where exposed
-  - constraints/triggers, where exposed
-  - generated-column metadata where exposed
+  - indexes, including rich index metadata
+  - constraints/triggers from rich schema snapshot metadata
+  - generated-column metadata from rich schema snapshot metadata
 - Unsupported object kinds must degrade gracefully and must not block the rest
   of schema browsing
 
@@ -294,8 +294,8 @@ Selecting an object shows details such as:
 - columns and types
 - constraints
 - indexes
-- triggers, where exposed
-- generated-column metadata and temp-object details where exposed
+- triggers
+- generated-column metadata and temp-object details
 
 Search/filter should be responsive and operate on an in-memory metadata model
 derived from the latest loaded schema snapshot.
@@ -361,7 +361,7 @@ bindings are:
 
 ### 5.4 Pinned SQL capability baseline
 
-The pinned DecentDB compatibility line (`v1.6.x`) and its official SQL reference are the
+The pinned DecentDB compatibility line (`v2.x`) and its official SQL reference are the
 normative source of truth for SQL capability in Decent Bench.
 
 For the pinned engine version, Decent Bench should preserve support for the
@@ -798,7 +798,7 @@ Integration tests:
 ### 13.1.1 Phase 1 representative engine smoke-test matrix
 
 The Phase 1 smoke suite should validate a representative slice of the pinned
-DecentDB `v1.6.x` SQL surface. It is not a full compatibility suite, but it
+DecentDB `v2.x` SQL surface. It is not a full compatibility suite, but it
 must cover each major engine category that the app intends to preserve.
 
 | Area | Representative operation | Minimum assertion |

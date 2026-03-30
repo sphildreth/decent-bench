@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../workspace/domain/import_target_types.dart';
 
 const int genericImportPreviewRowLimit = 8;
@@ -729,7 +731,7 @@ class GenericImportDialogResult {
 }
 
 String placeholderForTargetType(String targetType, int index) {
-  if (isDecimalTargetType(targetType) || isUuidTargetType(targetType)) {
+  if (isDecimalTargetType(targetType)) {
     return 'CAST(\$$index AS $targetType)';
   }
   return '\$$index';
@@ -741,6 +743,19 @@ bool isDecimalTargetType(String targetType) {
 
 bool isUuidTargetType(String targetType) {
   return targetType == 'UUID';
+}
+
+Uint8List uuidBytesFromString(String value) {
+  final hex = value.trim().replaceAll('-', '');
+  if (hex.length != 32 || !RegExp(r'^[0-9a-fA-F]{32}$').hasMatch(hex)) {
+    return Uint8List.fromList(value.codeUnits);
+  }
+  final bytes = Uint8List(16);
+  for (var i = 0; i < 16; i++) {
+    final start = i * 2;
+    bytes[i] = int.parse(hex.substring(start, start + 2), radix: 16);
+  }
+  return bytes;
 }
 
 bool hasDistinctNames(Iterable<String> names) {

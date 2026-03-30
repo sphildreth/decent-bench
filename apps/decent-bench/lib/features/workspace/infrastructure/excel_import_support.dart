@@ -2222,7 +2222,7 @@ String _quoteDecentIdent(String value) {
 }
 
 String _placeholderForType(String targetType, int index) {
-  if (_isDecimalType(targetType) || _isUuidType(targetType)) {
+  if (_isDecimalType(targetType)) {
     return 'CAST(\$$index AS $targetType)';
   }
   return '\$$index';
@@ -2269,6 +2269,15 @@ Object? _adaptImportValue(Object? value, String targetType) {
   if (_isDecimalType(targetType) && value is num) {
     return value.toString();
   }
+  if (_isUuidType(targetType)) {
+    if (value is Uint8List) {
+      return value;
+    }
+    if (value is String) {
+      return _uuidBytesFromString(value);
+    }
+    return _uuidBytesFromString('$value');
+  }
   return value;
 }
 
@@ -2278,6 +2287,19 @@ bool _isDecimalType(String targetType) {
 
 bool _isUuidType(String targetType) {
   return targetType == 'UUID';
+}
+
+Uint8List _uuidBytesFromString(String value) {
+  final hex = value.trim().replaceAll('-', '');
+  if (hex.length != 32 || !RegExp(r'^[0-9a-fA-F]{32}$').hasMatch(hex)) {
+    return Uint8List.fromList(value.codeUnits);
+  }
+  final bytes = Uint8List(16);
+  for (var index = 0; index < 16; index++) {
+    final start = index * 2;
+    bytes[index] = int.parse(hex.substring(start, start + 2), radix: 16);
+  }
+  return bytes;
 }
 
 _LoadedWorkbook _loadWorkbookFromSource(String sourcePath) {

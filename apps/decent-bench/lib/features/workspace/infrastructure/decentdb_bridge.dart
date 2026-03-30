@@ -4,7 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:decentdb/decentdb.dart';
+import 'package:decentdb/decentdb.dart' hide SchemaSnapshot;
 
 import '../domain/excel_import_models.dart';
 import '../domain/sql_dump_import_models.dart';
@@ -634,16 +634,25 @@ Future<void> _workerMain(List<Object?> bootstrap) async {
     required int? rowsAffected,
     required Duration elapsed,
   }) {
-    return <String, Object?>{
-      'cursorId': cursorId,
-      'columns': page.columns,
-      'rows': <Map<String, Object?>>[
-        for (final row in page.rows)
+    final originalColumns = page.columns;
+    final normalizedColumns = _normalizeResultColumns(page.columns);
+    final normalizeJsonType = _isJsonTvfResultColumns(originalColumns);
+    final normalizedRows = <Map<String, Object?>>[
+      for (final row in page.rows)
+        _normalizeResultRow(
           <String, Object?>{
             for (var i = 0; i < row.columns.length; i++)
               row.columns[i]: _encodeCell(row.values[i]),
           },
-      ],
+          originalColumns,
+          normalizedColumns,
+          normalizeJsonType: normalizeJsonType,
+        ),
+    ];
+    return <String, Object?>{
+      'cursorId': cursorId,
+      'columns': normalizedColumns,
+      'rows': normalizedRows,
       'done': page.isLast,
       'rowsAffected': rowsAffected,
       'elapsedMicros': elapsed.inMicroseconds,
@@ -665,9 +674,10 @@ Future<void> _workerMain(List<Object?> bootstrap) async {
         };
       case 'loadSchema':
         final db = _requireDatabase(database);
-        final tables = db.schema.listTablesInfo()
+        final snapshot = db.schema.getSchemaSnapshot();
+        final tables = [...snapshot.tables]
           ..sort((left, right) => left.name.compareTo(right.name));
-        final views = db.schema.listViewsInfo()
+        final views = [...snapshot.views]
           ..sort((left, right) => left.name.compareTo(right.name));
         final objects = <Map<String, Object?>>[
           for (final table in tables)
@@ -676,8 +686,8 @@ Future<void> _workerMain(List<Object?> bootstrap) async {
               'kind': 'table',
               'temporary': table.temporary,
               'ddl': table.ddl,
-              'columns': _serializeColumns(table.columns),
-              'checks': _serializeChecks(table.checks),
+              'columns': _serializeTableColumns(table.columns),
+              'checks': _serializeChecks(_allTableChecks(table)),
             },
           for (final view in views)
             <String, Object?>{
@@ -685,17 +695,15 @@ Future<void> _workerMain(List<Object?> bootstrap) async {
               'kind': 'view',
               'temporary': view.temporary,
               'ddl': view.ddl,
-              'columns': _serializeColumns(
-                db.schema.getTableColumns(view.name),
-              ),
+              'columns': _serializeViewColumns(view.columnNames),
             },
         ];
-        final indexes = db.schema.listIndexes()
+        final indexes = [...snapshot.indexes]
           ..sort((left, right) {
-            final byTable = left.table.compareTo(right.table);
+            final byTable = left.tableName.compareTo(right.tableName);
             return byTable != 0 ? byTable : left.name.compareTo(right.name);
           });
-        final triggers = db.schema.listTriggers()
+        final triggers = [...snapshot.triggers]
           ..sort((left, right) {
             final byTarget = left.targetName.compareTo(right.targetName);
             return byTarget != 0 ? byTarget : left.name.compareTo(right.name);
@@ -706,7 +714,7 @@ Future<void> _workerMain(List<Object?> bootstrap) async {
             for (final index in indexes)
               <String, Object?>{
                 'name': index.name,
-                'table': index.table,
+                'table': index.tableName,
                 'columns': index.columns,
                 'unique': index.unique,
                 'kind': index.kind,
@@ -725,10 +733,26 @@ Future<void> _workerMain(List<Object?> bootstrap) async {
             .cast<Object?>();
         final pageSize = payload['pageSize']! as int;
         final stopwatch = Stopwatch()..start();
-        final stmt = db.prepare(sql);
-        stmt.bindAll(params);
-        if (stmt.columnCount == 0) {
+        final returnsRows = _statementReturnsRows(sql);
+        if (!returnsRows) {
+          if (_isTransactionControlSql(sql) && params.isNotEmpty) {
+            throw const BridgeFailure(
+              'Transaction control statements do not accept parameters.',
+            );
+          }
+          if (_isTransactionControlSql(sql)) {
+            final rowsAffected = db.executeDirect(sql);
+            return serializePage(
+              const ResultPage(<String>[], <Row>[], true),
+              cursorId: null,
+              rowsAffected: rowsAffected,
+              elapsed: stopwatch.elapsed,
+            );
+          }
+
+          final stmt = db.prepare(sql);
           try {
+            stmt.bindAll(params);
             final rowsAffected = stmt.execute();
             return serializePage(
               const ResultPage(<String>[], <Row>[], true),
@@ -741,19 +765,34 @@ Future<void> _workerMain(List<Object?> bootstrap) async {
           }
         }
 
-        final cursorId = 'cursor-${nextCursorId++}';
-        final page = stmt.nextPage(pageSize);
-        if (!page.isLast) {
+        final stmt = db.prepare(sql);
+        var keepStatementOpen = false;
+        try {
+          stmt.bindAll(params);
+          final page = stmt.nextPage(pageSize);
+          if (page.isLast) {
+            return serializePage(
+              page,
+              cursorId: null,
+              rowsAffected: null,
+              elapsed: stopwatch.elapsed,
+            );
+          }
+
+          final cursorId = 'cursor-${nextCursorId++}';
           cursors[cursorId] = stmt;
-        } else {
-          stmt.dispose();
+          keepStatementOpen = true;
+          return serializePage(
+            page,
+            cursorId: cursorId,
+            rowsAffected: null,
+            elapsed: stopwatch.elapsed,
+          );
+        } finally {
+          if (!keepStatementOpen) {
+            stmt.dispose();
+          }
         }
-        return serializePage(
-          page,
-          cursorId: page.isLast ? null : cursorId,
-          rowsAffected: null,
-          elapsed: stopwatch.elapsed,
-        );
       case 'fetchNextPage':
         final cursorId = payload['cursorId']! as String;
         final pageSize = payload['pageSize']! as int;
@@ -790,27 +829,43 @@ Future<void> _workerMain(List<Object?> bootstrap) async {
 
         final file = File(path);
         await file.parent.create(recursive: true);
-        final stmt = db.prepare(sql);
-        stmt.bindAll(params);
-        if (stmt.columnCount == 0) {
-          stmt.dispose();
+        if (!_statementReturnsRows(sql)) {
           throw const BridgeFailure(
             'The current statement does not produce rows and cannot be exported.',
           );
         }
 
-        final sink = file.openWrite();
-        var rowCount = 0;
+        final stmt = db.prepare(sql);
         try {
+          stmt.bindAll(params);
+          final firstPage = stmt.nextPage(pageSize);
+          if (firstPage.columns.isEmpty) {
+            throw const BridgeFailure(
+              'The current statement does not produce rows and cannot be exported.',
+            );
+          }
+
+          final sink = file.openWrite();
+          var rowCount = 0;
           if (includeHeaders) {
             sink.writeln(
-              stmt.columnNames
+              firstPage.columns
                   .map((item) => _escapeCsv(item, delimiter))
                   .join(delimiter),
             );
           }
-          while (true) {
-            final page = stmt.nextPage(pageSize);
+          for (final row in firstPage.rows) {
+            sink.writeln(
+              row.values
+                  .map((value) => _escapeCsv(_csvValue(value), delimiter))
+                  .join(delimiter),
+            );
+            rowCount++;
+          }
+
+          var page = firstPage;
+          while (!page.isLast) {
+            page = stmt.nextPage(pageSize);
             for (final row in page.rows) {
               sink.writeln(
                 row.values
@@ -819,16 +874,13 @@ Future<void> _workerMain(List<Object?> bootstrap) async {
               );
               rowCount++;
             }
-            if (page.isLast) {
-              break;
-            }
           }
-        } finally {
           await sink.flush();
           await sink.close();
+          return <String, Object?>{'rowCount': rowCount, 'path': path};
+        } finally {
           stmt.dispose();
         }
-        return <String, Object?>{'rowCount': rowCount, 'path': path};
       case 'shutdown':
         await closeAll();
         receivePort.close();
@@ -884,34 +936,160 @@ Database _requireDatabase(Database? database) {
   return database;
 }
 
-List<Map<String, Object?>> _serializeColumns(List<ColumnInfo> columns) {
+bool _statementReturnsRows(String sql) {
+  final keyword = _leadingSqlKeyword(sql);
+  return switch (keyword) {
+    'SELECT' || 'EXPLAIN' || 'PRAGMA' || 'VALUES' || 'WITH' => true,
+    _ => false,
+  };
+}
+
+bool _isTransactionControlSql(String sql) {
+  final keyword = _leadingSqlKeyword(sql);
+  return switch (keyword) {
+    'BEGIN' || 'COMMIT' || 'ROLLBACK' || 'SAVEPOINT' || 'RELEASE' => true,
+    _ => false,
+  };
+}
+
+String? _leadingSqlKeyword(String sql) {
+  final match = RegExp(
+    r'^(?:\s|--[^\r\n]*(?:\r?\n|$)|/\*[\s\S]*?\*/)*([A-Za-z]+)',
+    caseSensitive: false,
+  ).firstMatch(sql);
+  return match?.group(1)?.toUpperCase();
+}
+
+List<String> _normalizeResultColumns(List<String> columns) {
+  if (_isPlanResultColumns(columns)) {
+    return const <String>['query_plan'];
+  }
+  return <String>[for (final column in columns) column];
+}
+
+bool _isPlanResultColumns(List<String> columns) {
+  return columns.length == 1 && columns.first == 'plan';
+}
+
+bool _isJsonTvfResultColumns(List<String> columns) {
+  return columns.contains('key') &&
+      columns.contains('value') &&
+      columns.contains('type');
+}
+
+Map<String, Object?> _normalizeResultRow(
+  Map<String, Object?> row,
+  List<String> originalColumns,
+  List<String> normalizedColumns, {
+  required bool normalizeJsonType,
+}) {
+  final normalized = <String, Object?>{};
+  for (var i = 0; i < normalizedColumns.length; i++) {
+    final normalizedName = normalizedColumns[i];
+    final originalName = i < originalColumns.length
+        ? originalColumns[i]
+        : normalizedName;
+    var value = row[originalName];
+    if (normalizeJsonType && normalizedName == 'type') {
+      if (value == 'integer') {
+        value = 'number';
+      } else if (value == 'text') {
+        value = 'string';
+      }
+    }
+    normalized[normalizedName] = value;
+  }
+  return normalized;
+}
+
+List<SchemaCheckConstraintInfo> _allTableChecks(SchemaTableInfo table) {
+  final merged = <SchemaCheckConstraintInfo>[...table.checks];
+  final seen = <String>{
+    for (final check in merged)
+      '${check.name ?? ''}\u0000${check.expressionSql}',
+  };
+  for (final column in table.columns) {
+    for (final check in column.checks) {
+      final signature = '${check.name ?? ''}\u0000${check.expressionSql}';
+      if (seen.add(signature)) {
+        merged.add(check);
+      }
+    }
+  }
+  return merged;
+}
+
+List<Map<String, Object?>> _serializeTableColumns(
+  List<SchemaColumnInfo> columns,
+) {
   return <Map<String, Object?>>[
     for (final column in columns)
       <String, Object?>{
         'name': column.name,
         'type': column.type,
-        'notNull': column.notNull,
+        'notNull': !column.nullable,
         'unique': column.unique,
         'primaryKey': column.primaryKey,
-        'defaultExpr': column.defaultExpr,
-        'generatedExpr': column.generatedExpr,
+        'defaultExpr': column.defaultSql,
+        'generatedExpr': column.generatedSql,
         'generatedStored': column.generatedStored,
-        'refTable': column.refTable,
-        'refColumn': column.refColumn,
-        'refOnDelete': column.refOnDelete,
-        'refOnUpdate': column.refOnUpdate,
+        'refTable': column.foreignKey?.referencedTable,
+        'refColumn': _referencedColumnFor(column),
+        'refOnDelete': column.foreignKey?.onDelete,
+        'refOnUpdate': column.foreignKey?.onUpdate,
       },
   ];
 }
 
-List<Map<String, Object?>> _serializeChecks(List<CheckConstraintInfo> checks) {
+String? _referencedColumnFor(SchemaColumnInfo column) {
+  final foreignKey = column.foreignKey;
+  if (foreignKey == null || foreignKey.columns.isEmpty) {
+    return null;
+  }
+  final localIndex = foreignKey.columns.indexOf(column.name);
+  if (localIndex < 0 || localIndex >= foreignKey.referencedColumns.length) {
+    return foreignKey.referencedColumns.isEmpty
+        ? null
+        : foreignKey.referencedColumns.first;
+  }
+  return foreignKey.referencedColumns[localIndex];
+}
+
+List<Map<String, Object?>> _serializeViewColumns(List<String> columnNames) {
   return <Map<String, Object?>>[
-    for (final check in checks)
-      <String, Object?>{'name': check.name, 'exprSql': check.exprSql},
+    for (final name in columnNames)
+      <String, Object?>{
+        'name': name,
+        'type': 'UNKNOWN',
+        'notNull': false,
+        'unique': false,
+        'primaryKey': false,
+        'defaultExpr': null,
+        'generatedExpr': null,
+        'generatedStored': false,
+        'refTable': null,
+        'refColumn': null,
+        'refOnDelete': null,
+        'refOnUpdate': null,
+      },
   ];
 }
 
-List<Map<String, Object?>> _serializeTriggers(List<TriggerInfo> triggers) {
+List<Map<String, Object?>> _serializeChecks(
+  List<SchemaCheckConstraintInfo> checks,
+) {
+  return <Map<String, Object?>>[
+    for (final check in checks)
+      <String, Object?>{
+        'name': check.name ?? '',
+        'exprSql': check.expressionSql,
+      },
+  ];
+}
+
+List<Map<String, Object?>> _serializeTriggers(
+  List<SchemaTriggerInfo> triggers,
+) {
   return <Map<String, Object?>>[
     for (final trigger in triggers)
       <String, Object?>{
@@ -930,6 +1108,13 @@ List<Map<String, Object?>> _serializeTriggers(List<TriggerInfo> triggers) {
 }
 
 Object? _encodeCell(Object? value) {
+  if (value is DecimalValue) {
+    return <String, Object?>{
+      'kind': 'decimal',
+      'unscaled': value.scaled,
+      'scale': value.scale,
+    };
+  }
   if (value case (unscaled: final int unscaled, scale: final int scale)) {
     return <String, Object?>{
       'kind': 'decimal',
@@ -952,6 +1137,9 @@ Object? _encodeCell(Object? value) {
 String _csvValue(Object? value) {
   if (value == null) {
     return '';
+  }
+  if (value is DecimalValue) {
+    return formatDecimalValue(value.scaled, value.scale);
   }
   if (value case (unscaled: final int unscaled, scale: final int scale)) {
     return formatDecimalValue(unscaled, scale);

@@ -19,7 +19,7 @@
     <img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square">
   </a>
   <img alt="Flutter desktop" src="https://img.shields.io/badge/Flutter-desktop-02569B?style=flat-square&logo=flutter&logoColor=white">
-  <img alt="DecentDB v1.7.x" src="https://img.shields.io/badge/DecentDB-v1.7.x-6f42c1?style=flat-square">
+  <img alt="DecentDB v2.x" src="https://img.shields.io/badge/DecentDB-v2.x-6f42c1?style=flat-square">
 </p>
 
 <p align="center">
@@ -47,6 +47,9 @@
 - 📥 **Smart Import Wizards:** Seamlessly import CSV, JSON, XML, HTML, SQLite, Excel, and SQL dumps (including `.zip`/`.gz` archives). Includes previews, rename/type-override transforms, progress reporting, and summary actions.
 - 🛠️ **Modern SQL Workbench:** Iterate in a multi-tab editor with isolated per-tab results, schema-aware autocomplete, editable snippets, and deterministic formatting.
 - ⚡ **Performance-Focused:** Background imports, paginated/streamed results grids, and best-effort query cancellation ensure the UI never freezes.
+- 🧭 **Rich Engine Metadata:** Schema browsing is powered by DecentDB's rich
+  upstream schema snapshot (tables/views/indexes/triggers, checks, foreign keys,
+  generated columns, temp-object metadata, and canonical DDL).
 - 🎨 **Workspace Persistence:** Config and app state are safely stored as TOML, providing reliable per-database workspace restoration.
 - 📦 **Desktop Native:** Packaged for Linux, macOS, and Windows with a repeatable native-library staging helper.
 
@@ -89,7 +92,6 @@ Want to build from source or contribute? Welcome!
 - **Git**
 - **Flutter** (stable, desktop tooling enabled)
 - OS-specific native toolchain (C++ compiler, etc.)
-- **Nim** (to build the local DecentDB native library)
 - A sibling `decentdb` checkout (or update the path dependency in `pubspec.yaml`)
 
 **Expected Directory Structure:**
@@ -101,7 +103,7 @@ Want to build from source or contribute? Welcome!
 ### 1. Build the DecentDB Native Library
 ```bash
 cd ../decentdb
-nimble build_lib
+cargo build -p decentdb
 ```
 
 ### 2. Bootstrap the Flutter App
@@ -111,17 +113,17 @@ flutter pub get
 ```
 
 ### 3. Run Locally
-Provide the native library path matching your platform (`libc_api.so`, `libc_api.dylib`, or `c_api.dll`):
+Provide the native library path matching your platform (`libdecentdb.so`, `libdecentdb.dylib`, or `decentdb.dll`):
 ```bash
-DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter run -d linux
+DECENTDB_NATIVE_LIB=/path/to/decentdb/target/debug/libdecentdb.so flutter run -d linux
 ```
 *(Note: If the sibling build is present, the app can often auto-resolve it without the ENV var).*
 
 ### 4. Testing & Validation
 ```bash
 flutter analyze
-DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter test
-DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so flutter test integration_test
+DECENTDB_NATIVE_LIB=/path/to/decentdb/target/debug/libdecentdb.so flutter test
+DECENTDB_NATIVE_LIB=/path/to/decentdb/target/debug/libdecentdb.so flutter test integration_test
 ```
 
 ### 5. Packaging Desktop Builds

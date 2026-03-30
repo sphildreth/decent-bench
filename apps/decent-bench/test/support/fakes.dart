@@ -166,7 +166,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
        sqlitePreviews = sqlitePreviews ?? _defaultSqlitePreviews();
 
   @override
-  String? resolvedLibraryPath = '/tmp/libc_api.so';
+  String? resolvedLibraryPath = '/tmp/libdecentdb.so';
 
   int cancelCount = 0;
   String? lastExportPath;

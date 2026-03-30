@@ -122,7 +122,13 @@ class TypeInferenceService {
       return '$value';
     }
     if (isUuidTargetType(targetType)) {
-      return '$value';
+      if (value is Uint8List) {
+        return value;
+      }
+      if (value is String) {
+        return uuidBytesFromString(value);
+      }
+      return uuidBytesFromString('$value');
     }
     return value;
   }

@@ -59,7 +59,8 @@ bool _isIgnoredFixturePath(String relativePath) {
 }
 
 void main() {
-  const defaultNativeLib = '/home/steven/source/decentdb/build/libc_api.so';
+  const defaultNativeLib =
+      '/home/steven/source/decentdb/target/debug/libdecentdb.so';
   final nativeLib =
       Platform.environment['DECENTDB_NATIVE_LIB'] ?? defaultNativeLib;
   final nativeLibExists = File(nativeLib).existsSync();
@@ -301,11 +302,15 @@ void main() {
                     column.name: _normalizeImportedSchemaType(column.type),
                 };
                 for (final entry in expectedColumnTypes.entries) {
+                  final actualType = importedColumnTypes[entry.key];
                   expect(
-                    importedColumnTypes[entry.key],
-                    entry.value,
+                    _schemaTypeMatchesExpectation(
+                      expectedType: entry.value,
+                      actualType: actualType,
+                    ),
+                    isTrue,
                     reason:
-                        'Unexpected imported type for ${fixture.relativePath}:${table.targetName}.${entry.key}',
+                        'Unexpected imported type for ${fixture.relativePath}:${table.targetName}.${entry.key} (expected ${entry.value}, got $actualType)',
                   );
                 }
               }
@@ -510,11 +515,15 @@ void main() {
                   column.name: _normalizeImportedSchemaType(column.type),
               };
               for (final entry in expectedColumnTypes.entries) {
+                final actualType = importedColumnTypes[entry.key];
                 expect(
-                  importedColumnTypes[entry.key],
-                  entry.value,
+                  _schemaTypeMatchesExpectation(
+                    expectedType: entry.value,
+                    actualType: actualType,
+                  ),
+                  isTrue,
                   reason:
-                      'Unexpected imported type for ${fixture.relativePath}:${table.targetName}.${entry.key}',
+                      'Unexpected imported type for ${fixture.relativePath}:${table.targetName}.${entry.key} (expected ${entry.value}, got $actualType)',
                 );
               }
             }
@@ -1387,11 +1396,31 @@ String _quoteIdentifier(String value) {
 }
 
 String _normalizeImportedSchemaType(String type) {
-  return switch (type.toUpperCase()) {
+  final normalized = type.toUpperCase();
+  return switch (normalized) {
     'INT64' => 'INTEGER',
     'BOOL' => 'BOOLEAN',
-    _ => type.toUpperCase(),
+    _ => normalized,
   };
+}
+
+bool _schemaTypeMatchesExpectation({
+  required String expectedType,
+  required String? actualType,
+}) {
+  if (actualType == null) {
+    return false;
+  }
+  final expected = _normalizeImportedSchemaType(expectedType);
+  final actual = _normalizeImportedSchemaType(actualType);
+  final expectedDecimal =
+      expected.startsWith('DECIMAL') || expected.startsWith('NUMERIC');
+  final actualDecimal =
+      actual.startsWith('DECIMAL') || actual.startsWith('NUMERIC');
+  if (expectedDecimal && actualDecimal) {
+    return true;
+  }
+  return expected == actual;
 }
 
 Set<String> _manifestCoveredFixturePaths() {

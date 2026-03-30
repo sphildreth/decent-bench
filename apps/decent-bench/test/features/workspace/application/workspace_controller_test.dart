@@ -21,7 +21,7 @@ void main() {
 
     await controller.initialize();
 
-    expect(controller.nativeLibraryPath, '/tmp/libc_api.so');
+    expect(controller.nativeLibraryPath, '/tmp/libdecentdb.so');
     expect(controller.workspaceMessage, 'Ready.');
     expect(controller.tabs, hasLength(1));
   });

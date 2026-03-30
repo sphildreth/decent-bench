@@ -87,7 +87,7 @@ packages:
       path: "../../../decentdb/bindings/dart/dart"
       relative: true
     source: path
-    version: "1.7.0"
+    version: "2.0.2"
   desktop_drop:
     dependency: "direct main"
     description:

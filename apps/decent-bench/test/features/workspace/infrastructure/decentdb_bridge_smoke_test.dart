@@ -26,7 +26,8 @@ class _FixedResolver extends NativeLibraryResolver {
 }
 
 void main() {
-  const defaultNativeLib = '/home/steven/source/decentdb/build/libc_api.so';
+  const defaultNativeLib =
+      '/home/steven/source/decentdb/target/debug/libdecentdb.so';
   final nativeLib =
       Platform.environment['DECENTDB_NATIVE_LIB'] ?? defaultNativeLib;
   final nativeLibExists = File(nativeLib).existsSync();

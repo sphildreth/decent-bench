@@ -710,6 +710,7 @@ SqliteImportTableDraft _inspectTable(
       );
     }
   }
+  _retargetGeneratedDecimalDependencies(columns);
 
   return SqliteImportTableDraft(
     sourceName: tableName,
@@ -726,6 +727,58 @@ SqliteImportTableDraft _inspectTable(
     previewRows: const <Map<String, Object?>>[],
     previewLoaded: false,
   );
+}
+
+void _retargetGeneratedDecimalDependencies(
+  List<SqliteImportColumnDraft> columns,
+) {
+  final generatedExprs = <String>[
+    for (final column in columns)
+      if (column.generatedStored &&
+          column.generatedExpr != null &&
+          column.generatedExpr!.trim().isNotEmpty)
+        column.generatedExpr!,
+  ];
+  if (generatedExprs.isEmpty) {
+    return;
+  }
+
+  for (var index = 0; index < columns.length; index++) {
+    final column = columns[index];
+    if (!_isDecimalType(column.targetType)) {
+      continue;
+    }
+    final referencedByGenerated = generatedExprs.any(
+      (expr) => _sqlExpressionReferencesIdentifier(expr, column.sourceName),
+    );
+    if (!referencedByGenerated) {
+      continue;
+    }
+    columns[index] = column.copyWith(
+      inferredTargetType: 'FLOAT64',
+      targetType: 'FLOAT64',
+    );
+  }
+}
+
+bool _sqlExpressionReferencesIdentifier(String expression, String identifier) {
+  final escaped = RegExp.escape(identifier);
+  if (RegExp(
+    '(^|[^A-Za-z0-9_])$escaped([^A-Za-z0-9_]|\\\$)',
+    caseSensitive: false,
+  ).hasMatch(expression)) {
+    return true;
+  }
+  if (RegExp('"$escaped"', caseSensitive: false).hasMatch(expression)) {
+    return true;
+  }
+  if (RegExp('`$escaped`', caseSensitive: false).hasMatch(expression)) {
+    return true;
+  }
+  if (RegExp('\\[$escaped\\]', caseSensitive: false).hasMatch(expression)) {
+    return true;
+  }
+  return false;
 }
 
 List<SqliteImportTableDraft> _toposortSelectedTables(
@@ -1705,7 +1758,7 @@ bool _equalsIgnoreCase(String left, String right) {
 }
 
 String _placeholderForType(String targetType, int index) {
-  if (_isDecimalType(targetType) || _isUuidType(targetType)) {
+  if (_isDecimalType(targetType)) {
     return 'CAST(\$$index AS $targetType)';
   }
   return '\$$index';
@@ -1729,6 +1782,15 @@ Object? _adaptImportValue(Object? value, String targetType) {
   }
   if (_isDecimalType(targetType) && value is num) {
     return value.toString();
+  }
+  if (_isUuidType(targetType)) {
+    if (value is Uint8List) {
+      return value;
+    }
+    if (value is String) {
+      return _uuidBytesFromString(value);
+    }
+    return _uuidBytesFromString('$value');
   }
   return value;
 }
@@ -2129,6 +2191,19 @@ bool _isDecimalType(String targetType) {
 
 bool _isUuidType(String targetType) {
   return targetType == 'UUID';
+}
+
+Uint8List _uuidBytesFromString(String value) {
+  final hex = value.trim().replaceAll('-', '');
+  if (hex.length != 32 || !RegExp(r'^[0-9a-fA-F]{32}$').hasMatch(hex)) {
+    return Uint8List.fromList(value.codeUnits);
+  }
+  final bytes = Uint8List(16);
+  for (var index = 0; index < 16; index++) {
+    final start = index * 2;
+    bytes[index] = int.parse(hex.substring(start, start + 2), radix: 16);
+  }
+  return bytes;
 }
 
 class _ParsedTableSqlMetadata {

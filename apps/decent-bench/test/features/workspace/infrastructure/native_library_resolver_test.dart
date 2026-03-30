@@ -5,16 +5,16 @@ void main() {
   test('prefers DECENTDB_NATIVE_LIB when it exists', () async {
     final resolver = NativeLibraryResolver(
       environment: const <String, String>{
-        'DECENTDB_NATIVE_LIB': '/custom/libc_api.so',
+        'DECENTDB_NATIVE_LIB': '/custom/libdecentdb.so',
       },
       currentDirectoryPath: '/workspace/apps/decent-bench',
       scriptDirectoryPath: '/workspace/apps/decent-bench/tool',
       resolvedExecutablePath: '/workspace/apps/decent-bench/decent_bench',
       platform: NativeLibraryPlatform.linux,
-      fileExists: (path) => path == '/custom/libc_api.so',
+      fileExists: (path) => path == '/custom/libdecentdb.so',
     );
 
-    expect(await resolver.resolve(), '/custom/libc_api.so');
+    expect(await resolver.resolve(), '/custom/libdecentdb.so');
   });
 
   test(
@@ -26,13 +26,13 @@ void main() {
         scriptDirectoryPath: '/workspace/apps/decent-bench/tool',
         resolvedExecutablePath: '/bundle/decent_bench',
         platform: NativeLibraryPlatform.linux,
-        fileExists: (path) => path == '/bundle/lib/libc_api.so',
+        fileExists: (path) => path == '/bundle/lib/libdecentdb.so',
       );
 
       final result = await resolver.resolveDetailed();
 
-      expect(result.resolvedPath, '/bundle/lib/libc_api.so');
-      expect(result.checkedPaths.first, '/bundle/lib/libc_api.so');
+      expect(result.resolvedPath, '/bundle/lib/libdecentdb.so');
+      expect(result.checkedPaths.first, '/bundle/lib/libdecentdb.so');
     },
   );
 
@@ -45,16 +45,20 @@ void main() {
         scriptDirectoryPath: '/workspace/apps/decent-bench/tool',
         resolvedExecutablePath: '/bundle/decent_bench',
         platform: NativeLibraryPlatform.linux,
-        fileExists: (path) => path == '/workspace/decentdb/build/libc_api.so',
+        fileExists: (path) =>
+            path == '/workspace/decentdb/target/debug/libdecentdb.so',
       );
 
       final result = await resolver.resolveDetailed(
         mode: NativeLibraryResolutionMode.packagingSource,
       );
 
-      expect(result.resolvedPath, '/workspace/decentdb/build/libc_api.so');
       expect(
-        result.checkedPaths.any((path) => path == '/bundle/lib/libc_api.so'),
+        result.resolvedPath,
+        '/workspace/decentdb/target/debug/libdecentdb.so',
+      );
+      expect(
+        result.checkedPaths.any((path) => path == '/bundle/lib/libdecentdb.so'),
         isFalse,
       );
     },
@@ -86,12 +90,12 @@ void main() {
       fileExists: (_) => false,
     );
 
-    expect(linux.bundleRelativeInstallPath, 'lib/libc_api.so');
+    expect(linux.bundleRelativeInstallPath, 'lib/libdecentdb.so');
     expect(
       macos.bundleRelativeInstallPath,
-      'Contents/Frameworks/libc_api.dylib',
+      'Contents/Frameworks/libdecentdb.dylib',
     );
-    expect(windows.bundleRelativeInstallPath, 'c_api.dll');
+    expect(windows.bundleRelativeInstallPath, 'decentdb.dll');
   });
 
   test(
@@ -99,7 +103,7 @@ void main() {
     () async {
       final resolver = NativeLibraryResolver(
         environment: const <String, String>{
-          'DECENTDB_NATIVE_LIB': '/missing/libc_api.so',
+          'DECENTDB_NATIVE_LIB': '/missing/libdecentdb.so',
         },
         currentDirectoryPath: '/workspace/apps/decent-bench',
         scriptDirectoryPath: '/workspace/apps/decent-bench/tool',
@@ -115,14 +119,14 @@ void main() {
               .having(
                 (error) => error.requestedEnvPath,
                 'requestedEnvPath',
-                '/missing/libc_api.so',
+                '/missing/libdecentdb.so',
               )
               .having(
                 (error) => error.toString(),
                 'message',
                 allOf(
-                  contains('/missing/libc_api.so'),
-                  contains('/bundle/lib/libc_api.so'),
+                  contains('/missing/libdecentdb.so'),
+                  contains('/bundle/lib/libdecentdb.so'),
                   contains('Set DECENTDB_NATIVE_LIB'),
                 ),
               ),

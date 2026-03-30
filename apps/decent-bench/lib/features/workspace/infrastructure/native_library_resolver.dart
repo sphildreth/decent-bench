@@ -140,11 +140,11 @@ class NativeLibraryResolver {
   String get libraryFileName {
     switch (_platform) {
       case NativeLibraryPlatform.linux:
-        return 'libc_api.so';
+        return 'libdecentdb.so';
       case NativeLibraryPlatform.macos:
-        return 'libc_api.dylib';
+        return 'libdecentdb.dylib';
       case NativeLibraryPlatform.windows:
-        return 'c_api.dll';
+        return 'decentdb.dll';
     }
   }
 
@@ -189,7 +189,24 @@ class NativeLibraryResolver {
       yield p.join(current.path, 'native', libraryFileName);
       yield p.join(current.path, 'native', 'lib', libraryFileName);
       yield p.join(current.path, 'build', libraryFileName);
-      yield p.join(current.path, '..', 'decentdb', 'build', libraryFileName);
+      yield p.join(current.path, 'target', 'debug', libraryFileName);
+      yield p.join(current.path, 'target', 'release', libraryFileName);
+      yield p.join(
+        current.path,
+        '..',
+        'decentdb',
+        'target',
+        'debug',
+        libraryFileName,
+      );
+      yield p.join(
+        current.path,
+        '..',
+        'decentdb',
+        'target',
+        'release',
+        libraryFileName,
+      );
       current = current.parent;
     }
   }

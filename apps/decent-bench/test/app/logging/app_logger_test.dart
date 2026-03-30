@@ -133,7 +133,7 @@ class _FakeLogGateway implements WorkspaceDatabaseGateway {
   SchemaSnapshot schema = SchemaSnapshot.empty();
 
   @override
-  String? get resolvedLibraryPath => '/tmp/libc_api.so';
+  String? get resolvedLibraryPath => '/tmp/libdecentdb.so';
 
   @override
   Future<void> cancelImport(String jobId) async {}

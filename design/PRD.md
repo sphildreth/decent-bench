@@ -7,7 +7,7 @@
 DecentDB**, then **inspect schema** and **run the full pinned DecentDB SQL
 reference surface** to shape and export data.
 
-**Pinned engine capability baseline:** DecentDB v1.6.x
+**Pinned engine capability baseline:** DecentDB v2.x
 **Release status:** `v1.0.0` is the shipped MVP release for the scope in this
 document.
 
@@ -64,7 +64,7 @@ general-purpose database administration tool. Its core workflow is:
    - MVP prioritizes a reliable import → query → export loop over breadth.
 6. **Pinned-engine fidelity**
    - Decent Bench should preserve the SQL capabilities of the pinned DecentDB
-     compatibility line (`v1.6.x`) instead of inventing a smaller app-specific SQL
+     compatibility line (`v2.x`) instead of inventing a smaller app-specific SQL
      subset.
 
 ---
@@ -96,9 +96,9 @@ general-purpose database administration tool. Its core workflow is:
 
 4. **Fast schema inspection**
    - Browse the schema objects exposed by the pinned DecentDB engine version,
-     with dedicated UI coverage expanding over time.
+      with dedicated UI coverage expanding over time.
    - Prioritize tables, views, columns, indexes, triggers, constraints, and
-     generated-column metadata as the metadata layer matures.
+      generated-column metadata via the rich upstream schema snapshot contract.
 
 5. **Fast query workflow**
    - Multi-tab SQL editor
@@ -285,8 +285,8 @@ to post-`1.0.0`.
   - views
   - columns
   - indexes
-  - triggers and constraints where exposed through the adapter
-  - generated-column metadata where available
+  - triggers and constraints from the rich schema snapshot
+  - generated-column metadata from the rich schema snapshot
 - Search / filter schema items
 - Preview top rows for a selected table
 
@@ -367,7 +367,7 @@ MVP. The project should not introduce a custom C shim or alternative binding
 layer unless the upstream bindings prove insufficient for required capability or
 performance.
 
-The official SQL reference for the pinned DecentDB compatibility line (`v1.6.x`) is the
+The official SQL reference for the pinned DecentDB compatibility line (`v2.x`) is the
 normative contract for SQL behavior in Decent Bench. The app may phase UI
 affordances and metadata browsing over time, but it should not intentionally
 restrict users to a smaller SQL subset than the pinned engine supports.
@@ -431,9 +431,9 @@ spec and ADR set:
 
 1. The canonical DecentDB desktop file extension is `.ddb`.
 2. Schema-browser delivery preserves the full pinned-engine contract while
-   exposing tables, views, columns, indexes, and the constraint details the
-   current adapter can surface, with explicit notes when trigger/generated/temp
-   metadata is not exposed by the current Dart schema API.
+   exposing tables, views, columns, indexes, triggers, checks, foreign keys,
+   generated-column metadata, and temp-object details through the rich Dart
+   schema snapshot API.
 3. Computed-column transforms remain deferred beyond MVP.
 4. Config and workspace-state locations are defined per OS and versioned.
 5. Query-tab execution state uses the documented idle/running/fetching/

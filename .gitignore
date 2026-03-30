@@ -36,3 +36,5 @@ Thumbs.db
 
 # Keep application lockfiles tracked
 !**/pubspec.lock
+
+apps/decent-bench/.tmp/
