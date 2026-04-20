@@ -31,6 +31,21 @@ class _FixedResolver extends NativeLibraryResolver {
   Future<String> resolve() async => path;
 }
 
+String? _resolveNativeLib() {
+  final resolver = NativeLibraryResolver();
+  final candidates = [
+    '/usr/local/lib/${resolver.libraryFileName}',
+    '/usr/lib/${resolver.libraryFileName}',
+    '${Platform.environment['HOME']}/.local/lib/${resolver.libraryFileName}',
+  ];
+  for (final candidate in candidates) {
+    if (File(candidate).existsSync()) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 typedef _TypedColumn = ({String name, String targetType});
 
 class _ResolvedFixtureSource {
@@ -59,14 +74,10 @@ bool _isIgnoredFixturePath(String relativePath) {
 }
 
 void main() {
-  const defaultNativeLib =
-      '/home/steven/source/decentdb/target/debug/libdecentdb.so';
-  final nativeLib =
-      Platform.environment['DECENTDB_NATIVE_LIB'] ?? defaultNativeLib;
-  final nativeLibExists = File(nativeLib).existsSync();
-  final skipReason = nativeLibExists
-      ? null
-      : 'Expected DecentDB native library at $nativeLib';
+  final nativeLib = _resolveNativeLib();
+  final skipReason = nativeLib == null
+      ? 'DecentDB native library not found in system paths'
+      : null;
 
   final registry = ImportFormatRegistry.instance;
   late DecentDbBridge bridge;
@@ -76,6 +87,9 @@ void main() {
   late Directory suiteTempDir;
 
   setUpAll(() async {
+    if (nativeLib == null) {
+      throw Exception(skipReason);
+    }
     bridge = DecentDbBridge(resolver: _FixedResolver(nativeLib));
     detectionService = ImportDetectionService();
     previewService = ImportPreviewService();

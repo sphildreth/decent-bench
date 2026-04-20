@@ -10,12 +10,12 @@ artifact and uses a deterministic runtime resolution order.
 The accepted contract is:
 
 - runtime resolution order is:
-  1. `DECENTDB_NATIVE_LIB`
-  2. the platform-specific bundled desktop app location
-  3. a sibling `../decentdb/build/` checkout for development
-- Linux bundles expect `lib/libc_api.so`
-- macOS bundles expect `Contents/Frameworks/libc_api.dylib`
-- Windows bundles expect `c_api.dll` next to the executable
+  1. the platform-specific bundled desktop app location
+  2. system library paths (`/usr/local/lib/`, `~/.local/lib/`)
+  3. local staging output for development
+- Linux bundles expect `lib/libdecentdb.so`
+- macOS bundles expect `Contents/Frameworks/libdecentdb.dylib`
+- Windows bundles expect `decentdb.dll` next to the executable
 - the repository provides a packaging helper script to stage the native library
   into built bundles and verify its presence
 - missing-library failures must be actionable and list the checked candidate
@@ -27,9 +27,9 @@ The upstream DecentDB Dart bindings remain the correct integration mechanism,
 but the app still needs a stable startup contract for local development,
 integration tests, and packaged desktop builds.
 
-Relying only on `DECENTDB_NATIVE_LIB` keeps development workable, but it does
-not produce repeatable packaged startup. Relying only on a sibling checkout
-would also fail once the app is distributed or moved outside the repo layout.
+Relying on environment variables keeps development workable, but does not
+produce repeatable packaged startup. Bundling with the app and using system
+paths provides reliable discovery without manual configuration.
 
 The project therefore needs:
 
@@ -40,7 +40,7 @@ The project therefore needs:
 
 ### Alternatives Considered
 
-- Require `DECENTDB_NATIVE_LIB` for all local and packaged startup
+- Use environment variable for library path (removed in later update)
 - Modify the upstream DecentDB Dart binding package to own app-bundle staging
 - Keep sibling-checkout discovery only and defer packaged startup beyond the
   initial `v1.0.0` release

@@ -12,14 +12,12 @@ class NativeLibraryResolution {
     required this.resolvedPath,
     required this.checkedPaths,
     required this.mode,
-    this.requestedEnvPath,
   });
 
   final String libraryFileName;
   final String resolvedPath;
   final List<String> checkedPaths;
   final NativeLibraryResolutionMode mode;
-  final String? requestedEnvPath;
 }
 
 class NativeLibraryResolutionFailure implements Exception {
@@ -27,24 +25,17 @@ class NativeLibraryResolutionFailure implements Exception {
     required this.libraryFileName,
     required this.checkedPaths,
     required this.mode,
-    this.requestedEnvPath,
   });
 
   final String libraryFileName;
   final List<String> checkedPaths;
   final NativeLibraryResolutionMode mode;
-  final String? requestedEnvPath;
 
   String toDisplayMessage() {
     final buffer = StringBuffer()
       ..writeln(
         'Unable to resolve the DecentDB native library ($libraryFileName).',
       );
-    if (requestedEnvPath != null && requestedEnvPath!.trim().isNotEmpty) {
-      buffer.writeln(
-        'DECENTDB_NATIVE_LIB was set but no file was found at: $requestedEnvPath',
-      );
-    }
     if (checkedPaths.isNotEmpty) {
       buffer
         ..writeln('Checked candidate paths:')
@@ -52,8 +43,8 @@ class NativeLibraryResolutionFailure implements Exception {
     }
     buffer.writeln(
       mode == NativeLibraryResolutionMode.runtime
-          ? 'Set DECENTDB_NATIVE_LIB, bundle the native library with the desktop app, or build DecentDB under a sibling ../decentdb checkout.'
-          : 'Set DECENTDB_NATIVE_LIB or build DecentDB under a sibling ../decentdb checkout before packaging.',
+          ? 'Install DecentDB system-wide (e.g., brew install decentdb) or bundle it with the app.'
+          : 'Bundle DecentDB native library before packaging.',
     );
     return buffer.toString().trimRight();
   }
@@ -64,14 +55,12 @@ class NativeLibraryResolutionFailure implements Exception {
 
 class NativeLibraryResolver {
   NativeLibraryResolver({
-    Map<String, String>? environment,
     String? currentDirectoryPath,
     String? scriptDirectoryPath,
     String? resolvedExecutablePath,
     bool Function(String path)? fileExists,
     NativeLibraryPlatform? platform,
-  }) : _environment = environment ?? Platform.environment,
-       _currentDirectoryPath = currentDirectoryPath ?? Directory.current.path,
+  }) : _currentDirectoryPath = currentDirectoryPath ?? Directory.current.path,
        _scriptDirectoryPath =
            scriptDirectoryPath ??
            File(Platform.script.toFilePath()).parent.path,
@@ -80,7 +69,6 @@ class NativeLibraryResolver {
        _fileExists = fileExists ?? ((path) => File(path).existsSync()),
        _platform = platform ?? _detectCurrentPlatform();
 
-  final Map<String, String> _environment;
   final String _currentDirectoryPath;
   final String _scriptDirectoryPath;
   final String _resolvedExecutablePath;
@@ -100,21 +88,7 @@ class NativeLibraryResolver {
   Future<NativeLibraryResolution> resolveDetailed({
     NativeLibraryResolutionMode mode = NativeLibraryResolutionMode.runtime,
   }) async {
-    final env = _environment['DECENTDB_NATIVE_LIB']?.trim();
     final checkedPaths = <String>[];
-
-    if (env != null && env.isNotEmpty) {
-      checkedPaths.add(env);
-      if (_fileExists(env)) {
-        return NativeLibraryResolution(
-          libraryFileName: libraryFileName,
-          resolvedPath: env,
-          checkedPaths: checkedPaths,
-          mode: mode,
-          requestedEnvPath: env,
-        );
-      }
-    }
 
     for (final candidate in candidatePaths(mode: mode)) {
       checkedPaths.add(candidate);
@@ -124,7 +98,6 @@ class NativeLibraryResolver {
           resolvedPath: candidate,
           checkedPaths: checkedPaths,
           mode: mode,
-          requestedEnvPath: env,
         );
       }
     }
@@ -133,7 +106,6 @@ class NativeLibraryResolver {
       libraryFileName: libraryFileName,
       checkedPaths: checkedPaths,
       mode: mode,
-      requestedEnvPath: env,
     );
   }
 
@@ -191,23 +163,33 @@ class NativeLibraryResolver {
       yield p.join(current.path, 'build', libraryFileName);
       yield p.join(current.path, 'target', 'debug', libraryFileName);
       yield p.join(current.path, 'target', 'release', libraryFileName);
-      yield p.join(
-        current.path,
-        '..',
-        'decentdb',
-        'target',
-        'debug',
-        libraryFileName,
-      );
-      yield p.join(
-        current.path,
-        '..',
-        'decentdb',
-        'target',
-        'release',
-        libraryFileName,
-      );
       current = current.parent;
+    }
+    yield* _systemCandidates();
+  }
+
+  Iterable<String> _systemCandidates() sync* {
+    final libName = libraryFileName;
+    if (Platform.isLinux) {
+      yield '/usr/local/lib/$libName';
+      yield '/usr/lib/$libName';
+      yield '/lib/$libName';
+      final home = Platform.environment['HOME'];
+      if (home != null) {
+        yield '$home/.local/lib/$libName';
+        yield '$home/lib/$libName';
+      }
+    } else if (Platform.isMacOS) {
+      yield '/usr/local/lib/$libName';
+      yield '/usr/lib/$libName';
+      final home = Platform.environment['HOME'];
+      if (home != null) {
+        yield '$home/lib/$libName';
+        yield '$home/.local/lib/$libName';
+      }
+    } else if (Platform.isWindows) {
+      yield 'C:\\Users\\Public\\lib\\$libName';
+      yield 'C:\\Program Files\\$libName';
     }
   }
 

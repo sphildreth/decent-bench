@@ -51,7 +51,7 @@
   - `flutter analyze`
   - `flutter test`
   - `flutter test integration_test`
-- If tests require the DecentDB native library, use `DECENTDB_NATIVE_LIB=/path/to/decentdb/build/libc_api.so` or the platform equivalent.
+- If tests require the DecentDB native library, ensure it is installed to a system path or bundled with the app.
 
 ## Documentation Expectations
 

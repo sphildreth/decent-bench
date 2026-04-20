@@ -89,14 +89,10 @@ jobs:
 
       - name: Flutter test
         working-directory: apps/decent-bench
-        env:
-          DECENTDB_NATIVE_LIB: ${{ github.workspace }}/../decentdb/build/libc_api.so
         run: flutter test
 
       - name: Flutter integration test
         working-directory: apps/decent-bench
-        env:
-          DECENTDB_NATIVE_LIB: ${{ github.workspace }}/../decentdb/build/libc_api.so
         run: xvfb-run -a flutter test integration_test
 
   desktop-package-verify:
@@ -108,11 +104,11 @@ jobs:
           - os: ubuntu-latest
             flutter_target: linux
             bundle_path: build/linux/x64/release/bundle
-            native_lib: ../../../decentdb/build/libc_api.so
+            native_lib: ../../../decentdb/build/libdecentdb.so
           - os: macos-latest
             flutter_target: macos
             bundle_path: build/macos/Build/Products/Release/decent_bench.app
-            native_lib: ../../../decentdb/build/libc_api.dylib
+            native_lib: ../../../decentdb/build/libdecentdb.dylib
           - os: windows-latest
             flutter_target: windows
             bundle_path: build/windows/x64/runner/Release

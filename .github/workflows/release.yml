@@ -22,17 +22,17 @@ jobs:
           - os: ubuntu-latest
             flutter_target: linux
             bundle_path: build/linux/x64/release/bundle
-            native_lib: ../../../decentdb/build/libc_api.so
+            native_lib: ../../../decentdb/build/libdecentdb.so
             archive_extension: tar.gz
           - os: macos-latest
             flutter_target: macos
             bundle_path: build/macos/Build/Products/Release/decent_bench.app
-            native_lib: ../../../decentdb/build/libc_api.dylib
+            native_lib: ../../../decentdb/build/libdecentdb.dylib
             archive_extension: tar.gz
           - os: windows-latest
             flutter_target: windows
             bundle_path: build/windows/x64/runner/Release
-            native_lib: ../../../decentdb/build/c_api.dll
+            native_lib: ../../../decentdb/build/decentdb.dll
             archive_extension: zip
 
     steps:

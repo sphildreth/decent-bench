@@ -849,12 +849,11 @@ CI should run these as soon as the project becomes runnable.
 - Bundle required DecentDB native libraries with desktop builds
 - Ensure deterministic library discovery at app startup
 - Runtime discovery order is:
-  1. `DECENTDB_NATIVE_LIB`
-  2. the platform-specific bundled desktop app location
-  3. a sibling `../decentdb/build/` checkout for development
+  1. Bundled with the app (platform-specific location)
+  2. System library paths (`/usr/local/lib/`, `~/.local/lib/`), or
+     packaged staging output for development
 - The desktop packaging flow may stage the DecentDB native library into the
-  generated bundle through a repeatable helper script, but packaged startup
-  must not depend on `DECENTDB_NATIVE_LIB`
+  generated bundle through a repeatable helper script
 - Keep packaging aligned with the upstream binding strategy from ADR-0001
 - Signing/notarization and final installer formats may be staged after MVP, but
   packaging must not require manual developer-only steps for normal app startup

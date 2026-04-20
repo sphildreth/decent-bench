@@ -92,41 +92,27 @@ Want to build from source or contribute? Welcome!
 - **Git**
 - **Flutter** (stable, desktop tooling enabled)
 - OS-specific native toolchain (C++ compiler, etc.)
-- A sibling `decentdb` checkout (or update the path dependency in `pubspec.yaml`)
 
-**Expected Directory Structure:**
-```text
-/path/to/source/decent-bench
-/path/to/source/decentdb
-```
-
-### 1. Build the DecentDB Native Library
+### 1. Bootstrap the Flutter App
 ```bash
-cd ../decentdb
-cargo build -p decentdb
-```
-
-### 2. Bootstrap the Flutter App
-```bash
-cd ../decent-bench/apps/decent-bench
+cd apps/decent-bench
 flutter pub get
 ```
 
-### 3. Run Locally
-Provide the native library path matching your platform (`libdecentdb.so`, `libdecentdb.dylib`, or `decentdb.dll`):
+### 2. Run Locally
+DecentDB auto-resolves from system paths (e.g., `/usr/local/lib/`, `~/.local/lib/`) or bundled with the app.
 ```bash
-DECENTDB_NATIVE_LIB=/path/to/decentdb/target/debug/libdecentdb.so flutter run -d linux
+flutter run -d linux
 ```
-*(Note: If the sibling build is present, the app can often auto-resolve it without the ENV var).*
 
-### 4. Testing & Validation
+### 3. Testing & Validation
 ```bash
 flutter analyze
-DECENTDB_NATIVE_LIB=/path/to/decentdb/target/debug/libdecentdb.so flutter test
-DECENTDB_NATIVE_LIB=/path/to/decentdb/target/debug/libdecentdb.so flutter test integration_test
+flutter test
+flutter test integration_test
 ```
 
-### 5. Packaging Desktop Builds
+### 4. Packaging Desktop Builds
 Build the bundle, then use the staging helper to inject the DecentDB native library:
 ```bash
 flutter build linux

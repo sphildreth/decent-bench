@@ -18,8 +18,8 @@ Bench `1.0.0`, which is the project's MVP release.
 - CSV, TSV, generic delimited text, JSON, NDJSON/JSONL, XML, HTML tables, and
   ZIP/GZip wrapper routing now use the generic import preview/execution path
 - desktop runner folders (`linux/`, `macos/`, `windows/`) are checked in
-- the DecentDB Dart package is consumed from a local sibling checkout at
-  `../../../decentdb/bindings/dart/dart`
+- the DecentDB Dart package is consumed from GitHub releases
+  (`https://github.com/sphildreth/decentdb`)
 - Excel import currently supports `.xlsx`; legacy `.xls` files route through
   the existing conversion/normalization path and remain explicitly partial
 - SQL dump import currently targets the MVP-lite parser scope documented in
@@ -29,10 +29,9 @@ Bench `1.0.0`, which is the project's MVP release.
 - `docs/IMPORT_FORMATS.md` summarizes the currently implemented, partial, and
   recognized-but-unimplemented import formats
 - `CHANGELOG.md` records shipped releases starting with `1.0.0`
-- native-library resolution now prefers `DECENTDB_NATIVE_LIB`, then bundled
-  desktop app locations, then a sibling
-  `../decentdb/target/{debug,release}/` checkout, with a packaging helper to
-  stage the library into built bundles
+- native-library resolution uses bundled app location first, then system
+  paths (`/usr/local/lib/`, `~/.local/lib/`), with a packaging helper
+  to stage the library into built bundles
 - schema browsing is backed by DecentDB's rich schema snapshot surface
   (`Schema.getSchemaSnapshot()`), including canonical DDL, checks, foreign keys,
   generated-column metadata, triggers, and temp-object metadata
@@ -44,9 +43,9 @@ From `apps/decent-bench/`:
 ```bash
 flutter pub get
 flutter analyze
-DECENTDB_NATIVE_LIB=/path/to/decentdb/target/debug/libdecentdb.so flutter test
-DECENTDB_NATIVE_LIB=/path/to/decentdb/target/debug/libdecentdb.so flutter test integration_test
-DECENTDB_NATIVE_LIB=/path/to/decentdb/target/debug/libdecentdb.so flutter run -d linux
+flutter test
+flutter test integration_test
+flutter run -d linux
 flutter build linux
 dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle
 dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle --verify-only
@@ -54,9 +53,8 @@ dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle
 
 The app expects a compatible DecentDB v2.x native library to be available via:
 
-1. `DECENTDB_NATIVE_LIB`
-2. a bundled desktop runner path
-3. a sibling `../decentdb/target/{debug,release}/` checkout
+1. System library paths (`/usr/local/lib/`, `~/.local/lib/`)
+2. Bundled with the app
 
 Workspace tab drafts are stored separately from `config.toml` under the
 platform-specific `workspaces/` directory documented in the root

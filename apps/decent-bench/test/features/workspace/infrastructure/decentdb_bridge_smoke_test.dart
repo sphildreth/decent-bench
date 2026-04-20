@@ -25,15 +25,26 @@ class _FixedResolver extends NativeLibraryResolver {
   Future<String> resolve() async => path;
 }
 
+String? _resolveNativeLib() {
+  final resolver = NativeLibraryResolver();
+  final candidates = [
+    '/usr/local/lib/${resolver.libraryFileName}',
+    '/usr/lib/${resolver.libraryFileName}',
+    '${Platform.environment['HOME']}/.local/lib/${resolver.libraryFileName}',
+  ];
+  for (final candidate in candidates) {
+    if (File(candidate).existsSync()) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 void main() {
-  const defaultNativeLib =
-      '/home/steven/source/decentdb/target/debug/libdecentdb.so';
-  final nativeLib =
-      Platform.environment['DECENTDB_NATIVE_LIB'] ?? defaultNativeLib;
-  final nativeLibExists = File(nativeLib).existsSync();
-  final skipReason = nativeLibExists
-      ? null
-      : 'Expected DecentDB native library at $nativeLib';
+  final nativeLib = _resolveNativeLib();
+  final skipReason = nativeLib == null
+      ? 'DecentDB native library not found in system paths'
+      : null;
 
   group('DecentDbBridge smoke tests', () {
     late DecentDbBridge bridge;
@@ -79,8 +90,12 @@ void main() {
     Future<GenericImportSummary> runGenericImport(
       GenericImportRequest request,
     ) async {
+      final lib = nativeLib;
+      if (lib == null) {
+        throw Exception(skipReason);
+      }
       final service = ImportExecutionService(
-        resolver: _FixedResolver(nativeLib),
+        resolver: _FixedResolver(lib),
       );
       final updates = await service.execute(request: request).toList();
       final terminal = updates.last;
@@ -415,9 +430,13 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
     }
 
     setUp(() async {
+      final lib = nativeLib;
+      if (lib == null) {
+        throw Exception(skipReason);
+      }
       tempDir = await Directory.systemTemp.createTemp('decent-bench-phase1-');
       dbPath = p.join(tempDir.path, 'phase1.ddb');
-      bridge = DecentDbBridge(resolver: _FixedResolver(nativeLib));
+      bridge = DecentDbBridge(resolver: _FixedResolver(lib));
       await bridge.initialize();
       await bridge.openDatabase(dbPath);
     });
