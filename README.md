@@ -100,7 +100,6 @@ flutter pub get
 ```
 
 ### 2. Run Locally
-DecentDB auto-resolves from system paths (e.g., `/usr/local/lib/`, `~/.local/lib/`) or bundled with the app.
 ```bash
 flutter run -d linux
 ```
