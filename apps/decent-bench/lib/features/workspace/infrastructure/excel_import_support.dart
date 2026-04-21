@@ -424,6 +424,7 @@ Future<ExcelImportSummary> _runExcelImport({
 
       target.commit();
       transactionOpen = false;
+      target.checkpoint();
 
       return ExcelImportSummary(
         jobId: request.jobId,

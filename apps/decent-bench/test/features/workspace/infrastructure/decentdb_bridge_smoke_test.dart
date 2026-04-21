@@ -984,15 +984,22 @@ ORDER BY dept
 
         final updates = await bridge.importSqlite(request: request).toList();
         final terminal = updates.last;
+        final summary = terminal.summary!;
 
         expect(terminal.kind, SqliteImportUpdateKind.completed);
         expect(terminal.summary, isNotNull);
         expect(
-          terminal.summary!.importedTables,
+          summary.importedTables,
           orderedEquals(<String>['users', 'imported_notes']),
         );
-        expect(terminal.summary!.rowsCopiedByTable['users'], 2);
-        expect(terminal.summary!.rowsCopiedByTable['imported_notes'], 2);
+        expect(summary.rowsCopiedByTable['users'], 2);
+        expect(summary.rowsCopiedByTable['imported_notes'], 2);
+        expect(summary.targetTableCount, 2);
+        expect(summary.targetIndexCount, greaterThanOrEqualTo(1));
+        expect(summary.targetViewCount, 0);
+        expect(summary.targetTriggerCount, 0);
+        expect(summary.databaseFileBytes, greaterThan(8192));
+        expect(summary.walFileBytes, 0);
 
         await bridge.openDatabase(targetPath);
         final rows = await queryAllRows('''

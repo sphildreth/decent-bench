@@ -421,6 +421,7 @@ Future<SqlDumpImportSummary> _runSqlDumpImport({
 
     target.commit();
     transactionOpen = false;
+    target.checkpoint();
 
     return SqlDumpImportSummary(
       jobId: request.jobId,

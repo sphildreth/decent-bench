@@ -139,6 +139,12 @@ Map<String, Object?> buildSqliteImportSummaryLogDetails(
     extra: <String, Object?>{
       'status_message': summary.statusMessage,
       'index_count': summary.indexesCreated.length,
+      'target_table_count': summary.targetTableCount,
+      'target_index_count': summary.targetIndexCount,
+      'target_view_count': summary.targetViewCount,
+      'target_trigger_count': summary.targetTriggerCount,
+      'database_file_bytes': summary.databaseFileBytes,
+      'wal_file_bytes': summary.walFileBytes,
       if (summary.indexesCreated.isNotEmpty)
         'indexes_created': summary.indexesCreated,
       'skipped_item_count': summary.skippedItems.length,

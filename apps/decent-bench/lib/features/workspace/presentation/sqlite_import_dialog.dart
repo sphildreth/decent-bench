@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'package:decent_bench/shared/widgets/import_failure_dialog.dart';
 
 import '../application/workspace_controller.dart';
 import '../domain/import_target_types.dart';
@@ -23,6 +24,7 @@ class _SqliteImportDialogState extends State<SqliteImportDialog> {
       TextEditingController();
   late final TextEditingController _targetPathController =
       TextEditingController();
+  String? _shownFailureMessage;
 
   @override
   void dispose() {
@@ -41,6 +43,7 @@ class _SqliteImportDialogState extends State<SqliteImportDialog> {
           return const SizedBox.shrink();
         }
         _syncControllers(session);
+        _maybeShowFailureDialog(session);
 
         return AlertDialog(
           title: const Text('SQLite Import Wizard'),
@@ -77,6 +80,35 @@ class _SqliteImportDialogState extends State<SqliteImportDialog> {
         );
       },
     );
+  }
+
+  void _maybeShowFailureDialog(SqliteImportSession session) {
+    if (session.phase != SqliteImportJobPhase.failed ||
+        session.step != SqliteImportWizardStep.summary ||
+        session.error == null) {
+      _shownFailureMessage = null;
+      return;
+    }
+    if (_shownFailureMessage == session.error) {
+      return;
+    }
+    _shownFailureMessage = session.error;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      showImportFailureDialog(
+        context: context,
+        title: 'SQLite import failed',
+        message: session.error!,
+        onAcknowledged: () {
+          widget.controller.closeSqliteImportSession();
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+        },
+      );
+    });
   }
 
   Widget _buildStepHeader(SqliteImportSession session) {
@@ -409,9 +441,58 @@ class _SqliteImportDialogState extends State<SqliteImportDialog> {
               ('Imported tables', '${summary.importedTables.length}'),
               ('Rows copied', '${summary.totalRowsCopied}'),
               ('Indexes created', '${summary.indexesCreated.length}'),
+              ('Target tables', '${summary.targetTableCount}'),
+              ('Target indexes', '${summary.targetIndexCount}'),
+              ('Target views', '${summary.targetViewCount}'),
+              ('Target triggers', '${summary.targetTriggerCount}'),
+              ('Database size', _formatByteCount(summary.databaseFileBytes)),
+              (
+                'WAL size after checkpoint',
+                _formatByteCount(summary.walFileBytes),
+              ),
               ('Rolled back', summary.rolledBack ? 'Yes' : 'No'),
             ],
           ),
+          const SizedBox(height: 16),
+          Text(
+            'Imported tables',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          if (summary.importedTables.isEmpty)
+            const Text('No tables were imported.')
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                for (final table in summary.importedTables)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      '$table | ${summary.rowsCopiedByTable[table] ?? 0} rows',
+                    ),
+                  ),
+              ],
+            ),
+          const SizedBox(height: 16),
+          Text(
+            'Indexes created',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          if (summary.indexesCreated.isEmpty)
+            const Text('No indexes were created.')
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                for (final index in summary.indexesCreated)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(index),
+                  ),
+              ],
+            ),
           if (summary.warnings.isNotEmpty) ...<Widget>[
             const SizedBox(height: 16),
             Text('Warnings', style: Theme.of(context).textTheme.titleSmall),
@@ -440,6 +521,22 @@ class _SqliteImportDialogState extends State<SqliteImportDialog> {
         ],
       ),
     );
+  }
+
+  String _formatByteCount(int bytes) {
+    const units = <String>['B', 'KB', 'MB', 'GB', 'TB'];
+    var value = bytes.toDouble();
+    var unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex++;
+    }
+    final precision = unitIndex == 0
+        ? 0
+        : value >= 10
+        ? 1
+        : 2;
+    return '${value.toStringAsFixed(precision)} ${units[unitIndex]}';
   }
 
   Widget _buildTableList(SqliteImportSession session) {

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:decent_bench/shared/widgets/import_failure_dialog.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
@@ -79,6 +80,7 @@ class _GenericImportDialogState extends State<GenericImportDialog> {
   bool _replaceExistingTarget = true;
   String? _focusedTableId;
   String? _lastSuggestedTargetPath;
+  String? _shownFailureMessage;
 
   int _durationToNanos(Duration duration) => duration.inMicroseconds * 1000;
 
@@ -165,6 +167,7 @@ class _GenericImportDialogState extends State<GenericImportDialog> {
 
   @override
   Widget build(BuildContext context) {
+    _maybeShowFailureDialog();
     return AlertDialog(
       title: Text('${widget.initialFormat.label} Import Wizard'),
       content: SizedBox(
@@ -198,6 +201,34 @@ class _GenericImportDialogState extends State<GenericImportDialog> {
       ),
       actions: _buildActions(context),
     );
+  }
+
+  void _maybeShowFailureDialog() {
+    if (_phase != GenericImportJobPhase.failed ||
+        _step != GenericImportWizardStep.summary ||
+        _error == null) {
+      _shownFailureMessage = null;
+      return;
+    }
+    if (_shownFailureMessage == _error) {
+      return;
+    }
+    _shownFailureMessage = _error;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _error == null) {
+        return;
+      }
+      showImportFailureDialog(
+        context: context,
+        title: '${widget.initialFormat.label} import failed',
+        message: _error!,
+        onAcknowledged: () {
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+        },
+      );
+    });
   }
 
   Widget _buildStepHeader() {
@@ -807,9 +838,17 @@ class _GenericImportDialogState extends State<GenericImportDialog> {
 
   Widget _buildSummaryStep() {
     if (_summary == null) {
-      return const _EmptyState(
-        title: 'No summary yet',
-        message: 'Run the import to populate the summary view.',
+      return _EmptyState(
+        title: _phase == GenericImportJobPhase.failed
+            ? 'Import failed'
+            : _phase == GenericImportJobPhase.cancelled
+            ? 'Import cancelled'
+            : 'No summary yet',
+        message:
+            _error ??
+            (_phase == GenericImportJobPhase.cancelled
+                ? 'The import was cancelled before a summary was produced.'
+                : 'Run the import to populate the summary view.'),
       );
     }
     return ListView(
@@ -907,7 +946,7 @@ class _GenericImportDialogState extends State<GenericImportDialog> {
       GenericImportWizardStep.preview => 'Next',
       GenericImportWizardStep.transforms => 'Next',
       GenericImportWizardStep.execute => 'Run Import',
-      GenericImportWizardStep.summary => 'Done',
+      GenericImportWizardStep.summary => _summary == null ? 'Close' : 'Done',
     };
   }
 
@@ -955,7 +994,11 @@ class _GenericImportDialogState extends State<GenericImportDialog> {
         await _runImport();
         break;
       case GenericImportWizardStep.summary:
-        if (!mounted || _summary == null) {
+        if (!mounted) {
+          return;
+        }
+        if (_summary == null) {
+          Navigator.of(context).pop();
           return;
         }
         Navigator.of(context).pop(
@@ -1199,6 +1242,7 @@ class _GenericImportDialogState extends State<GenericImportDialog> {
             _step = GenericImportWizardStep.summary;
           });
         case GenericImportUpdateKind.failed:
+          final message = update.message ?? 'The import failed.';
           _logError(
             'run_generic_import',
             'Generic import failed.',
@@ -1210,7 +1254,7 @@ class _GenericImportDialogState extends State<GenericImportDialog> {
               'format_key': request.formatKey.name,
               'format_label': widget.initialFormat.label,
               'selected_table_count': request.selectedTables.length,
-              'message': update.message,
+              'message': message,
             },
           );
           if (!mounted) {
@@ -1218,7 +1262,8 @@ class _GenericImportDialogState extends State<GenericImportDialog> {
           }
           setState(() {
             _phase = GenericImportJobPhase.failed;
-            _error = update.message ?? 'The import failed.';
+            _step = GenericImportWizardStep.summary;
+            _error = message;
           });
       }
     });

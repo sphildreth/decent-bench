@@ -205,7 +205,10 @@ Future<SqliteImportSummary> _runSqliteImport({
     request.sourcePath,
     mode: sqlite.OpenMode.readOnly,
   );
-  final target = Database.open(request.targetPath, libraryPath: libraryPath);
+  Database? target = Database.open(
+    request.targetPath,
+    libraryPath: libraryPath,
+  );
   var transactionOpen = false;
   final rowsCopied = <String, int>{};
   final indexesCreated = <String>[];
@@ -322,6 +325,25 @@ Future<SqliteImportSummary> _runSqliteImport({
 
     target.commit();
     transactionOpen = false;
+    target.checkpoint();
+    final schema = target.schema;
+    final storage = target.inspectStorageState();
+    final targetTableCount = schema.listTables().length;
+    final targetIndexCount = schema.listIndexes().length;
+    final targetViewCount = schema.listViews().length;
+    final targetTriggerCount = schema.listTriggers().length;
+    final walFile = File(storage.walPath);
+    target.close();
+    target = null;
+    if (!request.importIntoExistingTarget &&
+        storage.activeReaders == 0 &&
+        walFile.existsSync()) {
+      walFile.deleteSync();
+    }
+    final databaseFileBytes = targetFile.existsSync()
+        ? targetFile.lengthSync()
+        : 0;
+    final walFileBytes = walFile.existsSync() ? walFile.lengthSync() : 0;
 
     return SqliteImportSummary(
       jobId: request.jobId,
@@ -330,6 +352,12 @@ Future<SqliteImportSummary> _runSqliteImport({
       importedTables: orderedTables.map((table) => table.targetName).toList(),
       rowsCopiedByTable: rowsCopied,
       indexesCreated: indexesCreated,
+      targetTableCount: targetTableCount,
+      targetIndexCount: targetIndexCount,
+      targetViewCount: targetViewCount,
+      targetTriggerCount: targetTriggerCount,
+      databaseFileBytes: databaseFileBytes,
+      walFileBytes: walFileBytes,
       skippedItems: skippedItems,
       warnings: warnings,
       statusMessage:
@@ -339,7 +367,7 @@ Future<SqliteImportSummary> _runSqliteImport({
   } on _SqliteImportCancelledSignal {
     if (transactionOpen) {
       try {
-        target.rollback();
+        target?.rollback();
       } catch (_) {
         // Best-effort rollback for cancellation.
       }
@@ -351,6 +379,12 @@ Future<SqliteImportSummary> _runSqliteImport({
       importedTables: rowsCopied.keys.toList(),
       rowsCopiedByTable: rowsCopied,
       indexesCreated: indexesCreated,
+      targetTableCount: 0,
+      targetIndexCount: 0,
+      targetViewCount: 0,
+      targetTriggerCount: 0,
+      databaseFileBytes: 0,
+      walFileBytes: 0,
       skippedItems: skippedItems,
       warnings: warnings,
       statusMessage: 'SQLite import cancelled and rolled back.',
@@ -360,14 +394,14 @@ Future<SqliteImportSummary> _runSqliteImport({
   } catch (_) {
     if (transactionOpen) {
       try {
-        target.rollback();
+        target?.rollback();
       } catch (_) {
         // Best-effort rollback on failure.
       }
     }
     rethrow;
   } finally {
-    target.close();
+    target?.close();
     source.close();
   }
 }
