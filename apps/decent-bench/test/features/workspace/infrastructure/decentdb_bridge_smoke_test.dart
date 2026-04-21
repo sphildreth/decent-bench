@@ -27,12 +27,7 @@ class _FixedResolver extends NativeLibraryResolver {
 
 String? _resolveNativeLib() {
   final resolver = NativeLibraryResolver();
-  final candidates = [
-    '/usr/local/lib/${resolver.libraryFileName}',
-    '/usr/lib/${resolver.libraryFileName}',
-    '${Platform.environment['HOME']}/.local/lib/${resolver.libraryFileName}',
-  ];
-  for (final candidate in candidates) {
+  for (final candidate in resolver.candidatePaths()) {
     if (File(candidate).existsSync()) {
       return candidate;
     }
@@ -43,7 +38,7 @@ String? _resolveNativeLib() {
 void main() {
   final nativeLib = _resolveNativeLib();
   final skipReason = nativeLib == null
-      ? 'DecentDB native library not found in system paths'
+      ? 'DecentDB native library is unavailable'
       : null;
 
   group('DecentDbBridge smoke tests', () {
@@ -94,9 +89,7 @@ void main() {
       if (lib == null) {
         throw Exception(skipReason);
       }
-      final service = ImportExecutionService(
-        resolver: _FixedResolver(lib),
-      );
+      final service = ImportExecutionService(resolver: _FixedResolver(lib));
       final updates = await service.execute(request: request).toList();
       final terminal = updates.last;
 

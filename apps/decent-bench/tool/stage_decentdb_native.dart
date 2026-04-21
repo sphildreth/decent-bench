@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:decent_bench/features/workspace/infrastructure/decentdb_native_release_asset.dart';
 import 'package:decent_bench/features/workspace/infrastructure/native_library_resolver.dart';
 import 'package:path/path.dart' as p;
 
@@ -47,7 +48,9 @@ Future<void> main(List<String> args) async {
   final sourceFile = File(
     sourcePath?.isNotEmpty == true
         ? sourcePath!
-        : await resolver.resolvePackagingSource(),
+        : await DecentDbNativeReleaseAsset.ensureAvailableForCurrentProject(
+            startPath: Directory.current.path,
+          ),
   );
   if (!sourceFile.existsSync()) {
     stderr.writeln(

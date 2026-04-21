@@ -74,7 +74,7 @@
 
 ## 🚀 Getting Started (End Users)
 
-*Binary releases for Linux, macOS, and Windows will be available on the [Releases](https://github.com/sphildreth/decent-bench/releases) page.*
+*Binary releases for Linux, macOS, and Windows are listed on the [Releases](https://github.com/sphildreth/decent-bench/releases) page.*
 
 ### Command-line Launch
 Packaged desktop builds expose a narrow CLI entry for import flows:
@@ -92,6 +92,13 @@ Want to build from source or contribute? Welcome!
 - **Git**
 - **Flutter** (stable, desktop tooling enabled)
 - OS-specific native toolchain (C++ compiler, etc.)
+- A matching **DecentDB native library** for the pinned app version
+
+Decent Bench pins the upstream Dart package by Git tag and expects the matching
+DecentDB desktop native library alongside it. CI and release packaging resolve
+that version from `apps/decent-bench/pubspec.lock` and download the matching
+`decentdb-dart-native-<tag>-...` asset from
+[`sphildreth/decentdb` Releases](https://github.com/sphildreth/decentdb/releases).
 
 ### 1. Bootstrap the Flutter App
 ```bash
@@ -99,20 +106,32 @@ cd apps/decent-bench
 flutter pub get
 ```
 
-### 2. Run Locally
+### 2. Install the Matching DecentDB Native Library
+The app and test tooling resolve the pinned `decentdb` tag from
+`apps/decent-bench/pubspec.lock` and download the matching
+`decentdb-dart-native-<tag>-...` release asset from DecentDB Releases into a
+local cache when needed. The app still prefers a bundled native library first,
+then the cached pinned asset, then common system locations.
+
+### 3. Run Locally
 ```bash
 flutter run -d linux
 ```
 
-### 3. Testing & Validation
+### 4. Testing & Validation
 ```bash
 flutter analyze
 flutter test
 flutter test integration_test
 ```
 
-### 4. Packaging Desktop Builds
-Build the bundle, then use the staging helper to inject the DecentDB native library:
+These commands will fetch the matching pinned DecentDB native library on first
+use if it is not already cached.
+
+### 5. Packaging Desktop Builds
+Build the bundle, then use the staging helper to inject the DecentDB native
+library. The `--source` path can point at either an extracted
+`decentdb-dart-native-<tag>-...` release asset or a local DecentDB build:
 ```bash
 flutter build linux
 dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle
