@@ -6,7 +6,8 @@ Apache 2.0 distribution. This file tracks attributions and license details.
 ## Dependencies
 
 - `decentdb`
-  - Version/source: local path dependency at `../decentdb/bindings/dart/dart`
+  - Version/source: Git dependency from `https://github.com/sphildreth/decentdb`,
+    path `bindings/dart/dart`, ref `v2.3.0`
   - License: Apache License 2.0
   - Upstream project: `https://github.com/sphildreth/decentdb`
 
@@ -44,3 +45,20 @@ Apache 2.0 distribution. This file tracks attributions and license details.
   - License: MIT
   - Copyright: Lukas Renggli
   - Source: `https://pub.dev/packages/xml`
+
+- `path` `^1.9.0`
+  - License: BSD-style license (Dart project)
+  - Copyright: Dart project authors
+  - Source: `https://pub.dev/packages/path`
+  - Note: `path` is a Dart SDK team package; attribution included for
+    completeness.
+
+## Transitive dependency notes
+
+The following transitive dependencies are brought in by direct dependencies.
+Their licenses are compatible with Apache 2.0 distribution:
+
+- `archive` brings `crypto` (MIT, Dart project authors) and `convert`
+  (BSD-style, Dart project authors)
+- `sqlite3` brings `collection` and `meta` (BSD-style, Dart project authors)
+- `excel` brings `equatable` (MIT), `ffi` (BSD-style), and `recase` (MIT)

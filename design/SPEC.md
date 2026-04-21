@@ -231,6 +231,21 @@ concerns is required.
   - show a clear notice when the supplied path is missing or not an importable
     source type
 
+### 4.1a Headless CLI import mode (v1.0.0+)
+
+Decent Bench also ships a headless import CLI mode that runs without the
+desktop UI:
+
+- `dbench --in <source-path> --out <target.ddb>` runs a headless import
+  using inferred defaults
+- `dbench --in <source-path> --out <target.ddb> --plan <plan.json>` runs
+  a headless import with explicit import options from a versioned JSON plan
+  file (see `docs/HEADLESS_IMPORT_PLAN_DETAILS.md`)
+- `dbench --silent` suppresses non-error console output in headless mode
+
+This mode is governed by ADR-0022 and is intended for scripting and batch
+workflows. It is a shipped v1.0.0 feature and is not considered experimental.
+
 **Multi-drop:**
 - If more than one file is dropped:
   - take the first
