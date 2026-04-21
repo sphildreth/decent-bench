@@ -191,6 +191,28 @@ CREATE TABLE events (
       return sourcePath;
     }
 
+    String createSqliteHighPrecisionTimestampSource(String filename) {
+      final sourcePath = p.join(tempDir.path, filename);
+      final source = sqlite.sqlite3.open(sourcePath);
+      try {
+        source.execute('''
+CREATE TABLE events (
+  id INTEGER PRIMARY KEY,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL
+)
+''');
+        source.execute('''
+INSERT INTO events VALUES
+  (1, '2024-12-30T10:02:04.901481207-06:00', '2024-12-29T10:00:03.033627726-06:00'),
+  (2, '2025-01-01 11:00:42.24883752-06:00', '2024-10-14 16:04:46')
+''');
+      } finally {
+        source.close();
+      }
+      return sourcePath;
+    }
+
     String createSqliteImplicitFkSource(String filename) {
       final sourcePath = p.join(tempDir.path, filename);
       final source = sqlite.sqlite3.open(sourcePath);
@@ -998,6 +1020,42 @@ ORDER BY n.id
           ),
           isTrue,
         );
+      },
+    );
+
+    test(
+      'imports SQLite datetime text with more than 6 fractional digits',
+      skip: skipReason,
+      () async {
+        final sourcePath = createSqliteHighPrecisionTimestampSource(
+          'phase4-high-precision.sqlite',
+        );
+        final inspection = await bridge.inspectSqliteSource(
+          sourcePath: sourcePath,
+        );
+        final events = inspection.tables.singleWhere(
+          (table) => table.sourceName == 'events',
+        );
+        final targetPath = p.join(tempDir.path, 'phase4-high-precision.ddb');
+        final request = SqliteImportRequest(
+          jobId: 'smoke-high-precision-import',
+          sourcePath: sourcePath,
+          targetPath: targetPath,
+          importIntoExistingTarget: false,
+          replaceExistingTarget: true,
+          tables: <SqliteImportTableDraft>[events],
+        );
+
+        final updates = await bridge.importSqlite(request: request).toList();
+
+        expect(updates.last.kind, SqliteImportUpdateKind.completed);
+
+        await bridge.openDatabase(targetPath);
+        final rows = await queryAllRows(
+          'SELECT id, created_at, updated_at FROM events ORDER BY id',
+        );
+
+        expect(rows, hasLength(2));
       },
     );
 

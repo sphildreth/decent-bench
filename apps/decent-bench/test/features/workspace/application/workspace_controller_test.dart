@@ -395,6 +395,34 @@ void main() {
     expect((await store.load()).recentFiles, contains(dbPath));
   });
 
+  test('openLogDatabase opens the configured application log database', () async {
+    final logPath =
+        '${Directory.systemTemp.path}/decent-bench-log-${DateTime.now().microsecondsSinceEpoch}.ddb';
+    final file = File(logPath);
+    await file.parent.create(recursive: true);
+    await file.writeAsString('');
+
+    addTearDown(() async {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    });
+
+    final controller = WorkspaceController(
+      gateway: FakeWorkspaceGateway(),
+      logger: _FixedPathLogger(logPath),
+      configStore: InMemoryConfigStore(),
+      workspaceStateStore: InMemoryWorkspaceStateStore(),
+    );
+    await controller.initialize();
+
+    await controller.openLogDatabase();
+
+    expect(controller.databasePath, logPath);
+    expect(controller.engineVersion, '1.6.1');
+    expect(controller.workspaceError, isNull);
+  });
+
   test('applyAppConfig persists and reloads TOML-backed preferences', () async {
     final store = InMemoryConfigStore();
     final controller = WorkspaceController(
@@ -1114,4 +1142,13 @@ void main() {
     );
     expect(controller.sqliteImportSession?.summary?.rolledBack, isTrue);
   });
+}
+
+class _FixedPathLogger extends RecordingAppLogger {
+  _FixedPathLogger(this._logDatabasePath);
+
+  final String _logDatabasePath;
+
+  @override
+  String get logDatabasePath => _logDatabasePath;
 }

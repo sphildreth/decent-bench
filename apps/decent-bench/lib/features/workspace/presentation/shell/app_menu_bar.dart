@@ -152,6 +152,7 @@ class NativeAppMenuHost extends StatelessWidget {
           ),
           PlatformMenuItemGroup(
             members: <PlatformMenuItem>[
+              _platformCommandItem('tools_view_log'),
               _platformCommandItem('tools_query_history'),
               _platformCommandItem('tools_snippets'),
               _platformCommandItem('tools_manage_connections'),
@@ -320,6 +321,7 @@ class AppMenuBar extends StatelessWidget {
               _commandItem('tools_format_sql'),
               _commandItem('tools_new_query_tab'),
               const Divider(height: 1),
+              _commandItem('tools_view_log'),
               _commandItem('tools_query_history'),
               _commandItem('tools_snippets'),
               _commandItem('tools_manage_connections'),

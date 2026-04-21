@@ -382,6 +382,11 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
+  Future<void> openLogDatabase() async {
+    await _logger.initialize(minimumLevel: config.logging.verbosity);
+    await openDatabase(_logger.logDatabasePath, createIfMissing: false);
+  }
+
   Future<void> refreshSchema({bool showLoadingState = true}) async {
     if (!hasOpenDatabase) {
       return;

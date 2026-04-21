@@ -1909,6 +1909,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           onInvoke: _showQueryHistoryDialog,
         ),
         command(
+          id: 'tools_view_log',
+          label: 'View Log',
+          icon: Icons.receipt_long_outlined,
+          onInvoke: controller.openLogDatabase,
+        ),
+        command(
           id: 'tools_snippets',
           label: 'Manage Snippets',
           icon: Icons.library_books_outlined,
