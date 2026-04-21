@@ -191,6 +191,15 @@ class ImportFormatRegistry {
       description: 'Legacy DBF database import.',
     ),
     ImportFormatDefinition(
+      key: ImportFormatKey.msSqlBak,
+      label: 'MS SQL Server Backup',
+      family: ImportFamily.databaseDump,
+      supportState: ImportSupportState.complete,
+      extensions: <String>['.bak'],
+      implementationKind: ImportImplementationKind.legacyWizard,
+      description: 'Container-assisted MS SQL backup import.',
+    ),
+    ImportFormatDefinition(
       key: ImportFormatKey.sqlDump,
       label: 'SQL Dump',
       family: ImportFamily.databaseDump,
@@ -258,12 +267,15 @@ class ImportFormatRegistry {
     ),
     ImportFormatDefinition(
       key: ImportFormatKey.bzip2Archive,
-      label: 'BZip2 Wrapper',
+      label: 'BZip2 / Tar+BZip2 Wrapper',
       family: ImportFamily.compressedArchive,
-      supportState: ImportSupportState.investigate,
+      supportState: ImportSupportState.complete,
       extensions: <String>['.bz2'],
-      implementationKind: ImportImplementationKind.recognizedUnsupported,
-      description: 'BZip2 compressed wrapper support.',
+      implementationKind: ImportImplementationKind.wrapper,
+      description:
+          'BZip2 wrapper for single-file decompression and tar+bzip2 '
+          'archive extraction. Uses the system tar command for large '
+          'tar archives.',
     ),
     ImportFormatDefinition(
       key: ImportFormatKey.xzArchive,

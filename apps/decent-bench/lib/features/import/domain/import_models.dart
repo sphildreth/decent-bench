@@ -56,6 +56,7 @@ enum ImportFormatKey {
   duckdb,
   access,
   dbf,
+  msSqlBak,
   sqlDump,
   postgresPlainDump,
   parquet,
