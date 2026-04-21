@@ -22,26 +22,20 @@ jobs:
           - os: ubuntu-latest
             flutter_target: linux
             bundle_path: build/linux/x64/release/bundle
-            decentdb_release_suffix: Linux-x64
             native_archive_extension: tar.gz
             native_lib_name: libdecentdb.so
-            app_arch_suffix: x64
             archive_extension: tar.gz
           - os: macos-latest
             flutter_target: macos
             bundle_path: build/macos/Build/Products/Release/decent_bench.app
-            decentdb_release_suffix: macOS-arm64
             native_archive_extension: tar.gz
             native_lib_name: libdecentdb.dylib
-            app_arch_suffix: arm64
             archive_extension: tar.gz
           - os: windows-latest
             flutter_target: windows
             bundle_path: build/windows/x64/runner/Release
-            decentdb_release_suffix: Windows-x64
             native_archive_extension: zip
             native_lib_name: decentdb.dll
-            app_arch_suffix: x64
             archive_extension: zip
 
     steps:
@@ -53,6 +47,34 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      - name: Resolve release platform metadata
+        id: release-meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$RUNNER_ARCH" in
+            X64) arch_suffix=x64 ;;
+            ARM64) arch_suffix=arm64 ;;
+            *)
+              echo "Unsupported runner architecture: $RUNNER_ARCH" >&2
+              exit 1
+              ;;
+          esac
+
+          case "$RUNNER_OS" in
+            Linux) decentdb_release_suffix="Linux-$arch_suffix" ;;
+            macOS) decentdb_release_suffix="macOS-$arch_suffix" ;;
+            Windows) decentdb_release_suffix="Windows-$arch_suffix" ;;
+            *)
+              echo "Unsupported runner OS: $RUNNER_OS" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "app_arch_suffix=$arch_suffix" >> "$GITHUB_OUTPUT"
+          echo "decentdb_release_suffix=$decentdb_release_suffix" >> "$GITHUB_OUTPUT"
 
       - name: Install Linux desktop build dependencies
         if: runner.os == 'Linux'
@@ -91,7 +113,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ steps.decentdb-version.outputs.tag }}"
-          asset="decentdb-dart-native-${tag}-${{ matrix.decentdb_release_suffix }}.${{ matrix.native_archive_extension }}"
+          asset="decentdb-dart-native-${tag}-${{ steps.release-meta.outputs.decentdb_release_suffix }}.${{ matrix.native_archive_extension }}"
           url="https://github.com/sphildreth/decentdb/releases/download/${tag}/${asset}"
           work_dir="$RUNNER_TEMP/decentdb-native"
           archive_path="$RUNNER_TEMP/$asset"
@@ -105,7 +127,7 @@ jobs:
         shell: pwsh
         run: |
           $tag = "${{ steps.decentdb-version.outputs.tag }}"
-          $asset = "decentdb-dart-native-$tag-${{ matrix.decentdb_release_suffix }}.${{ matrix.native_archive_extension }}"
+          $asset = "decentdb-dart-native-$tag-${{ steps.release-meta.outputs.decentdb_release_suffix }}.${{ matrix.native_archive_extension }}"
           $url = "https://github.com/sphildreth/decentdb/releases/download/$tag/$asset"
           $workDir = Join-Path $env:RUNNER_TEMP "decentdb-native"
           $archivePath = Join-Path $env:RUNNER_TEMP $asset
@@ -181,7 +203,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "name=decent-bench-${GITHUB_REF_NAME}-${RUNNER_OS}-${{ matrix.app_arch_suffix }}.${{ matrix.archive_extension }}" >> "$GITHUB_OUTPUT"
+          echo "name=decent-bench-${GITHUB_REF_NAME}-${RUNNER_OS}-${{ steps.release-meta.outputs.app_arch_suffix }}.${{ matrix.archive_extension }}" >> "$GITHUB_OUTPUT"
 
       - name: Stage DecentDB native library into bundle
         working-directory: ${{ env.APP_DIR }}
@@ -198,7 +220,7 @@ jobs:
         run: |
           set -euo pipefail
           stage_root="$RUNNER_TEMP/release-stage"
-          package_root="decent-bench-${GITHUB_REF_NAME}-${RUNNER_OS}-${{ matrix.app_arch_suffix }}"
+          package_root="decent-bench-${GITHUB_REF_NAME}-${RUNNER_OS}-${{ steps.release-meta.outputs.app_arch_suffix }}"
           stage_dir="$stage_root/$package_root"
           bundle_path="${{ steps.bundle.outputs.path }}"
 
@@ -219,7 +241,7 @@ jobs:
         shell: pwsh
         run: |
           $stageRoot = Join-Path $env:RUNNER_TEMP "release-stage"
-          $packageRoot = "decent-bench-$env:GITHUB_REF_NAME-$env:RUNNER_OS-${{ matrix.app_arch_suffix }}"
+          $packageRoot = "decent-bench-$env:GITHUB_REF_NAME-$env:RUNNER_OS-${{ steps.release-meta.outputs.app_arch_suffix }}"
           $stageDir = Join-Path $stageRoot $packageRoot
           $bundlePath = "${{ steps.bundle.outputs.path }}"
 
@@ -235,6 +257,7 @@ jobs:
         with:
           name: release-${{ matrix.os }}
           path: ${{ env.APP_DIR }}/${{ steps.artifact.outputs.name }}
+          if-no-files-found: error
 
   release:
     name: Create GitHub Release
@@ -254,7 +277,8 @@ jobs:
           tag_name: ${{ github.ref_name }}
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
-            artifacts/**/decent-bench-${{ github.ref_name }}-Linux-x64.tar.gz
-            artifacts/**/decent-bench-${{ github.ref_name }}-macOS-arm64.tar.gz
-            artifacts/**/decent-bench-${{ github.ref_name }}-Windows-x64.zip
+            artifacts/**/decent-bench-${{ github.ref_name }}-Linux-*.tar.gz
+            artifacts/**/decent-bench-${{ github.ref_name }}-macOS-*.tar.gz
+            artifacts/**/decent-bench-${{ github.ref_name }}-Windows-*.zip
