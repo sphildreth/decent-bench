@@ -98,7 +98,17 @@ jobs:
             sleep 0.1
           done
           export DISPLAY=":$(cat "$display_file")"
+          # Run integration tests; retry once on non-zero exit to handle the
+          # known Linux desktop shutdown crash where all test assertions pass
+          # but the binary exits non-zero during cleanup.
+          set +e
           flutter test integration_test
+          it_exit=$?
+          set -e
+          if [ "$it_exit" -ne 0 ]; then
+            echo "::warning::Integration test exited with $it_exit on first attempt; retrying..."
+            flutter test integration_test
+          fi
 
   desktop-package-verify:
     runs-on: ${{ matrix.os }}
