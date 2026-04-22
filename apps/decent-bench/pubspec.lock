@@ -85,11 +85,11 @@ packages:
     dependency: "direct main"
     description:
       path: "bindings/dart/dart"
-      ref: "v2.2.1"
-      resolved-ref: "7168eccd2c88bc6fa61684019e325ebc0957ea28"
+      ref: "v2.3.0"
+      resolved-ref: "2adfd725a4cd3951e95802f3af513b9185616db3"
       url: "https://github.com/sphildreth/decentdb"
     source: git
-    version: "2.2.1"
+    version: "2.3.0"
   desktop_drop:
     dependency: "direct main"
     description:

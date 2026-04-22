@@ -191,6 +191,15 @@ class ImportFormatRegistry {
       description: 'Legacy DBF database import.',
     ),
     ImportFormatDefinition(
+      key: ImportFormatKey.msSqlBak,
+      label: 'MS SQL Server Backup',
+      family: ImportFamily.databaseDump,
+      supportState: ImportSupportState.investigate,
+      extensions: <String>['.bak'],
+      implementationKind: ImportImplementationKind.recognizedUnsupported,
+      description: 'Container-assisted MS SQL backup import (not yet implemented).',
+    ),
+    ImportFormatDefinition(
       key: ImportFormatKey.sqlDump,
       label: 'SQL Dump',
       family: ImportFamily.databaseDump,
@@ -251,19 +260,22 @@ class ImportFormatRegistry {
       label: 'GZip Wrapper',
       family: ImportFamily.compressedArchive,
       supportState: ImportSupportState.complete,
-      extensions: <String>['.gz'],
+      extensions: <String>['.gz', '.tgz'],
       implementationKind: ImportImplementationKind.wrapper,
       description:
           'Single-file wrapper that unwraps supported CSV/JSON/NDJSON/XML/HTML/SQL/Excel/SQLite files.',
     ),
     ImportFormatDefinition(
       key: ImportFormatKey.bzip2Archive,
-      label: 'BZip2 Wrapper',
+      label: 'BZip2 / Tar+BZip2 Wrapper',
       family: ImportFamily.compressedArchive,
-      supportState: ImportSupportState.investigate,
-      extensions: <String>['.bz2'],
-      implementationKind: ImportImplementationKind.recognizedUnsupported,
-      description: 'BZip2 compressed wrapper support.',
+      supportState: ImportSupportState.complete,
+      extensions: <String>['.bz2', '.tbz2'],
+      implementationKind: ImportImplementationKind.wrapper,
+      description:
+          'BZip2 wrapper for single-file decompression and tar+bzip2 '
+          'archive extraction. Uses the system tar command for large '
+          'tar archives.',
     ),
     ImportFormatDefinition(
       key: ImportFormatKey.xzArchive,

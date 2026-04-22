@@ -579,6 +579,12 @@ class SqliteImportSummary {
     required this.importedTables,
     required this.rowsCopiedByTable,
     required this.indexesCreated,
+    required this.targetTableCount,
+    required this.targetIndexCount,
+    required this.targetViewCount,
+    required this.targetTriggerCount,
+    required this.databaseFileBytes,
+    required this.walFileBytes,
     required this.skippedItems,
     required this.warnings,
     required this.statusMessage,
@@ -591,6 +597,12 @@ class SqliteImportSummary {
   final List<String> importedTables;
   final Map<String, int> rowsCopiedByTable;
   final List<String> indexesCreated;
+  final int targetTableCount;
+  final int targetIndexCount;
+  final int targetViewCount;
+  final int targetTriggerCount;
+  final int databaseFileBytes;
+  final int walFileBytes;
   final List<SqliteImportSkippedItem> skippedItems;
   final List<String> warnings;
   final String statusMessage;
@@ -610,6 +622,12 @@ class SqliteImportSummary {
       'importedTables': importedTables,
       'rowsCopiedByTable': rowsCopiedByTable,
       'indexesCreated': indexesCreated,
+      'targetTableCount': targetTableCount,
+      'targetIndexCount': targetIndexCount,
+      'targetViewCount': targetViewCount,
+      'targetTriggerCount': targetTriggerCount,
+      'databaseFileBytes': databaseFileBytes,
+      'walFileBytes': walFileBytes,
       'skippedItems': <Map<String, Object?>>[
         for (final item in skippedItems) item.toMap(),
       ],
@@ -631,6 +649,12 @@ class SqliteImportSummary {
               .map((key, value) => MapEntry(key as String, value as int)),
       indexesCreated: ((map['indexesCreated'] as List?) ?? const <Object?>[])
           .cast<String>(),
+      targetTableCount: map['targetTableCount']! as int,
+      targetIndexCount: map['targetIndexCount']! as int,
+      targetViewCount: map['targetViewCount']! as int,
+      targetTriggerCount: map['targetTriggerCount']! as int,
+      databaseFileBytes: map['databaseFileBytes']! as int,
+      walFileBytes: map['walFileBytes']! as int,
       skippedItems: ((map['skippedItems'] as List?) ?? const <Object?>[])
           .cast<Map<Object?, Object?>>()
           .map(

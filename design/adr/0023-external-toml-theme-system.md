@@ -1,4 +1,4 @@
-# 0013-external-toml-theme-system
+# 0023-external-toml-theme-system
 
 - **Status:** Proposed
 - **Date:** 2026-03-10

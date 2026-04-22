@@ -1,34 +1,45 @@
+import 'dart:io';
+
 import 'package:decent_bench/features/workspace/infrastructure/native_library_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
+  test('runtime resolution checks bundled library locations first', () async {
+    final resolver = NativeLibraryResolver(
+      currentDirectoryPath: '/workspace/apps/decent-bench',
+      scriptDirectoryPath: '/workspace/apps/decent-bench/tool',
+      resolvedExecutablePath: '/bundle/decent_bench',
+      platform: NativeLibraryPlatform.linux,
+      fileExists: (path) => path == '/bundle/lib/libdecentdb.so',
+    );
+
+    final result = await resolver.resolveDetailed();
+
+    expect(result.resolvedPath, '/bundle/lib/libdecentdb.so');
+    expect(result.checkedPaths.first, '/bundle/lib/libdecentdb.so');
+  });
+
   test(
-    'runtime resolution checks bundled library locations first',
+    'packaging resolution prefers the cached pinned release asset',
     () async {
-      final resolver = NativeLibraryResolver(
-        currentDirectoryPath: '/workspace/apps/decent-bench',
-        scriptDirectoryPath: '/workspace/apps/decent-bench/tool',
-        resolvedExecutablePath: '/bundle/decent_bench',
-        platform: NativeLibraryPlatform.linux,
-        fileExists: (path) => path == '/bundle/lib/libdecentdb.so',
+      final appDir = Directory.current.path;
+      final cachedLibraryPath = p.join(
+        appDir,
+        '.dart_tool',
+        'decentdb',
+        'native',
+        'v2.3.0',
+        'Linux-x64',
+        'libdecentdb.so',
       );
-
-      final result = await resolver.resolveDetailed();
-
-      expect(result.resolvedPath, '/bundle/lib/libdecentdb.so');
-      expect(result.checkedPaths.first, '/bundle/lib/libdecentdb.so');
-    },
-  );
-
-  test(
-    'packaging resolution checks repo search paths',
-    () async {
       final resolver = NativeLibraryResolver(
-        currentDirectoryPath: '/workspace/apps/decent-bench',
-        scriptDirectoryPath: '/workspace/apps/decent-bench/tool',
+        currentDirectoryPath: appDir,
+        scriptDirectoryPath: p.join(appDir, 'tool'),
         resolvedExecutablePath: '/bundle/decent_bench',
         platform: NativeLibraryPlatform.linux,
         fileExists: (path) =>
+            path == cachedLibraryPath ||
             path == '/workspace/decentdb/target/debug/libdecentdb.so',
       );
 
@@ -36,16 +47,31 @@ void main() {
         mode: NativeLibraryResolutionMode.packagingSource,
       );
 
-      expect(
-        result.resolvedPath,
-        '/workspace/decentdb/target/debug/libdecentdb.so',
-      );
-      expect(
-        result.checkedPaths.any((path) => path == '/bundle/lib/libdecentdb.so'),
-        isFalse,
-      );
+      expect(result.resolvedPath, cachedLibraryPath);
     },
   );
+
+  test('packaging resolution falls back to repo search paths', () async {
+    final appDir = Directory.current.path;
+    final repoFallbackPath = p.join(appDir, 'build', 'libdecentdb.so');
+    final resolver = NativeLibraryResolver(
+      currentDirectoryPath: appDir,
+      scriptDirectoryPath: p.join(appDir, 'tool'),
+      resolvedExecutablePath: '/bundle/decent_bench',
+      platform: NativeLibraryPlatform.linux,
+      fileExists: (path) => path == repoFallbackPath,
+    );
+
+    final result = await resolver.resolveDetailed(
+      mode: NativeLibraryResolutionMode.packagingSource,
+    );
+
+    expect(result.resolvedPath, repoFallbackPath);
+    expect(
+      result.checkedPaths.any((path) => path == '/bundle/lib/libdecentdb.so'),
+      isFalse,
+    );
+  });
 
   test('bundle relative install path matches platform conventions', () {
     final linux = NativeLibraryResolver(
@@ -78,31 +104,39 @@ void main() {
     expect(windows.bundleRelativeInstallPath, 'decentdb.dll');
   });
 
-  test(
-    'failure includes checked candidates',
-    () async {
-      final resolver = NativeLibraryResolver(
-        currentDirectoryPath: '/workspace/apps/decent-bench',
-        scriptDirectoryPath: '/workspace/apps/decent-bench/tool',
-        resolvedExecutablePath: '/bundle/decent_bench',
-        platform: NativeLibraryPlatform.linux,
-        fileExists: (_) => false,
-      );
+  test('failure includes checked candidates', () async {
+    final appDir = Directory.current.path;
+    final resolver = NativeLibraryResolver(
+      currentDirectoryPath: appDir,
+      scriptDirectoryPath: p.join(appDir, 'tool'),
+      resolvedExecutablePath: '/bundle/decent_bench',
+      platform: NativeLibraryPlatform.linux,
+      fileExists: (_) => false,
+    );
 
-      await expectLater(
-        resolver.resolve(),
-        throwsA(
-          isA<NativeLibraryResolutionFailure>()
-              .having(
-                (error) => error.toString(),
-                'message',
-                allOf(
-                  contains('/bundle/lib/libdecentdb.so'),
-                  contains('Install DecentDB system-wide'),
-                ),
+    await expectLater(
+      resolver.resolve(),
+      throwsA(
+        isA<NativeLibraryResolutionFailure>().having(
+          (error) => error.toString(),
+          'message',
+          allOf(
+            contains('/bundle/lib/libdecentdb.so'),
+            contains(
+              p.join(
+                appDir,
+                '.dart_tool',
+                'decentdb',
+                'native',
+                'v2.3.0',
+                'Linux-x64',
+                'libdecentdb.so',
               ),
+            ),
+            contains('Install DecentDB system-wide'),
+          ),
         ),
-      );
-    },
-  );
+      ),
+    );
+  });
 }

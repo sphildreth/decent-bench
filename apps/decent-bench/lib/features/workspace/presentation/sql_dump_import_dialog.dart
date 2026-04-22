@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'package:decent_bench/shared/widgets/import_failure_dialog.dart';
 
 import '../application/workspace_controller.dart';
 import '../domain/import_target_types.dart';
@@ -23,6 +24,7 @@ class _SqlDumpImportDialogState extends State<SqlDumpImportDialog> {
       TextEditingController();
   late final TextEditingController _targetPathController =
       TextEditingController();
+  String? _shownFailureMessage;
 
   @override
   void dispose() {
@@ -41,6 +43,7 @@ class _SqlDumpImportDialogState extends State<SqlDumpImportDialog> {
           return const SizedBox.shrink();
         }
         _syncControllers(session);
+        _maybeShowFailureDialog(session);
 
         return AlertDialog(
           title: const Text('SQL Dump Import Wizard'),
@@ -78,6 +81,35 @@ class _SqlDumpImportDialogState extends State<SqlDumpImportDialog> {
         );
       },
     );
+  }
+
+  void _maybeShowFailureDialog(SqlDumpImportSession session) {
+    if (session.phase != SqlDumpImportJobPhase.failed ||
+        session.step != SqlDumpImportWizardStep.summary ||
+        session.error == null) {
+      _shownFailureMessage = null;
+      return;
+    }
+    if (_shownFailureMessage == session.error) {
+      return;
+    }
+    _shownFailureMessage = session.error;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      showImportFailureDialog(
+        context: context,
+        title: 'SQL dump import failed',
+        message: session.error!,
+        onAcknowledged: () {
+          widget.controller.closeSqlDumpImportSession();
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+        },
+      );
+    });
   }
 
   Widget _buildStepHeader(SqlDumpImportSession session) {
@@ -420,9 +452,17 @@ class _SqlDumpImportDialogState extends State<SqlDumpImportDialog> {
   Widget _buildSummaryStep(SqlDumpImportSession session) {
     final summary = session.summary;
     if (summary == null) {
-      return const _DialogEmptyState(
-        title: 'No summary available',
-        message: 'Run a SQL dump import to populate the summary view.',
+      return _DialogEmptyState(
+        title: session.phase == SqlDumpImportJobPhase.failed
+            ? 'Import failed'
+            : session.phase == SqlDumpImportJobPhase.cancelled
+            ? 'Import cancelled'
+            : 'Import summary unavailable',
+        message:
+            session.error ??
+            (session.phase == SqlDumpImportJobPhase.cancelled
+                ? 'The SQL dump import was cancelled before a summary was produced.'
+                : 'Run a SQL dump import to populate the summary view.'),
       );
     }
 

@@ -382,6 +382,11 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
+  Future<void> openLogDatabase() async {
+    await _logger.initialize(minimumLevel: config.logging.verbosity);
+    await openDatabase(_logger.logDatabasePath, createIfMissing: false);
+  }
+
   Future<void> refreshSchema({bool showLoadingState = true}) async {
     if (!hasOpenDatabase) {
       return;
@@ -1842,11 +1847,14 @@ class WorkspaceController extends ChangeNotifier {
           );
           break;
         case ExcelImportUpdateKind.failed:
+          final message = update.message ?? 'Excel import failed.';
           excelImportSession = current.copyWith(
             step: ExcelImportWizardStep.summary,
             phase: ExcelImportJobPhase.failed,
-            error: update.message ?? 'Excel import failed.',
+            error: message,
           );
+          workspaceError = message;
+          workspaceMessage = null;
           _logError(
             'run_excel_import',
             'Excel import failed.',
@@ -1857,7 +1865,7 @@ class WorkspaceController extends ChangeNotifier {
               'source_path': current.sourcePath,
               'target_path': current.targetPath,
               'selected_sheet_count': current.selectedSheets.length,
-              'message': update.message,
+              'message': message,
             },
           );
           break;
@@ -2328,11 +2336,14 @@ class WorkspaceController extends ChangeNotifier {
               );
               break;
             case SqlDumpImportUpdateKind.failed:
+              final message = update.message ?? 'SQL dump import failed.';
               sqlDumpImportSession = current.copyWith(
                 step: SqlDumpImportWizardStep.summary,
                 phase: SqlDumpImportJobPhase.failed,
-                error: update.message ?? 'SQL dump import failed.',
+                error: message,
               );
+              workspaceError = message;
+              workspaceMessage = null;
               _logError(
                 'run_sql_dump_import',
                 'SQL dump import failed.',
@@ -2343,7 +2354,7 @@ class WorkspaceController extends ChangeNotifier {
                   'source_path': current.sourcePath,
                   'target_path': current.targetPath,
                   'selected_table_count': current.selectedTables.length,
-                  'message': update.message,
+                  'message': message,
                 },
               );
               break;
@@ -2844,11 +2855,14 @@ class WorkspaceController extends ChangeNotifier {
           );
           break;
         case SqliteImportUpdateKind.failed:
+          final message = update.message ?? 'SQLite import failed.';
           sqliteImportSession = current.copyWith(
             step: SqliteImportWizardStep.summary,
             phase: SqliteImportJobPhase.failed,
-            error: update.message ?? 'SQLite import failed.',
+            error: message,
           );
+          workspaceError = message;
+          workspaceMessage = null;
           _logError(
             'run_sqlite_import',
             'SQLite import failed.',
@@ -2859,7 +2873,7 @@ class WorkspaceController extends ChangeNotifier {
               'source_path': current.sourcePath,
               'target_path': current.targetPath,
               'selected_table_count': current.selectedTables.length,
-              'message': update.message,
+              'message': message,
             },
           );
           break;
@@ -3362,6 +3376,10 @@ class WorkspaceController extends ChangeNotifier {
       error: message,
       phase: phase ?? session.phase,
     );
+    if ((phase ?? session.phase) == SqlDumpImportJobPhase.failed) {
+      workspaceError = message;
+      workspaceMessage = null;
+    }
     _safeNotify();
     _logError(
       'sql_dump_import_error',
@@ -3387,6 +3405,10 @@ class WorkspaceController extends ChangeNotifier {
       error: message,
       phase: phase ?? session.phase,
     );
+    if ((phase ?? session.phase) == ExcelImportJobPhase.failed) {
+      workspaceError = message;
+      workspaceMessage = null;
+    }
     _safeNotify();
     _logError(
       'excel_import_error',
@@ -3412,6 +3434,10 @@ class WorkspaceController extends ChangeNotifier {
       error: message,
       phase: phase ?? session.phase,
     );
+    if ((phase ?? session.phase) == SqliteImportJobPhase.failed) {
+      workspaceError = message;
+      workspaceMessage = null;
+    }
     _safeNotify();
     _logError(
       'sqlite_import_error',

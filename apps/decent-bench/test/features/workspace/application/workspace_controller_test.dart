@@ -395,6 +395,34 @@ void main() {
     expect((await store.load()).recentFiles, contains(dbPath));
   });
 
+  test('openLogDatabase opens the configured application log database', () async {
+    final logPath =
+        '${Directory.systemTemp.path}/decent-bench-log-${DateTime.now().microsecondsSinceEpoch}.ddb';
+    final file = File(logPath);
+    await file.parent.create(recursive: true);
+    await file.writeAsString('');
+
+    addTearDown(() async {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    });
+
+    final controller = WorkspaceController(
+      gateway: FakeWorkspaceGateway(),
+      logger: _FixedPathLogger(logPath),
+      configStore: InMemoryConfigStore(),
+      workspaceStateStore: InMemoryWorkspaceStateStore(),
+    );
+    await controller.initialize();
+
+    await controller.openLogDatabase();
+
+    expect(controller.databasePath, logPath);
+    expect(controller.engineVersion, '1.6.1');
+    expect(controller.workspaceError, isNull);
+  });
+
   test('applyAppConfig persists and reloads TOML-backed preferences', () async {
     final store = InMemoryConfigStore();
     final controller = WorkspaceController(
@@ -857,6 +885,30 @@ void main() {
     expect(controller.excelImportSession?.summary?.rolledBack, isTrue);
   });
 
+  test('excel import failure updates session state and workspace error', () async {
+    final gateway = FakeWorkspaceGateway()..failNextExcelImport = true;
+    final controller = WorkspaceController(
+      gateway: gateway,
+      configStore: InMemoryConfigStore(),
+      workspaceStateStore: InMemoryWorkspaceStateStore(),
+    );
+    await controller.initialize();
+    controller.beginExcelImport();
+    await controller.loadExcelImportSource('/tmp/phase5-failure.xlsx');
+
+    await controller.runExcelImport();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(controller.excelImportSession?.step, ExcelImportWizardStep.summary);
+    expect(controller.excelImportSession?.phase, ExcelImportJobPhase.failed);
+    expect(
+      controller.excelImportSession?.error,
+      'Excel import failed in the fake gateway.',
+    );
+    expect(controller.workspaceError, 'Excel import failed in the fake gateway.');
+    expect(controller.workspaceMessage, isNull);
+  });
+
   test(
     'import workflows suggest new DecentDB targets beside the source file',
     () async {
@@ -1005,6 +1057,42 @@ void main() {
   });
 
   test(
+    'sql dump import failure updates session state and workspace error',
+    () async {
+      final gateway = FakeWorkspaceGateway()..failNextSqlDumpImport = true;
+      final controller = WorkspaceController(
+        gateway: gateway,
+        configStore: InMemoryConfigStore(),
+        workspaceStateStore: InMemoryWorkspaceStateStore(),
+      );
+      await controller.initialize();
+      controller.beginSqlDumpImport();
+      await controller.loadSqlDumpImportSource('/tmp/phase6-failure.sql');
+
+      await controller.runSqlDumpImport();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        controller.sqlDumpImportSession?.step,
+        SqlDumpImportWizardStep.summary,
+      );
+      expect(
+        controller.sqlDumpImportSession?.phase,
+        SqlDumpImportJobPhase.failed,
+      );
+      expect(
+        controller.sqlDumpImportSession?.error,
+        'SQL dump import failed in the fake gateway.',
+      );
+      expect(
+        controller.workspaceError,
+        'SQL dump import failed in the fake gateway.',
+      );
+      expect(controller.workspaceMessage, isNull);
+    },
+  );
+
+  test(
     'sqlite import inspection loads tables, previews, and import summary',
     () async {
       final gateway = FakeWorkspaceGateway();
@@ -1114,4 +1202,40 @@ void main() {
     );
     expect(controller.sqliteImportSession?.summary?.rolledBack, isTrue);
   });
+
+  test('sqlite import failure updates session state and workspace error', () async {
+    final gateway = FakeWorkspaceGateway()..failNextImport = true;
+    final controller = WorkspaceController(
+      gateway: gateway,
+      configStore: InMemoryConfigStore(),
+      workspaceStateStore: InMemoryWorkspaceStateStore(),
+    );
+    await controller.initialize();
+    controller.beginSqliteImport();
+    await controller.loadSqliteImportSource('/tmp/phase4-failure.sqlite');
+
+    await controller.runSqliteImport();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(controller.sqliteImportSession?.step, SqliteImportWizardStep.summary);
+    expect(controller.sqliteImportSession?.phase, SqliteImportJobPhase.failed);
+    expect(
+      controller.sqliteImportSession?.error,
+      'SQLite import failed in the fake gateway.',
+    );
+    expect(
+      controller.workspaceError,
+      'SQLite import failed in the fake gateway.',
+    );
+    expect(controller.workspaceMessage, isNull);
+  });
+}
+
+class _FixedPathLogger extends RecordingAppLogger {
+  _FixedPathLogger(this._logDatabasePath);
+
+  final String _logDatabasePath;
+
+  @override
+  String get logDatabasePath => _logDatabasePath;
 }

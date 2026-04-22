@@ -28,7 +28,7 @@
 
 <p align="center">
   <a href="#-features">Features</a> •
-  <a href="#-status--100">Status</a> •
+  <a href="#-status">Status</a> •
   <a href="#-getting-started">Getting Started</a> •
   <a href="#-developer-onboarding">Developer Onboarding</a> •
   <a href="#-roadmap">Roadmap</a> •
@@ -44,18 +44,17 @@
 ## ✨ Features
 
 - 🚀 **DecentDB-First:** A fully local-first workflow. Fast open/create, recent files, and intuitive drag-and-drop support.
-- 📥 **Smart Import Wizards:** Seamlessly import CSV, JSON, XML, HTML, SQLite, Excel, and SQL dumps (including `.zip`/`.gz` archives). Includes previews, rename/type-override transforms, progress reporting, and summary actions.
+- 📥 **Smart Import Wizards:** Import delimited text, JSON/NDJSON, XML, HTML tables, Excel, SQLite, SQL dumps, and wrapped archives (`.zip`, `.gz`, `.bz2`). Includes previews, rename/type-override transforms, progress reporting, and post-import summaries.
 - 🛠️ **Modern SQL Workbench:** Iterate in a multi-tab editor with isolated per-tab results, schema-aware autocomplete, editable snippets, and deterministic formatting.
 - ⚡ **Performance-Focused:** Background imports, paginated/streamed results grids, and best-effort query cancellation ensure the UI never freezes.
 - 🧭 **Rich Engine Metadata:** Schema browsing is powered by DecentDB's rich
   upstream schema snapshot (tables/views/indexes/triggers, checks, foreign keys,
   generated columns, temp-object metadata, and canonical DDL).
-- 🎨 **Workspace Persistence:** Config and app state are safely stored as TOML, providing reliable per-database workspace restoration.
+- 🎨 **Workspace Persistence:** Application preferences are stored as TOML, and per-database workspace state is stored separately for reliable tab and query restoration.
+- 🪵 **Operational Visibility:** Open the DecentDB-backed application log database directly from `Tools -> View Log`.
+- 🧪 **Import Validation:** Blocking failure dialogs and richer import summaries make unsuccessful imports obvious and successful imports easier to verify.
 - 📦 **Desktop Native:** Packaged for Linux, macOS, and Windows with a repeatable native-library staging helper.
 
-## 🚀 Status: v1.0.0 
-
-**Decent Bench has reached 1.0.0!** The core MVP loop is fully implemented and stable: import or open a database, inspect schema, run SQL, stream/page through results, and export to CSV.
 
 ### Supported File Types
 
@@ -63,25 +62,44 @@
 | --- | --- | --- |
 | `.ddb` | **Open directly** | Main DecentDB workspace format. |
 | `.db`, `.sqlite`, `.sqlite3` | **Import Wizard** | Background import with schema preview and table selection. |
-| `.csv`, `.tsv`, `.txt`, `.dat`, `.psv` | **Import Wizard** | Delimited text import with header, delimiter, quoting, preview, and type overrides. |
+| `.csv`, `.tsv` | **Import Wizard** | CSV/TSV import through the generic delimited-text pipeline. |
+| `.txt`, `.dat`, `.log`, `.psv` | **Import Wizard** | Generic delimited-text import with header, delimiter, quoting, malformed-row, preview, and type-override controls. |
 | `.json`, `.ndjson`, `.jsonl` | **Import Wizard** | Structured and line-oriented JSON import with relational previews. |
 | `.xml` | **Import Wizard** | XML import with flatten or parent-child normalization strategies. |
 | `.html`, `.htm` | **Import Wizard** | HTML table extraction with table selection and header inference. |
 | `.xlsx` | **Import Wizard** | Select worksheets and map DecentDB types automatically. |
-| `.sql` | **Import Wizard** | Supports common MariaDB/MySQL-style dumps (CREATE TABLE + INSERT). |
-| `.zip`, `.gz` | **Unwrap & Import** | Archive wrappers that automatically unwrap supported files and route them to the import flow. |
-| `.xls` | *Partial / Hint* | Legacy format. Handled with warnings or prompts to convert to `.xlsx` first. |
+| `.xls` | *Partial / Warning Path* | Routed through the legacy Excel path and may require conversion/normalization warnings. |
+| `.sql` | **Import Wizard** | Supports the current MariaDB/MySQL-style MVP-lite dump scope (`CREATE TABLE` plus common `INSERT ... VALUES`). |
+| `.zip` | **Unwrap & Import** | Archive wrapper that discovers supported inner files and routes them to the normal import flow. |
+| `.gz`, `.tar.gz`, `.tgz` | **Unwrap & Import** | Supports single-file gzip unwrap and tar+gzip archive inspection/extraction. |
+| `.bz2`, `.tar.bz2`, `.tbz2` | **Unwrap & Import** | Supports single-file bzip2 unwrap and tar+bzip2 archive inspection/extraction. |
+| `.bak` | **Environment-Gated / Scaffold** | Detected and routed to the MS SQL backup flow, which currently checks Docker availability and surfaces the planned container-assisted import path. |
+
+### Recognized But Not Yet Implemented
+
+The current build recognizes, but does not yet import, several formats and
+wrappers including `.ods`, `.yaml`, `.yml`, `.toml`, `.md`, `.duckdb`,
+`.mdb`, `.accdb`, `.dbf`, `.parquet`, `.pdf`, and `.xz`.
 
 ## 🚀 Getting Started (End Users)
 
-*Binary releases for Linux, macOS, and Windows will be available on the [Releases](https://github.com/sphildreth/decent-bench/releases) page.*
+*Binary releases for Linux, macOS, and Windows are listed on the [Releases](https://github.com/sphildreth/decent-bench/releases) page.*
 
 ### Command-line Launch
-Packaged desktop builds expose a narrow CLI entry for import flows:
+Packaged desktop builds expose a small CLI surface for direct-open and import
+flows:
 ```bash
+dbench /path/to/workspace.ddb
 dbench --import /path/to/source.xlsx
+dbench --in /path/to/source.sqlite --out /tmp/import.ddb
 ```
-This reuses the drag-and-drop detection rules and instantly opens the right import wizard.
+
+- Passing a `.ddb` path opens that workspace directly.
+- `--import` reuses drag-and-drop detection rules and opens the matching wizard.
+- `--in` / `--out` run the shipped headless import path.
+- `--silent` suppresses headless progress output.
+- `--plan` is parsed but intentionally rejected for now; it is reserved for a
+  future plan-file execution flow.
 
 ## 💻 Developer Onboarding
 
@@ -92,6 +110,14 @@ Want to build from source or contribute? Welcome!
 - **Git**
 - **Flutter** (stable, desktop tooling enabled)
 - OS-specific native toolchain (C++ compiler, etc.)
+- `tar` on systems where you want tar+gzip or tar+bzip2 archive detection and extraction
+- A matching **DecentDB native library** for the pinned app version
+
+Decent Bench pins the upstream Dart package by Git tag and expects the matching
+DecentDB desktop native library alongside it. CI and release packaging resolve
+that version from `apps/decent-bench/pubspec.lock` and download the matching
+`decentdb-dart-native-<tag>-...` asset from
+[`sphildreth/decentdb` Releases](https://github.com/sphildreth/decentdb/releases).
 
 ### 1. Bootstrap the Flutter App
 ```bash
@@ -99,32 +125,55 @@ cd apps/decent-bench
 flutter pub get
 ```
 
-### 2. Run Locally
+### 2. Install the Matching DecentDB Native Library
+The app and test tooling resolve the pinned `decentdb` tag from
+`apps/decent-bench/pubspec.lock` and download the matching
+`decentdb-dart-native-<tag>-...` release asset from DecentDB Releases into a
+local cache when needed. The app still prefers a bundled native library first,
+then the cached pinned asset, then common system locations.
+
+### 3. Run Locally
 ```bash
 flutter run -d linux
 ```
 
-### 3. Testing & Validation
+### 4. Testing & Validation
 ```bash
 flutter analyze
 flutter test
 flutter test integration_test
 ```
 
-### 4. Packaging Desktop Builds
-Build the bundle, then use the staging helper to inject the DecentDB native library:
+These commands will fetch the matching pinned DecentDB native library on first
+use if it is not already cached.
+
+### 5. Packaging Desktop Builds
+Build the bundle, then use the staging helper to inject the DecentDB native
+library. The `--source` path can point at either an extracted
+`decentdb-dart-native-<tag>-...` release asset or a local DecentDB build:
 ```bash
 flutter build linux
 dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle
 ```
-*(For macOS use `build/macos/Build/Products/Release/decent_bench.app` and Windows `build/windows/x64/runner/Release`)*.
+If `--source` is omitted, the helper resolves and downloads the pinned matching
+DecentDB native release asset automatically.
+
+*(For macOS use `build/macos/Build/Products/Release/decent_bench.app` and
+Windows `build/windows/x64/runner/Release`.)*
 
 ## 🏗️ Architecture & Configuration
 
-The application stores global configuration and workspace state locally:
+The application stores its local state under the platform app-support
+directory:
 - **Linux:** `~/.config/decent-bench/`
 - **macOS:** `~/Library/Application Support/Decent Bench/`
 - **Windows:** `%APPDATA%\Decent Bench\`
+
+Typical files under that root include:
+- `config.toml` for application preferences
+- per-workspace `.json` state files for saved tabs/history/restoration
+- `decent-bench-log.ddb` for the application log database opened by
+  `Tools -> View Log`
 
 **Project Source of Truth:**
 - 📐 [`design/PRD.md`](design/PRD.md) — Product goals and user journeys
@@ -134,20 +183,24 @@ The application stores global configuration and workspace state locally:
 
 ## 🗺️ Roadmap
 
-**Completed for 1.0.0:**
+**Shipped through 1.1.0:**
 - ✅ Drag-and-drop open/import flows
 - ✅ Expansive import support: CSV, JSON, XML, HTML, SQLite, Excel, and SQL dumps
-- ✅ ZIP & GZip archive wrappers for imports
+- ✅ ZIP, GZip, and BZip2 wrapper routing for imports
+- ✅ Headless CLI import mode
+- ✅ DecentDB native asset staging and pinned runtime resolution
+- ✅ In-app application log viewing
+- ✅ Clear blocking import-failure dialogs and richer import summaries
 - ✅ Schema browsing and multi-tab SQL editing
 - ✅ Autocomplete, snippets, and deterministic formatter
 - ✅ Paged results, query cancellation, and CSV export
-- ✅ TOML config and persistent per-database workspaces
+- ✅ Local app config plus persistent per-database workspaces
 
-**Coming Next (Post-1.0):**
+**Coming Next (Post-1.1):**
 - 🔜 **Expanded Exports:** JSON, Parquet, and Excel formats, plus schema exports and reusable export recipes.
-- 🔜 **New Database & Analytical Imports:** DuckDB, Parquet, PostgreSQL dumps, and legacy DBs (Access, DBF).
+- 🔜 **New Database & Analytical Imports:** DuckDB, Parquet, broader PostgreSQL dump handling, and legacy DBs (Access, DBF).
 - 🔜 **New Document & Log Imports:** OpenDocument (`.ods`), YAML, Markdown/PDF tables, and continuous log streams.
-- 🔜 **Advanced Import Capabilities:** Computed-column transforms and native legacy binary `.xls` parsing.
+- 🔜 **Advanced Import Capabilities:** Computed-column transforms, native legacy binary `.xls` parsing, and full MS SQL `.bak` restore/extract execution.
 
 ## 🤝 Contributing
 

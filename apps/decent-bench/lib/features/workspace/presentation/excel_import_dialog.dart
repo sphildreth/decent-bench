@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'package:decent_bench/shared/widgets/import_failure_dialog.dart';
 
 import '../application/workspace_controller.dart';
 import '../domain/excel_import_models.dart';
@@ -23,6 +24,7 @@ class _ExcelImportDialogState extends State<ExcelImportDialog> {
       TextEditingController();
   late final TextEditingController _targetPathController =
       TextEditingController();
+  String? _shownFailureMessage;
 
   @override
   void dispose() {
@@ -41,6 +43,7 @@ class _ExcelImportDialogState extends State<ExcelImportDialog> {
           return const SizedBox.shrink();
         }
         _syncControllers(session);
+        _maybeShowFailureDialog(session);
 
         return AlertDialog(
           title: const Text('Excel Import Wizard'),
@@ -77,6 +80,35 @@ class _ExcelImportDialogState extends State<ExcelImportDialog> {
         );
       },
     );
+  }
+
+  void _maybeShowFailureDialog(ExcelImportSession session) {
+    if (session.phase != ExcelImportJobPhase.failed ||
+        session.step != ExcelImportWizardStep.summary ||
+        session.error == null) {
+      _shownFailureMessage = null;
+      return;
+    }
+    if (_shownFailureMessage == session.error) {
+      return;
+    }
+    _shownFailureMessage = session.error;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      showImportFailureDialog(
+        context: context,
+        title: 'Excel import failed',
+        message: session.error!,
+        onAcknowledged: () {
+          widget.controller.closeExcelImportSession();
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+        },
+      );
+    });
   }
 
   Widget _buildStepHeader(ExcelImportSession session) {
@@ -392,9 +424,17 @@ class _ExcelImportDialogState extends State<ExcelImportDialog> {
   Widget _buildSummaryStep(ExcelImportSession session) {
     final summary = session.summary;
     if (summary == null) {
-      return const _DialogEmptyState(
-        title: 'No summary available',
-        message: 'Run an Excel import to populate the summary view.',
+      return _DialogEmptyState(
+        title: session.phase == ExcelImportJobPhase.failed
+            ? 'Import failed'
+            : session.phase == ExcelImportJobPhase.cancelled
+            ? 'Import cancelled'
+            : 'Import summary unavailable',
+        message:
+            session.error ??
+            (session.phase == ExcelImportJobPhase.cancelled
+                ? 'The Excel import was cancelled before a summary was produced.'
+                : 'Run an Excel import to populate the summary view.'),
       );
     }
 

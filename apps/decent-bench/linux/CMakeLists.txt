@@ -151,3 +151,14 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+install(CODE "
+  execute_process(
+    COMMAND \"${DART_EXECUTABLE}\" run tool/stage_decentdb_native.dart --bundle \"${CMAKE_INSTALL_PREFIX}\"
+    WORKING_DIRECTORY \"${HEADLESS_IMPORT_PROJECT_DIR}\"
+    RESULT_VARIABLE stage_decentdb_native_result
+  )
+  if(NOT stage_decentdb_native_result EQUAL 0)
+    message(FATAL_ERROR \"Failed to stage the DecentDB native library into the Linux bundle.\")
+  endif()
+  " COMPONENT Runtime)

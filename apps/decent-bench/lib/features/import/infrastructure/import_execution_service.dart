@@ -375,6 +375,7 @@ Future<GenericImportSummary> _runGenericImport({
 
     database.commit();
     transactionOpen = false;
+    database.checkpoint();
     return GenericImportSummary(
       jobId: request.jobId,
       sourcePath: request.sourcePath,

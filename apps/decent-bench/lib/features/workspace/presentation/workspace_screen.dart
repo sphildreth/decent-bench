@@ -31,6 +31,7 @@ import '../infrastructure/app_lifecycle_service.dart';
 import '../infrastructure/shortcut_config_service.dart';
 import 'excel_import_dialog.dart';
 import 'export_results_csv_dialog.dart';
+import 'ms_sql_bak_import_dialog.dart';
 import 'preferences_dialog.dart';
 import 'shell/app_menu_bar.dart';
 import 'shell/command_toolbar.dart';
@@ -1908,6 +1909,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           onInvoke: _showQueryHistoryDialog,
         ),
         command(
+          id: 'tools_view_log',
+          label: 'View Log',
+          icon: Icons.receipt_long_outlined,
+          onInvoke: controller.openLogDatabase,
+        ),
+        command(
           id: 'tools_snippets',
           label: 'Manage Snippets',
           icon: Icons.library_books_outlined,
@@ -2025,6 +2032,17 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     controller.closeSqlDumpImportSession();
   }
 
+  Future<void> _showMsSqlBakImportDialog({String sourcePath = ''}) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => MsSqlBakImportDialog(
+        controller: widget.controller,
+        sourcePath: sourcePath,
+      ),
+    );
+  }
+
   Future<void> _showGenericImportDialog({
     required String sourcePath,
     required ImportFormatDefinition format,
@@ -2121,6 +2139,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           case ImportFormatKey.sqlDump:
             await _showSqlDumpImportDialog(sourcePath: path);
             break;
+          case ImportFormatKey.msSqlBak:
+            await _showMsSqlBakImportDialog(sourcePath: path);
+            break;
           default:
             await _showPlaceholderNotice(
               'Import unavailable',
@@ -2150,7 +2171,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       case ImportImplementationKind.unknown:
         await _showPlaceholderNotice(
           'Unknown file type',
-          'Supported import sources currently include `.csv`, `.tsv`, `.txt`, `.json`, `.jsonl`, `.ndjson`, `.xml`, `.html`, `.db`/`.sqlite`/`.sqlite3`, `.xls`/`.xlsx`, `.sql`, `.zip`, and `.gz`.',
+          'Supported import sources currently include `.csv`, `.tsv`, `.txt`, `.json`, `.jsonl`, `.ndjson`, `.xml`, `.html`, `.db`/`.sqlite`/`.sqlite3`, `.xls`/`.xlsx`, `.sql`, `.zip`, `.gz`, and `.bz2` (including `.tar.bz2` and `.tar.gz` archives).',
         );
         break;
     }

@@ -27,12 +27,7 @@ class _FixedResolver extends NativeLibraryResolver {
 
 String? _resolveNativeLib() {
   final resolver = NativeLibraryResolver();
-  final candidates = [
-    '/usr/local/lib/${resolver.libraryFileName}',
-    '/usr/lib/${resolver.libraryFileName}',
-    '${Platform.environment['HOME']}/.local/lib/${resolver.libraryFileName}',
-  ];
-  for (final candidate in candidates) {
+  for (final candidate in resolver.candidatePaths()) {
     if (File(candidate).existsSync()) {
       return candidate;
     }
@@ -43,7 +38,7 @@ String? _resolveNativeLib() {
 void main() {
   final nativeLib = _resolveNativeLib();
   final skipReason = nativeLib == null
-      ? 'DecentDB native library not found in system paths'
+      ? 'DecentDB native library is unavailable'
       : null;
 
   group('DecentDbBridge smoke tests', () {
@@ -94,9 +89,7 @@ void main() {
       if (lib == null) {
         throw Exception(skipReason);
       }
-      final service = ImportExecutionService(
-        resolver: _FixedResolver(lib),
-      );
+      final service = ImportExecutionService(resolver: _FixedResolver(lib));
       final updates = await service.execute(request: request).toList();
       final terminal = updates.last;
 
@@ -192,6 +185,28 @@ CREATE TABLE events (
         source.execute(
           "INSERT INTO events VALUES (2, '2026-03-11', '2026-03-11T09:45:00Z', 'Beta')",
         );
+      } finally {
+        source.close();
+      }
+      return sourcePath;
+    }
+
+    String createSqliteHighPrecisionTimestampSource(String filename) {
+      final sourcePath = p.join(tempDir.path, filename);
+      final source = sqlite.sqlite3.open(sourcePath);
+      try {
+        source.execute('''
+CREATE TABLE events (
+  id INTEGER PRIMARY KEY,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL
+)
+''');
+        source.execute('''
+INSERT INTO events VALUES
+  (1, '2024-12-30T10:02:04.901481207-06:00', '2024-12-29T10:00:03.033627726-06:00'),
+  (2, '2025-01-01 11:00:42.24883752-06:00', '2024-10-14 16:04:46')
+''');
       } finally {
         source.close();
       }
@@ -969,15 +984,22 @@ ORDER BY dept
 
         final updates = await bridge.importSqlite(request: request).toList();
         final terminal = updates.last;
+        final summary = terminal.summary!;
 
         expect(terminal.kind, SqliteImportUpdateKind.completed);
         expect(terminal.summary, isNotNull);
         expect(
-          terminal.summary!.importedTables,
+          summary.importedTables,
           orderedEquals(<String>['users', 'imported_notes']),
         );
-        expect(terminal.summary!.rowsCopiedByTable['users'], 2);
-        expect(terminal.summary!.rowsCopiedByTable['imported_notes'], 2);
+        expect(summary.rowsCopiedByTable['users'], 2);
+        expect(summary.rowsCopiedByTable['imported_notes'], 2);
+        expect(summary.targetTableCount, 2);
+        expect(summary.targetIndexCount, greaterThanOrEqualTo(1));
+        expect(summary.targetViewCount, 0);
+        expect(summary.targetTriggerCount, 0);
+        expect(summary.databaseFileBytes, greaterThan(8192));
+        expect(summary.walFileBytes, 0);
 
         await bridge.openDatabase(targetPath);
         final rows = await queryAllRows('''
@@ -1005,6 +1027,42 @@ ORDER BY n.id
           ),
           isTrue,
         );
+      },
+    );
+
+    test(
+      'imports SQLite datetime text with more than 6 fractional digits',
+      skip: skipReason,
+      () async {
+        final sourcePath = createSqliteHighPrecisionTimestampSource(
+          'phase4-high-precision.sqlite',
+        );
+        final inspection = await bridge.inspectSqliteSource(
+          sourcePath: sourcePath,
+        );
+        final events = inspection.tables.singleWhere(
+          (table) => table.sourceName == 'events',
+        );
+        final targetPath = p.join(tempDir.path, 'phase4-high-precision.ddb');
+        final request = SqliteImportRequest(
+          jobId: 'smoke-high-precision-import',
+          sourcePath: sourcePath,
+          targetPath: targetPath,
+          importIntoExistingTarget: false,
+          replaceExistingTarget: true,
+          tables: <SqliteImportTableDraft>[events],
+        );
+
+        final updates = await bridge.importSqlite(request: request).toList();
+
+        expect(updates.last.kind, SqliteImportUpdateKind.completed);
+
+        await bridge.openDatabase(targetPath);
+        final rows = await queryAllRows(
+          'SELECT id, created_at, updated_at FROM events ORDER BY id',
+        );
+
+        expect(rows, hasLength(2));
       },
     );
 

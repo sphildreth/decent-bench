@@ -33,12 +33,7 @@ class _FixedResolver extends NativeLibraryResolver {
 
 String? _resolveNativeLib() {
   final resolver = NativeLibraryResolver();
-  final candidates = [
-    '/usr/local/lib/${resolver.libraryFileName}',
-    '/usr/lib/${resolver.libraryFileName}',
-    '${Platform.environment['HOME']}/.local/lib/${resolver.libraryFileName}',
-  ];
-  for (final candidate in candidates) {
+  for (final candidate in resolver.candidatePaths()) {
     if (File(candidate).existsSync()) {
       return candidate;
     }
@@ -76,7 +71,7 @@ bool _isIgnoredFixturePath(String relativePath) {
 void main() {
   final nativeLib = _resolveNativeLib();
   final skipReason = nativeLib == null
-      ? 'DecentDB native library not found in system paths'
+      ? 'DecentDB native library is unavailable'
       : null;
 
   final registry = ImportFormatRegistry.instance;

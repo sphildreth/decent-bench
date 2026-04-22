@@ -3,11 +3,26 @@ import 'dart:io';
 
 import 'package:decent_bench/app/headless_import_runner.dart';
 import 'package:decent_bench/app/startup_launch_options.dart';
+import 'package:decent_bench/features/workspace/infrastructure/decentdb_native_release_asset.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
   late Directory tempDir;
+
+  setUpAll(() async {
+    // Only attempt a network download when explicitly requested via env var.
+    // In offline or local developer environments the native library is expected
+    // to be pre-installed (e.g. via the CI workflow or the tool/stage_decentdb_native.dart
+    // script). Set DECENT_BENCH_DOWNLOAD_NATIVE=1 to enable the download.
+    final downloadNative =
+        Platform.environment['DECENT_BENCH_DOWNLOAD_NATIVE'] == '1';
+    if (downloadNative) {
+      await DecentDbNativeReleaseAsset.ensureAvailableForCurrentProject(
+        startPath: Directory.current.path,
+      );
+    }
+  });
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp(
@@ -104,46 +119,46 @@ void main() {
     },
   );
 
-  test('imports an Excel fixture headlessly and emits a JSON summary', () async {
-    final stdoutLines = <String>[];
-    final stderrLines = <String>[];
-    final targetPath = p.join(tempDir.path, 'basic_contacts.ddb');
-    final sourcePath = p.normalize(
-      p.join(
-        Directory.current.path,
-        '..',
-        '..',
-        'test-data',
-        'excel',
-        'basic_contacts.xlsx',
-      ),
-    );
+  test(
+    'imports an Excel fixture headlessly and emits a JSON summary',
+    () async {
+      final stdoutLines = <String>[];
+      final stderrLines = <String>[];
+      final targetPath = p.join(tempDir.path, 'basic_contacts.ddb');
+      final sourcePath = p.normalize(
+        p.join(
+          Directory.current.path,
+          '..',
+          '..',
+          'test-data',
+          'excel',
+          'basic_contacts.xlsx',
+        ),
+      );
 
-    final exitCode = await runHeadlessImportCli(
-      HeadlessImportCliOptions(
-        sourcePath: sourcePath,
-        targetPath: targetPath,
-        silent: true,
-      ),
-      stdoutWriter: stdoutLines.add,
-      stderrWriter: stderrLines.add,
-    );
+      final exitCode = await runHeadlessImportCli(
+        HeadlessImportCliOptions(
+          sourcePath: sourcePath,
+          targetPath: targetPath,
+          silent: true,
+        ),
+        stdoutWriter: stdoutLines.add,
+        stderrWriter: stderrLines.add,
+      );
 
-    expect(exitCode, 0);
-    expect(stderrLines, isEmpty);
-    expect(stdoutLines, isNotEmpty);
+      expect(exitCode, 0);
+      expect(stderrLines, isEmpty);
+      expect(stdoutLines, isNotEmpty);
 
-    final report = jsonDecode(stdoutLines.last) as Map<String, Object?>;
-    final warnings = (report['warnings'] as List<dynamic>).cast<String>();
+      final report = jsonDecode(stdoutLines.last) as Map<String, Object?>;
+      final warnings = (report['warnings'] as List<dynamic>).cast<String>();
 
-    expect(report['format_key'], 'xlsx');
-    expect(report['imported_tables'], isNotEmpty);
-    expect(
-      warnings.join('\n'),
-      contains('temporary `.xlsx` rewrite'),
-    );
-    expect(File(targetPath).existsSync(), isTrue);
-  });
+      expect(report['format_key'], 'xlsx');
+      expect(report['imported_tables'], isNotEmpty);
+      expect(warnings.join('\n'), contains('temporary `.xlsx` rewrite'));
+      expect(File(targetPath).existsSync(), isTrue);
+    },
+  );
 
   test('rejects plan files until plan execution is implemented', () async {
     final stdoutLines = <String>[];

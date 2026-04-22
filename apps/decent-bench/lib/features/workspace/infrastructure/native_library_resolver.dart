@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'decentdb_native_release_asset.dart';
+
 enum NativeLibraryPlatform { linux, macos, windows }
 
 enum NativeLibraryResolutionMode { runtime, packagingSource }
@@ -138,6 +140,7 @@ class NativeLibraryResolver {
     if (mode == NativeLibraryResolutionMode.runtime) {
       candidates.addAll(_bundleCandidates());
     }
+    candidates.addAll(_cachedAssetCandidates());
     candidates.addAll(_searchFrom(_currentDirectoryPath));
     candidates.addAll(_searchFrom(_scriptDirectoryPath));
     return _dedupePaths(candidates);
@@ -153,6 +156,17 @@ class NativeLibraryResolver {
       case NativeLibraryPlatform.windows:
         yield p.join(executableDir, libraryFileName);
     }
+  }
+
+  Iterable<String> _cachedAssetCandidates() sync* {
+    yield* DecentDbNativeReleaseAsset.cachedLibraryCandidates(
+      searchRoots: [_currentDirectoryPath, _scriptDirectoryPath],
+      platform: switch (_platform) {
+        NativeLibraryPlatform.linux => DecentDbNativeAssetPlatform.linux,
+        NativeLibraryPlatform.macos => DecentDbNativeAssetPlatform.macos,
+        NativeLibraryPlatform.windows => DecentDbNativeAssetPlatform.windows,
+      },
+    );
   }
 
   Iterable<String> _searchFrom(String startPath) sync* {
