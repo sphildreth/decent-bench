@@ -620,14 +620,14 @@ const List<DetectionFixtureEntry> detectionFixtures = <DetectionFixtureEntry>[
   DetectionFixtureEntry(
     relativePath: 'test-data/sql_related/mysql_mock_export.bak',
     expectedFormatKey: ImportFormatKey.msSqlBak,
-    expectedSupportState: ImportSupportState.complete,
-    expectedImplementationKind: ImportImplementationKind.legacyWizard,
+    expectedSupportState: ImportSupportState.investigate,
+    expectedImplementationKind: ImportImplementationKind.recognizedUnsupported,
   ),
   DetectionFixtureEntry(
     relativePath: 'test-data/sql_related/mariadb_mock_export.bak',
     expectedFormatKey: ImportFormatKey.msSqlBak,
-    expectedSupportState: ImportSupportState.complete,
-    expectedImplementationKind: ImportImplementationKind.legacyWizard,
+    expectedSupportState: ImportSupportState.investigate,
+    expectedImplementationKind: ImportImplementationKind.recognizedUnsupported,
   ),
   DetectionFixtureEntry(
     relativePath: 'test-data/sql_related/postgresql_mock_binary.dump',

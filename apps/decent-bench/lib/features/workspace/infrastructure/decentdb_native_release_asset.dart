@@ -306,6 +306,13 @@ class DecentDbNativeReleaseAsset {
           HttpHeaders.acceptHeader,
           'application/vnd.github+json',
         );
+        final token = Platform.environment['GITHUB_TOKEN'];
+        if (token != null && token.isNotEmpty) {
+          request.headers.set(
+            HttpHeaders.authorizationHeader,
+            'Bearer $token',
+          );
+        }
       }
       request.headers.set(
         HttpHeaders.userAgentHeader,

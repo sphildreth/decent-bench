@@ -32,8 +32,9 @@ class ImportDetectionService {
       );
     }
     if (format.key == ImportFormatKey.gzipArchive) {
+      final ext = p.extension(sourcePath).toLowerCase();
       final innerName = p.basenameWithoutExtension(sourcePath);
-      if (_looksLikeTar(innerName)) {
+      if (ext == '.tgz' || _looksLikeTar(innerName)) {
         return _detectTarCandidates(
           sourcePath: sourcePath,
           format: format,
@@ -57,8 +58,9 @@ class ImportDetectionService {
       );
     }
     if (format.key == ImportFormatKey.bzip2Archive) {
+      final ext = p.extension(sourcePath).toLowerCase();
       final innerName = p.basenameWithoutExtension(sourcePath);
-      if (_looksLikeTar(innerName)) {
+      if (ext == '.tbz2' || _looksLikeTar(innerName)) {
         return _detectTarCandidates(
           sourcePath: sourcePath,
           format: format,
@@ -119,7 +121,7 @@ class ImportDetectionService {
     final candidates = <ImportArchiveCandidate>[];
 
     try {
-      final result = Process.runSync(
+      final result = await Process.run(
         'tar',
         listArgs,
         stdoutEncoding: utf8,
@@ -290,8 +292,9 @@ class ImportDetectionService {
     }
 
     if (wrapperKey == ImportFormatKey.gzipArchive) {
+      final ext = p.extension(archivePath).toLowerCase();
       final innerName = p.basenameWithoutExtension(archivePath);
-      if (_looksLikeTar(innerName)) {
+      if (ext == '.tgz' || _looksLikeTar(innerName)) {
         return _extractTarEntry(
           archivePath: archivePath,
           tempDir: tempDir,
@@ -310,8 +313,9 @@ class ImportDetectionService {
     }
 
     if (wrapperKey == ImportFormatKey.bzip2Archive) {
+      final ext = p.extension(archivePath).toLowerCase();
       final innerName = p.basenameWithoutExtension(archivePath);
-      if (_looksLikeTar(innerName)) {
+      if (ext == '.tbz2' || _looksLikeTar(innerName)) {
         return _extractTarEntry(
           archivePath: archivePath,
           tempDir: tempDir,
@@ -343,15 +347,12 @@ class ImportDetectionService {
     final extension = inferredFormat.extensions.isNotEmpty
         ? inferredFormat.extensions.first
         : '';
-    final outputFileName =
-        extension.isNotEmpty && !baseName.toLowerCase().endsWith(extension)
-        ? '$baseName$extension'
-        : baseName;
-    final outputPath = p.join(tempDir.path, outputFileName);
 
+    // Extract by the exact archive-relative path to avoid GNU tar-specific
+    // --no-anchored semantics and basename collisions across subdirectories.
     final result = Process.runSync(
       'tar',
-      [extractFlag, archivePath, '-C', tempDir.path, '--no-anchored', baseName],
+      [extractFlag, archivePath, '-C', tempDir.path, entryPath],
       stdoutEncoding: utf8,
       stderrEncoding: utf8,
     );
@@ -362,25 +363,20 @@ class ImportDetectionService {
       );
     }
 
-    final extracted = File(outputPath);
-    if (!extracted.existsSync()) {
-      final directPath = p.join(tempDir.path, entryPath);
-      final directFile = File(directPath);
-      if (directFile.existsSync()) {
-        if (extension.isNotEmpty &&
-            !p.basename(directPath).toLowerCase().endsWith(extension)) {
-          final renamed = '$directPath$extension';
-          directFile.renameSync(renamed);
-          return renamed;
-        }
-        return directPath;
-      }
+    final extractedPath = p.join(tempDir.path, entryPath);
+    final extractedFile = File(extractedPath);
+    if (!extractedFile.existsSync()) {
       throw StateError(
-        'Extracted entry not found at expected path. '
-        'Tried `$outputPath` and `$directPath`.',
+        'Extracted entry not found at expected path `$extractedPath`.',
       );
     }
 
-    return outputPath;
+    if (extension.isNotEmpty &&
+        !baseName.toLowerCase().endsWith(extension)) {
+      final renamed = '$extractedPath$extension';
+      extractedFile.renameSync(renamed);
+      return renamed;
+    }
+    return extractedPath;
   }
 }

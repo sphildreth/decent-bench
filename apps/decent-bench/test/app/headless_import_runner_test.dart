@@ -11,9 +11,17 @@ void main() {
   late Directory tempDir;
 
   setUpAll(() async {
-    await DecentDbNativeReleaseAsset.ensureAvailableForCurrentProject(
-      startPath: Directory.current.path,
-    );
+    // Only attempt a network download when explicitly requested via env var.
+    // In offline or local developer environments the native library is expected
+    // to be pre-installed (e.g. via the CI workflow or the tool/stage_decentdb_native.dart
+    // script). Set DECENT_BENCH_DOWNLOAD_NATIVE=1 to enable the download.
+    final downloadNative =
+        Platform.environment['DECENT_BENCH_DOWNLOAD_NATIVE'] == '1';
+    if (downloadNative) {
+      await DecentDbNativeReleaseAsset.ensureAvailableForCurrentProject(
+        startPath: Directory.current.path,
+      );
+    }
   });
 
   setUp(() async {

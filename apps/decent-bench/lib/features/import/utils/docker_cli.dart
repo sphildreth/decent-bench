@@ -5,7 +5,7 @@ class DockerCli {
     try {
       final result = await Process.run('docker', ['info']);
       return result.exitCode == 0;
-    } catch (e) {
+    } catch (_) {
       return false;
     }
   }

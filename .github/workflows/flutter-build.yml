@@ -115,7 +115,6 @@ jobs:
           - os: macos-latest
             flutter_target: macos
             bundle_path: build/macos/Build/Products/Release/decent_bench.app
-            decentdb_release_suffix: macOS-arm64
             native_archive_extension: tar.gz
             native_lib_name: libdecentdb.dylib
           - os: windows-latest
@@ -172,7 +171,15 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ steps.decentdb-version.outputs.tag }}"
-          asset="decentdb-dart-native-${tag}-${{ matrix.decentdb_release_suffix }}.${{ matrix.native_archive_extension }}"
+          # Use the matrix-provided suffix when available; for macOS the
+          # suffix is derived at runtime from RUNNER_ARCH so the workflow
+          # stays correct if GitHub changes the runner architecture.
+          release_suffix="${{ matrix.decentdb_release_suffix }}"
+          if [[ -z "$release_suffix" ]]; then
+            arch="$(echo "${RUNNER_ARCH}" | tr '[:upper:]' '[:lower:]')"
+            release_suffix="${RUNNER_OS}-${arch}"
+          fi
+          asset="decentdb-dart-native-${tag}-${release_suffix}.${{ matrix.native_archive_extension }}"
           url="https://github.com/sphildreth/decentdb/releases/download/${tag}/${asset}"
           work_dir="$RUNNER_TEMP/decentdb-native"
           archive_path="$RUNNER_TEMP/$asset"

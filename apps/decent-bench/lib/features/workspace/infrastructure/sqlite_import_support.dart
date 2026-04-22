@@ -1872,12 +1872,14 @@ Map<String, String> _inferColumnTypesFromSamples(
 bool _columnContainsOnlyTimestampLikeValues(
   sqlite.Database database,
   String tableName,
-  SqliteImportColumnDraft column,
-) {
+  SqliteImportColumnDraft column, {
+  int maxRows = 1000,
+}) {
   final quotedTable = _quoteSqliteIdent(tableName);
   final quotedColumn = _quoteSqliteIdent(column.sourceName);
   final statement = database.prepare(
-    'SELECT $quotedColumn AS value FROM $quotedTable WHERE $quotedColumn IS NOT NULL',
+    'SELECT $quotedColumn AS value FROM $quotedTable'
+    ' WHERE $quotedColumn IS NOT NULL LIMIT $maxRows',
   );
   try {
     final cursor = statement.selectCursor();

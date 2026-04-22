@@ -194,10 +194,10 @@ class ImportFormatRegistry {
       key: ImportFormatKey.msSqlBak,
       label: 'MS SQL Server Backup',
       family: ImportFamily.databaseDump,
-      supportState: ImportSupportState.complete,
+      supportState: ImportSupportState.investigate,
       extensions: <String>['.bak'],
-      implementationKind: ImportImplementationKind.legacyWizard,
-      description: 'Container-assisted MS SQL backup import.',
+      implementationKind: ImportImplementationKind.recognizedUnsupported,
+      description: 'Container-assisted MS SQL backup import (not yet implemented).',
     ),
     ImportFormatDefinition(
       key: ImportFormatKey.sqlDump,
@@ -260,7 +260,7 @@ class ImportFormatRegistry {
       label: 'GZip Wrapper',
       family: ImportFamily.compressedArchive,
       supportState: ImportSupportState.complete,
-      extensions: <String>['.gz'],
+      extensions: <String>['.gz', '.tgz'],
       implementationKind: ImportImplementationKind.wrapper,
       description:
           'Single-file wrapper that unwraps supported CSV/JSON/NDJSON/XML/HTML/SQL/Excel/SQLite files.',
@@ -270,7 +270,7 @@ class ImportFormatRegistry {
       label: 'BZip2 / Tar+BZip2 Wrapper',
       family: ImportFamily.compressedArchive,
       supportState: ImportSupportState.complete,
-      extensions: <String>['.bz2'],
+      extensions: <String>['.bz2', '.tbz2'],
       implementationKind: ImportImplementationKind.wrapper,
       description:
           'BZip2 wrapper for single-file decompression and tar+bzip2 '
