@@ -37,7 +37,7 @@ This file records notable project changes. It follows the
   blocking error dialog with summary and details, and no longer look like a
   successful completion.
 
-## [1.0.0] - [UNRELEASED]
+## [1.0.0] - 2026-03-14
 
 ### Added
 

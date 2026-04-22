@@ -6,6 +6,7 @@ import 'package:decent_bench/app/startup_launch_options.dart';
 import 'package:archive/archive.dart';
 import 'package:decent_bench/features/workspace/application/workspace_controller.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
@@ -209,13 +210,25 @@ void main() {
       configStore: InMemoryConfigStore(),
       workspaceStateStore: InMemoryWorkspaceStateStore(),
     );
+    final messenger =
+        TestDefaultBinaryMessengerBinding
+            .instance
+            .defaultBinaryMessenger;
 
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1600, 1000);
     addTearDown(() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
+      messenger.setMockMethodCallHandler(SystemChannels.menu, null);
       controller.dispose();
+    });
+
+    messenger.setMockMethodCallHandler(SystemChannels.menu, (call) async {
+      if (call.method == 'Menu.isPluginAvailable') {
+        return false;
+      }
+      return null;
     });
 
     await controller.initialize();
@@ -228,12 +241,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Options'), findsOneWidget);
+    expect(find.text('Tools'), findsOneWidget);
 
-    await tester.tap(find.text('Options'));
+    await tester.tap(find.text('Tools'));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(
+      find.widgetWithText(MenuItemButton, 'Options / Preferences'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.widgetWithText(MenuItemButton, 'Options / Preferences'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Preferences'), findsOneWidget);
+    expect(find.text('Options / Preferences'), findsOneWidget);
     expect(find.textContaining('Theme'), findsWidgets);
     expect(find.textContaining('Editor'), findsWidgets);
   });
