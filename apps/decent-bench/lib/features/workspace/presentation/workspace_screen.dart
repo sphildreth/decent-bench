@@ -1000,6 +1000,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         _nativeMenuAvailable = supported ?? Platform.isMacOS;
       });
     } on MissingPluginException {
+      widget.controller.logger.debug(
+        category: 'platform',
+        operation: 'native_menu_detect',
+        message: 'Native menu plugin not available on this platform.',
+      );
       if (!mounted) {
         return;
       }
@@ -1007,7 +1012,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         _didCheckNativeMenuAvailability = true;
         _nativeMenuAvailable = false;
       });
-    } catch (_) {
+    } catch (error) {
+      widget.controller.logger.debug(
+        category: 'platform',
+        operation: 'native_menu_detect',
+        message: 'Could not detect native menu availability.',
+        details: <String, Object?>{'error': error.toString()},
+      );
       if (!mounted) {
         return;
       }
@@ -2276,6 +2287,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
     try {
       await _startImportFromPath(extractedPath);
+    } catch (error) {
+      widget.controller.logger.error(
+        category: 'import',
+        operation: 'archive_extract_start',
+        message: 'Failed to start import from extracted archive candidate.',
+        error: error,
+        details: <String, Object?>{'archive_path': detection.sourcePath},
+      );
     } finally {
       final extractedDir = Directory(p.dirname(extractedPath));
       if (await extractedDir.exists()) {

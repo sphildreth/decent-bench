@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../app/logging/app_logger.dart';
 import '../domain/workspace_shell_preferences.dart';
 
 typedef PersistShellPreferences =
@@ -14,10 +15,13 @@ class WorkspaceShellController extends ChangeNotifier {
   WorkspaceShellController({
     required WorkspaceShellPreferences initialPreferences,
     required PersistShellPreferences onPersist,
+    AppLogger? logger,
   }) : _preferences = initialPreferences.normalized(),
-       _onPersist = onPersist;
+       _onPersist = onPersist,
+       _logger = logger ?? const NoOpAppLogger();
 
   final PersistShellPreferences _onPersist;
+  final AppLogger _logger;
   WorkspaceShellPreferences _preferences;
   Timer? _persistDebounce;
 
@@ -110,7 +114,16 @@ class WorkspaceShellController extends ChangeNotifier {
 
   Future<void> persistNow({String? statusMessage}) async {
     _persistDebounce?.cancel();
-    await _onPersist(_preferences, statusMessage: statusMessage);
+    try {
+      await _onPersist(_preferences, statusMessage: statusMessage);
+    } catch (error) {
+      _logger.error(
+        category: 'shell_preferences',
+        operation: 'persist',
+        message: 'Failed to persist shell preferences.',
+        error: error,
+      );
+    }
   }
 
   void _setPreferences(

@@ -3695,6 +3695,12 @@ class WorkspaceController extends ChangeNotifier {
     try {
       await _workspaceStateStore.save(targetPath, _serializeWorkspaceState());
     } catch (error) {
+      _logError(
+        'persist_workspace_state',
+        'Could not save workspace state.',
+        databasePath: targetPath,
+        error: error,
+      );
       workspaceError = 'Could not save workspace state: $error';
       workspaceMessage = null;
       _safeNotify();
