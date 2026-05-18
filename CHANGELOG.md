@@ -6,6 +6,15 @@ This file records notable project changes. It follows the
 
 ## [UNRELEASED] [WIP]
 
+### Added
+
+- Added Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) with fuzzy-search for all
+  registered commands. Searchable overlay shows command labels, icons, keyboard
+  shortcuts, and disabled state. Navigate with arrow keys, execute with Enter,
+  dismiss with Escape or click outside. Palette consumes the existing
+  `MenuCommandRegistry`, so all menu commands appear automatically.
+- Added `view_command_palette` (`Ctrl+Shift+P`) to default shortcut bindings.
+
 ### Changed
 
 - Refactored `DecentDbBridge` worker isolate into a `_BridgeWorkerState` class

@@ -681,6 +681,7 @@ class AppConfig {
       'tools_run_buffer': 'Ctrl+Alt+Enter',
       'tools_stop_query': 'Esc',
       'view_reset_layout': 'Ctrl+Shift+R',
+      'view_command_palette': 'Ctrl+Shift+P',
       'view_zoom_in': 'Ctrl+=',
       'view_zoom_out': 'Ctrl+-',
       'view_zoom_reset': 'Ctrl+0',

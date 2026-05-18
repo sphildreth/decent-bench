@@ -34,6 +34,7 @@ import 'export_results_csv_dialog.dart';
 import 'ms_sql_bak_import_dialog.dart';
 import 'preferences_dialog.dart';
 import 'shell/app_menu_bar.dart';
+import 'shell/command_palette.dart';
 import 'shell/command_toolbar.dart';
 import 'shell/properties_pane.dart';
 import 'shell/results_pane.dart';
@@ -118,6 +119,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   int _findMatchCount = 0;
   int _activeFindMatch = 0;
   String? _selectedSchemaNodeId;
+  bool _showCommandPalette = false;
   bool _nativeMenuAvailable = false;
   bool _didCheckNativeMenuAvailability = false;
   bool _didProcessStartupLaunchOptions = false;
@@ -437,6 +439,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                           ],
                         ),
                         if (_isDropTargetActive) const _DropOverlay(),
+                        if (_showCommandPalette)
+                          CommandPalette(
+                            registry: registry,
+                            logger: widget.controller.logger,
+                            onDismiss: () =>
+                                setState(() => _showCommandPalette = false),
+                          ),
                       ],
                     ),
                   ),
@@ -1848,6 +1857,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           checked: prefs.showStatusBar,
           onInvoke: () async =>
               _shellController.setStatusBarVisible(!prefs.showStatusBar),
+        ),
+        command(
+          id: 'view_command_palette',
+          label: 'Command Palette...',
+          icon: Icons.search_outlined,
+          onInvoke: () async {
+            setState(() => _showCommandPalette = !_showCommandPalette);
+          },
         ),
         command(
           id: 'view_zoom_in',
