@@ -612,23 +612,107 @@ bool _isTerminalSqlDumpImportUpdate(SqlDumpImportUpdateKind kind) {
 Future<void> _workerMain(List<Object?> bootstrap) async {
   final mainPort = bootstrap[0]! as SendPort;
   final libraryPath = bootstrap[1]! as String;
-  final receivePort = ReceivePort();
-  mainPort.send(receivePort.sendPort);
+  final worker = _BridgeWorkerState(mainPort, libraryPath);
+  await worker.run();
+}
 
-  Database? database;
-  final cursors = <String, Statement>{};
-  var nextCursorId = 1;
+class _BridgeWorkerState {
+  _BridgeWorkerState(this._mainPort, this._libraryPath);
 
-  Future<void> closeAll() async {
-    for (final statement in cursors.values) {
-      statement.dispose();
+  final SendPort _mainPort;
+  final String _libraryPath;
+  final ReceivePort _receivePort = ReceivePort();
+
+  Database? _database;
+  final Map<String, Statement> _cursors = <String, Statement>{};
+  var _nextCursorId = 1;
+
+  Future<void> run() async {
+    _mainPort.send(_receivePort.sendPort);
+
+    await for (final raw in _receivePort) {
+      if (raw is! Map<Object?, Object?>) {
+        continue;
+      }
+
+      final message = raw.map((key, value) => MapEntry(key as String, value));
+      final requestId = message['id']! as int;
+      final replyPort = message['replyPort']! as SendPort;
+      final action = message['action']! as String;
+      final payload =
+          ((message['payload'] as Map?) ?? const <Object?, Object?>{})
+              .map((key, value) => MapEntry(key as String, value));
+
+      try {
+        final data = await _handle(action, payload);
+        replyPort.send(<String, Object?>{
+          'id': requestId,
+          'ok': true,
+          'data': data,
+        });
+        if (action == 'shutdown') {
+          break;
+        }
+      } catch (error, stackTrace) {
+        final failure = error is BridgeFailure
+            ? error
+            : BridgeFailure(error.toString());
+        replyPort.send(<String, Object?>{
+          'id': requestId,
+          'ok': false,
+          'error': <String, Object?>{
+            'message': failure.message,
+            'code': failure.code,
+            'stack': stackTrace.toString(),
+          },
+        });
+      }
     }
-    cursors.clear();
-    database?.close();
-    database = null;
   }
 
-  Map<String, Object?> serializePage(
+  Future<void> _closeAll() async {
+    for (final statement in _cursors.values) {
+      statement.dispose();
+    }
+    _cursors.clear();
+    _database?.close();
+    _database = null;
+  }
+
+  Future<Map<String, Object?>> _handle(
+    String action,
+    Map<String, Object?> payload,
+  ) async {
+    switch (action) {
+      case 'openDatabase':
+        return _handleOpenDatabase(payload);
+      case 'loadSchema':
+        return _handleLoadSchema();
+      case 'runQuery':
+        return _handleRunQuery(payload);
+      case 'fetchNextPage':
+        return _handleFetchNextPage(payload);
+      case 'cancelQuery':
+        return _handleCancelQuery(payload);
+      case 'exportCsv':
+        return _handleExportCsv(payload);
+      case 'shutdown':
+        await _closeAll();
+        _receivePort.close();
+        return const <String, Object?>{};
+    }
+
+    throw BridgeFailure('Unsupported worker action: $action');
+  }
+
+  Database _requireDatabase() {
+    if (_database == null) {
+      throw const BridgeFailure('Open or create a DecentDB file first.');
+    }
+    return _database!;
+  }
+
+  Map<String, Object?> _serializePage(
     ResultPage page, {
     required String? cursorId,
     required int? rowsAffected,
@@ -659,281 +743,263 @@ Future<void> _workerMain(List<Object?> bootstrap) async {
     };
   }
 
-  Future<Map<String, Object?>> handle(
-    String action,
+  Future<Map<String, Object?>> _handleOpenDatabase(
     Map<String, Object?> payload,
   ) async {
-    switch (action) {
-      case 'openDatabase':
-        await closeAll();
-        final path = payload['path']! as String;
-        database = Database.open(path, libraryPath: libraryPath);
-        return <String, Object?>{
-          'path': path,
-          'engineVersion': database!.engineVersion,
-        };
-      case 'loadSchema':
-        final db = _requireDatabase(database);
-        final snapshot = db.schema.getSchemaSnapshot();
-        final tables = [...snapshot.tables]
-          ..sort((left, right) => left.name.compareTo(right.name));
-        final views = [...snapshot.views]
-          ..sort((left, right) => left.name.compareTo(right.name));
-        final objects = <Map<String, Object?>>[
-          for (final table in tables)
-            <String, Object?>{
-              'name': table.name,
-              'kind': 'table',
-              'temporary': table.temporary,
-              'ddl': table.ddl,
-              'columns': _serializeTableColumns(table.columns),
-              'checks': _serializeChecks(_allTableChecks(table)),
-            },
-          for (final view in views)
-            <String, Object?>{
-              'name': view.name,
-              'kind': 'view',
-              'temporary': view.temporary,
-              'ddl': view.ddl,
-              'columns': _serializeViewColumns(view.columnNames),
-            },
-        ];
-        final indexes = [...snapshot.indexes]
-          ..sort((left, right) {
-            final byTable = left.tableName.compareTo(right.tableName);
-            return byTable != 0 ? byTable : left.name.compareTo(right.name);
-          });
-        final triggers = [...snapshot.triggers]
-          ..sort((left, right) {
-            final byTarget = left.targetName.compareTo(right.targetName);
-            return byTarget != 0 ? byTarget : left.name.compareTo(right.name);
-          });
-        return <String, Object?>{
-          'objects': objects,
-          'indexes': <Map<String, Object?>>[
-            for (final index in indexes)
-              <String, Object?>{
-                'name': index.name,
-                'table': index.tableName,
-                'columns': index.columns,
-                'unique': index.unique,
-                'kind': index.kind,
-                'temporary': index.temporary,
-                'predicateSql': index.predicateSql,
-                'ddl': index.ddl,
-              },
-          ],
-          'triggers': _serializeTriggers(triggers),
-          'loadedAt': DateTime.now().toUtc().toIso8601String(),
-        };
-      case 'runQuery':
-        final db = _requireDatabase(database);
-        final sql = payload['sql']! as String;
-        final params = ((payload['params'] as List?) ?? const <Object?>[])
-            .cast<Object?>();
-        final pageSize = payload['pageSize']! as int;
-        final stopwatch = Stopwatch()..start();
-        final returnsRows = _statementReturnsRows(sql);
-        if (!returnsRows) {
-          if (_isTransactionControlSql(sql) && params.isNotEmpty) {
-            throw const BridgeFailure(
-              'Transaction control statements do not accept parameters.',
-            );
-          }
-          if (_isTransactionControlSql(sql)) {
-            final rowsAffected = db.executeDirect(sql);
-            return serializePage(
-              const ResultPage(<String>[], <Row>[], true),
-              cursorId: null,
-              rowsAffected: rowsAffected,
-              elapsed: stopwatch.elapsed,
-            );
-          }
+    await _closeAll();
+    final path = payload['path']! as String;
+    _database = Database.open(path, libraryPath: _libraryPath);
+    return <String, Object?>{
+      'path': path,
+      'engineVersion': _database!.engineVersion,
+    };
+  }
 
-          final stmt = db.prepare(sql);
-          try {
-            stmt.bindAll(params);
-            final rowsAffected = stmt.execute();
-            return serializePage(
-              const ResultPage(<String>[], <Row>[], true),
-              cursorId: null,
-              rowsAffected: rowsAffected,
-              elapsed: stopwatch.elapsed,
-            );
-          } finally {
-            stmt.dispose();
-          }
-        }
+  Future<Map<String, Object?>> _handleLoadSchema() async {
+    final db = _requireDatabase();
+    final snapshot = db.schema.getSchemaSnapshot();
+    final tables = [...snapshot.tables]
+      ..sort((left, right) => left.name.compareTo(right.name));
+    final views = [...snapshot.views]
+      ..sort((left, right) => left.name.compareTo(right.name));
+    final objects = <Map<String, Object?>>[
+      for (final table in tables)
+        <String, Object?>{
+          'name': table.name,
+          'kind': 'table',
+          'temporary': table.temporary,
+          'ddl': table.ddl,
+          'columns': _serializeTableColumns(table.columns),
+          'checks': _serializeChecks(_allTableChecks(table)),
+        },
+      for (final view in views)
+        <String, Object?>{
+          'name': view.name,
+          'kind': 'view',
+          'temporary': view.temporary,
+          'ddl': view.ddl,
+          'columns': _serializeViewColumns(view.columnNames),
+        },
+    ];
+    final indexes = [...snapshot.indexes]
+      ..sort((left, right) {
+        final byTable = left.tableName.compareTo(right.tableName);
+        return byTable != 0 ? byTable : left.name.compareTo(right.name);
+      });
+    final triggers = [...snapshot.triggers]
+      ..sort((left, right) {
+        final byTarget = left.targetName.compareTo(right.targetName);
+        return byTarget != 0 ? byTarget : left.name.compareTo(right.name);
+      });
+    return <String, Object?>{
+      'objects': objects,
+      'indexes': <Map<String, Object?>>[
+        for (final index in indexes)
+          <String, Object?>{
+            'name': index.name,
+            'table': index.tableName,
+            'columns': index.columns,
+            'unique': index.unique,
+            'kind': index.kind,
+            'temporary': index.temporary,
+            'predicateSql': index.predicateSql,
+            'ddl': index.ddl,
+          },
+      ],
+      'triggers': _serializeTriggers(triggers),
+      'loadedAt': DateTime.now().toUtc().toIso8601String(),
+    };
+  }
 
-        final stmt = db.prepare(sql);
-        var keepStatementOpen = false;
-        try {
-          stmt.bindAll(params);
-          final page = stmt.nextPage(pageSize);
-          if (page.isLast) {
-            return serializePage(
-              page,
-              cursorId: null,
-              rowsAffected: null,
-              elapsed: stopwatch.elapsed,
-            );
-          }
+  Future<Map<String, Object?>> _handleRunQuery(
+    Map<String, Object?> payload,
+  ) async {
+    final db = _requireDatabase();
+    final sql = payload['sql']! as String;
+    final params =
+        ((payload['params'] as List?) ?? const <Object?>[]).cast<Object?>();
+    final pageSize = payload['pageSize']! as int;
+    final stopwatch = Stopwatch()..start();
+    final returnsRows = _statementReturnsRows(sql);
+    if (!returnsRows) {
+      return _executeNonReturningQuery(db, sql, params, stopwatch);
+    }
 
-          final cursorId = 'cursor-${nextCursorId++}';
-          cursors[cursorId] = stmt;
-          keepStatementOpen = true;
-          return serializePage(
-            page,
-            cursorId: cursorId,
-            rowsAffected: null,
-            elapsed: stopwatch.elapsed,
-          );
-        } finally {
-          if (!keepStatementOpen) {
-            stmt.dispose();
-          }
-        }
-      case 'fetchNextPage':
-        final cursorId = payload['cursorId']! as String;
-        final pageSize = payload['pageSize']! as int;
-        final stmt = cursors[cursorId];
-        if (stmt == null) {
-          throw const BridgeFailure('Query cursor is no longer available.');
-        }
-        final stopwatch = Stopwatch()..start();
-        final page = stmt.nextPage(pageSize);
-        if (page.isLast) {
-          stmt.dispose();
-          cursors.remove(cursorId);
-        }
-        return serializePage(
+    return _executeReturningQuery(db, sql, params, pageSize, stopwatch);
+  }
+
+  Future<Map<String, Object?>> _executeNonReturningQuery(
+    Database db,
+    String sql,
+    List<Object?> params,
+    Stopwatch stopwatch,
+  ) async {
+    if (_isTransactionControlSql(sql) && params.isNotEmpty) {
+      throw const BridgeFailure(
+        'Transaction control statements do not accept parameters.',
+      );
+    }
+    if (_isTransactionControlSql(sql)) {
+      final rowsAffected = db.executeDirect(sql);
+      return _serializePage(
+        const ResultPage(<String>[], <Row>[], true),
+        cursorId: null,
+        rowsAffected: rowsAffected,
+        elapsed: stopwatch.elapsed,
+      );
+    }
+
+    final stmt = db.prepare(sql);
+    try {
+      stmt.bindAll(params);
+      final rowsAffected = stmt.execute();
+      return _serializePage(
+        const ResultPage(<String>[], <Row>[], true),
+        cursorId: null,
+        rowsAffected: rowsAffected,
+        elapsed: stopwatch.elapsed,
+      );
+    } finally {
+      stmt.dispose();
+    }
+  }
+
+  Map<String, Object?> _executeReturningQuery(
+    Database db,
+    String sql,
+    List<Object?> params,
+    int pageSize,
+    Stopwatch stopwatch,
+  ) {
+    final stmt = db.prepare(sql);
+    var keepStatementOpen = false;
+    try {
+      stmt.bindAll(params);
+      final page = stmt.nextPage(pageSize);
+      if (page.isLast) {
+        return _serializePage(
           page,
-          cursorId: page.isLast ? null : cursorId,
+          cursorId: null,
           rowsAffected: null,
           elapsed: stopwatch.elapsed,
         );
-      case 'cancelQuery':
-        final cursorId = payload['cursorId']! as String;
-        final stmt = cursors.remove(cursorId);
-        stmt?.dispose();
-        return const <String, Object?>{};
-      case 'exportCsv':
-        final db = _requireDatabase(database);
-        final sql = payload['sql']! as String;
-        final params = ((payload['params'] as List?) ?? const <Object?>[])
-            .cast<Object?>();
-        final pageSize = payload['pageSize']! as int;
-        final path = payload['path']! as String;
-        final delimiter = payload['delimiter']! as String;
-        final includeHeaders = payload['includeHeaders']! as bool;
-
-        final file = File(path);
-        await file.parent.create(recursive: true);
-        if (!_statementReturnsRows(sql)) {
-          throw const BridgeFailure(
-            'The current statement does not produce rows and cannot be exported.',
-          );
-        }
-
-        final stmt = db.prepare(sql);
-        try {
-          stmt.bindAll(params);
-          final firstPage = stmt.nextPage(pageSize);
-          if (firstPage.columns.isEmpty) {
-            throw const BridgeFailure(
-              'The current statement does not produce rows and cannot be exported.',
-            );
-          }
-
-          final sink = file.openWrite();
-          var rowCount = 0;
-          if (includeHeaders) {
-            sink.writeln(
-              firstPage.columns
-                  .map((item) => _escapeCsv(item, delimiter))
-                  .join(delimiter),
-            );
-          }
-          for (final row in firstPage.rows) {
-            sink.writeln(
-              row.values
-                  .map((value) => _escapeCsv(_csvValue(value), delimiter))
-                  .join(delimiter),
-            );
-            rowCount++;
-          }
-
-          var page = firstPage;
-          while (!page.isLast) {
-            page = stmt.nextPage(pageSize);
-            for (final row in page.rows) {
-              sink.writeln(
-                row.values
-                    .map((value) => _escapeCsv(_csvValue(value), delimiter))
-                    .join(delimiter),
-              );
-              rowCount++;
-            }
-          }
-          await sink.flush();
-          await sink.close();
-          return <String, Object?>{'rowCount': rowCount, 'path': path};
-        } finally {
-          stmt.dispose();
-        }
-      case 'shutdown':
-        await closeAll();
-        receivePort.close();
-        return const <String, Object?>{};
-    }
-
-    throw BridgeFailure('Unsupported worker action: $action');
-  }
-
-  await for (final raw in receivePort) {
-    if (raw is! Map<Object?, Object?>) {
-      continue;
-    }
-
-    final message = raw.map((key, value) => MapEntry(key as String, value));
-    final requestId = message['id']! as int;
-    final replyPort = message['replyPort']! as SendPort;
-    final action = message['action']! as String;
-    final payload = ((message['payload'] as Map?) ?? const <Object?, Object?>{})
-        .map((key, value) => MapEntry(key as String, value));
-
-    try {
-      final data = await handle(action, payload);
-      replyPort.send(<String, Object?>{
-        'id': requestId,
-        'ok': true,
-        'data': data,
-      });
-      if (action == 'shutdown') {
-        break;
       }
-    } catch (error, stackTrace) {
-      final failure = error is BridgeFailure
-          ? error
-          : BridgeFailure(error.toString());
-      replyPort.send(<String, Object?>{
-        'id': requestId,
-        'ok': false,
-        'error': <String, Object?>{
-          'message': failure.message,
-          'code': failure.code,
-          'stack': stackTrace.toString(),
-        },
-      });
+
+      final cursorId = 'cursor-${_nextCursorId++}';
+      _cursors[cursorId] = stmt;
+      keepStatementOpen = true;
+      return _serializePage(
+        page,
+        cursorId: cursorId,
+        rowsAffected: null,
+        elapsed: stopwatch.elapsed,
+      );
+    } finally {
+      if (!keepStatementOpen) {
+        stmt.dispose();
+      }
     }
   }
-}
 
-Database _requireDatabase(Database? database) {
-  if (database == null) {
-    throw const BridgeFailure('Open or create a DecentDB file first.');
+  Future<Map<String, Object?>> _handleFetchNextPage(
+    Map<String, Object?> payload,
+  ) async {
+    final cursorId = payload['cursorId']! as String;
+    final pageSize = payload['pageSize']! as int;
+    final stmt = _cursors[cursorId];
+    if (stmt == null) {
+      throw const BridgeFailure('Query cursor is no longer available.');
+    }
+    final stopwatch = Stopwatch()..start();
+    final page = stmt.nextPage(pageSize);
+    if (page.isLast) {
+      stmt.dispose();
+      _cursors.remove(cursorId);
+    }
+    return _serializePage(
+      page,
+      cursorId: page.isLast ? null : cursorId,
+      rowsAffected: null,
+      elapsed: stopwatch.elapsed,
+    );
   }
-  return database;
+
+  Future<Map<String, Object?>> _handleCancelQuery(
+    Map<String, Object?> payload,
+  ) async {
+    final cursorId = payload['cursorId']! as String;
+    final stmt = _cursors.remove(cursorId);
+    stmt?.dispose();
+    return const <String, Object?>{};
+  }
+
+  Future<Map<String, Object?>> _handleExportCsv(
+    Map<String, Object?> payload,
+  ) async {
+    final db = _requireDatabase();
+    final sql = payload['sql']! as String;
+    final params =
+        ((payload['params'] as List?) ?? const <Object?>[]).cast<Object?>();
+    final pageSize = payload['pageSize']! as int;
+    final path = payload['path']! as String;
+    final delimiter = payload['delimiter']! as String;
+    final includeHeaders = payload['includeHeaders']! as bool;
+
+    final file = File(path);
+    await file.parent.create(recursive: true);
+    if (!_statementReturnsRows(sql)) {
+      throw const BridgeFailure(
+        'The current statement does not produce rows and cannot be exported.',
+      );
+    }
+
+    final stmt = db.prepare(sql);
+    try {
+      stmt.bindAll(params);
+      final firstPage = stmt.nextPage(pageSize);
+      if (firstPage.columns.isEmpty) {
+        throw const BridgeFailure(
+          'The current statement does not produce rows and cannot be exported.',
+        );
+      }
+
+      final sink = file.openWrite();
+      var rowCount = 0;
+      if (includeHeaders) {
+        sink.writeln(
+          firstPage.columns
+              .map((item) => _escapeCsv(item, delimiter))
+              .join(delimiter),
+        );
+      }
+      for (final row in firstPage.rows) {
+        sink.writeln(
+          row.values
+              .map((value) => _escapeCsv(_csvValue(value), delimiter))
+              .join(delimiter),
+        );
+        rowCount++;
+      }
+
+      var page = firstPage;
+      while (!page.isLast) {
+        page = stmt.nextPage(pageSize);
+        for (final row in page.rows) {
+          sink.writeln(
+            row.values
+                .map((value) => _escapeCsv(_csvValue(value), delimiter))
+                .join(delimiter),
+          );
+          rowCount++;
+        }
+      }
+      await sink.flush();
+      await sink.close();
+      return <String, Object?>{'rowCount': rowCount, 'path': path};
+    } finally {
+      stmt.dispose();
+    }
+  }
 }
 
 bool _statementReturnsRows(String sql) {

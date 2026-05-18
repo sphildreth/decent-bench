@@ -4,6 +4,28 @@ This file records notable project changes. It follows the
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format and uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [UNRELEASED] [WIP]
+
+### Changed
+
+- Refactored `DecentDbBridge` worker isolate into a `_BridgeWorkerState` class
+  with dedicated handler methods for each operation (openDatabase, loadSchema,
+  runQuery, fetchNextPage, cancelQuery, exportCsv).
+- Reorganized test files with `group()` blocks for improved readability and
+  navigation: `widget_test.dart`, `workspace_controller_test.dart`, and
+  `workspace_shell_test.dart` now group tests by feature area.
+- Added test fixture helpers (`_createController`, `_pumpShell`, `_tempDbPath`)
+  to reduce boilerplate in widget and controller tests.
+- Added coverage collection to CI pipeline (`flutter test --coverage` with
+  Codecov upload) and improved CI cache key strategy.
+
+### Fixed
+
+- Removed unused `_requireDatabase` top-level function after worker refactor
+  (database guard moved into `_BridgeWorkerState`).
+
+
+
 ## [1.1.0] - 2026-04-21
 
 ### Added

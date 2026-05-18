@@ -20,6 +20,7 @@ jobs:
         with:
           channel: stable
           cache: true
+          cache-key: flutter-test-${{ runner.os }}-${{ hashFiles('apps/decent-bench/pubspec.lock') }}
 
       - name: Install Linux build and test dependencies
         run: sudo apt-get update && sudo apt-get install --yes clang cmake ninja-build pkg-config libgtk-3-dev libreoffice-calc xvfb
@@ -73,9 +74,17 @@ jobs:
         working-directory: apps/decent-bench
         run: flutter analyze
 
-      - name: Flutter test
+      - name: Flutter test (with coverage)
         working-directory: apps/decent-bench
-        run: flutter test
+        run: flutter test --coverage --test-randomize-ordering-seed random
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: apps/decent-bench/coverage/lcov.info
+          flags: unittests
+          name: decent-bench-coverage
+          fail_ci_if_error: false
 
       - name: Flutter integration test
         working-directory: apps/decent-bench
