@@ -1,7 +1,7 @@
 # Decent Bench App
 
 This directory contains the shipped Flutter desktop app source for Decent
-Bench `1.1.0`, which builds on the project's shipped `1.0.0` MVP release.
+Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
 
 ## Current state
 

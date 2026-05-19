@@ -4,10 +4,27 @@ This file records notable project changes. It follows the
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format and uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [UNRELEASED] [WIP]
+## [2.0.0] - [UNRELEASED] [WIP] [CURRENT WORK BRANCH]
 
 ### Added
 
+- Added DecentDB v2.5.1 alignment, including pinned binding/runtime metadata,
+  native asset resolution hardening, and a v2.5.x fixture smoke path.
+- Added DecentDB tooling metadata and query-contract bridge support for schema
+  fingerprints, parameter contracts, result-column contracts, and persisted
+  workspace summaries.
+- Added first-class display/copy/export handling for DecentDB native semantic
+  and spatial values, including enum labels, temporal/network/MAC/UUID values,
+  interval values, and EWKB spatial summaries.
+- Added typed query parameter fields powered by query contracts while retaining
+  the raw JSON parameter editor for advanced workflows.
+- Added JSON and NDJSON result export with paged execution, optional metadata,
+  schema fingerprints, and stable native-value encodings.
+- Added per-tab query history in the results surface, including load, rerun, and
+  clear actions.
+- Added safe-run SQL risk prompts for mutating and destructive statements, with
+  branch execution clearly disabled until the Dart binding exposes public branch
+  APIs.
 - Added Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) with fuzzy-search for all
   registered commands. Searchable overlay shows command labels, icons, keyboard
   shortcuts, and disabled state. Navigate with arrow keys, execute with Enter,
@@ -17,6 +34,11 @@ This file records notable project changes. It follows the
 
 ### Changed
 
+- Updated roadmap, README, and ADR documentation to treat completed v2.5.1,
+  metadata, and typed JSON/NDJSON export work as shipped foundations rather than
+  future wins.
+- Revised table-editor, saved-query/project, and branch/snapshot ADRs around
+  DecentDB v2.5.x query contracts, native types, and branch safety.
 - Refactored `DecentDbBridge` worker isolate into a `_BridgeWorkerState` class
   with dedicated handler methods for each operation (openDatabase, loadSchema,
   runQuery, fetchNextPage, cancelQuery, exportCsv).
@@ -30,10 +52,11 @@ This file records notable project changes. It follows the
 
 ### Fixed
 
+- Stabilized Linux integration shell tests by centralizing app setup/teardown,
+  unmounting the widget tree before controller disposal, and preventing
+  intermittent `did not complete` failures.
 - Removed unused `_requireDatabase` top-level function after worker refactor
   (database guard moved into `_BridgeWorkerState`).
-
-
 
 ## [1.1.0] - 2026-04-21
 
@@ -91,6 +114,7 @@ This file records notable project changes. It follows the
   metadata, bundled theme compatibility ranges, and project documentation with
   that release line.
 
-[unreleased]: https://github.com/sphildreth/decent-bench/compare/v1.1.0...HEAD
+[unreleased]: https://github.com/sphildreth/decent-bench/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/sphildreth/decent-bench/releases/tag/v2.0.0
 [1.1.0]: https://github.com/sphildreth/decent-bench/releases/tag/v1.1.0
 [1.0.0]: https://github.com/sphildreth/decent-bench/releases/tag/v1.0.0

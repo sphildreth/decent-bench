@@ -190,7 +190,7 @@ Typical files under that root include:
 
 ## 🗺️ Roadmap
 
-**Shipped through 1.1.0:**
+**Shipped through 2.0.0:**
 - ✅ Drag-and-drop open/import flows
 - ✅ Expansive import support: CSV, JSON, XML, HTML, SQLite, Excel, and SQL dumps
 - ✅ ZIP, GZip, and BZip2 wrapper routing for imports
