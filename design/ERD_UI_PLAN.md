@@ -340,15 +340,24 @@ pair-level action fields are the source of truth for labels/tooltips.
 
 ## Layout Strategy
 
-Use a deterministic Sugiyama-style layered layout for the first implementation:
+Use a simple deterministic layered grid for the first implementation. Do not try
+to build a production-quality Sugiyama layout in the initial slice. Full
+Sugiyama-style layout requires cycle removal, layer assignment, crossing
+reduction, coordinate assignment, and advanced edge routing; that is not required
+to ship the first usable ERD viewer.
+
+First-slice layout rules:
 
 - group connected components
-- rank referenced parent tables upstream with a topological pass where possible
-- place child tables downstream
+- rank referenced parent tables upstream with a basic topological pass where
+  possible
+- place child tables downstream in stable sorted order
 - place isolated tables in a compact grid when visible
-- detect strongly connected components for cycles and use stable fallback
-  packing inside the component
+- detect strongly connected components for cycles and pack each cycle component
+  in a stable local grid
 - route self-references as loop edges around the node
+- use simple straight or two-segment routed edges before attempting orthogonal
+  crossing reduction
 
 Keep layout separate from graph construction:
 
@@ -359,6 +368,12 @@ Keep layout separate from graph construction:
 For small and medium schemas, synchronous layout is acceptable. For larger
 schemas, run layout through an isolate or scheduled background task before
 painting to preserve UI responsiveness.
+
+Timebox Slice 2 around the simple layout. If the implementation starts requiring
+crossing reduction, complex edge routing, or repeated layout tuning to become
+usable, stop and evaluate an Apache 2.0-compatible Dart layout package or graph
+layout adapter under a separate dependency ADR. The first release should prefer a
+clear, stable, imperfect diagram over a large custom graph-layout project.
 
 Arrow-key navigation is intentionally not part of the first layout contract. If
 it is added later, prefer spatial navigation based on rendered node positions so
@@ -378,9 +393,9 @@ rendering. It also keeps text, focus, tooltips, context menus, and accessibility
 in normal Flutter widgets.
 
 Do not add Graphviz, Mermaid, or a web renderer in the first implementation.
-Evaluate a diagram/layout package only if the custom deterministic layout is
-not good enough, and only after Apache 2.0 distribution compatibility is
-verified.
+Evaluate a diagram/layout package only if the simple deterministic layout is not
+good enough after the Slice 2 timebox, and only after Apache 2.0 distribution
+compatibility is verified.
 
 ## Image Export
 
@@ -412,6 +427,15 @@ Implementation guidance:
   or offscreen nodes are included.
 - A `RepaintBoundary` capture can remain useful for tests or diagnostics, but it
   should not be the primary high-resolution export path.
+- Before allocating the export canvas, calculate the output pixel dimensions and
+  enforce safe limits. The first implementation should use conservative defaults:
+  maximum 8192 px on either axis and maximum 64 megapixels total.
+- If the requested scale exceeds safe limits, automatically lower the scale to
+  the largest safe value and notify the user. If 1x still exceeds safe limits,
+  offer a clamped viewport export or a future tiled-export path rather than
+  risking an out-of-memory crash.
+- Tiled full-diagram export may be added later if users need very large raster
+  diagrams, but it is not required for the first image export slice.
 - Use the existing file picker/save-location flow for destination selection.
 - Keep image encoding off the UI thread for large diagrams where practical.
 - Show progress or a disabled export button while an image export is running.
@@ -457,10 +481,12 @@ Depends on Slice 0.
 
 Depends on Slice 1.
 
-- Add deterministic layout with stable node ordering.
+- Add the simple deterministic layered-grid layout with stable node ordering.
 - Add unit tests for coordinate stability and cycle fallback.
 - Add graph options for all tables vs selected-table neighborhood.
 - Add missing-reference placeholder node placement.
+- Stop and reassess if this slice starts turning into a full custom Sugiyama
+  implementation.
 
 ### Slice 3 - ERD viewer
 
@@ -491,6 +517,7 @@ Slice 2.
 - Add PNG and JPG export.
 - Support full-diagram and visible-viewport export scopes.
 - Add image scale selection and JPG background handling.
+- Add export canvas safe-limit handling before allocating raster images.
 - Add optional SVG export after the rendering contract is stable.
 - Add persisted diagram preferences if users need custom focus/filter settings.
 
@@ -503,6 +530,8 @@ Slice 2.
 - Provide a six-column default maximum per node with a `+N more` indicator.
 - Keep pan and zoom smooth by repainting edges separately from node widgets
   where practical.
+- Never allocate export images beyond the configured safe pixel limits; downscale,
+  clamp, or fail clearly before risking GPU texture-limit or memory failures.
 
 ## Accessibility and Keyboard Support
 
@@ -547,6 +576,8 @@ Automated validation:
 - image export tests for PNG and JPG encoder paths where the test environment
   supports image bytes
 - test full-diagram export includes offscreen nodes
+- test export requests above safe texture/pixel limits are downscaled or rejected
+  before image allocation
 - test exported image metadata/title context includes database label, table
   count, and relationship count
 

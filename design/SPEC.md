@@ -342,9 +342,11 @@ Required behavior:
 - support search, zoom, zoom-to-fit, selected-table focus, isolated-table
   visibility, and keyboard focus traversal
 - export the full diagram or visible viewport as PNG or JPG/JPEG
+- enforce conservative raster export size limits before allocating image canvases
 
-The initial implementation should use Flutter-native rendering and avoid a
-third-party diagram/layout dependency unless a separate dependency review and ADR
+The initial implementation should use a simple deterministic Flutter-native
+layout. It should avoid a third-party diagram/layout dependency unless the custom
+layout timebox proves insufficient and a separate dependency review and ADR
 accept the package.
 
 ### 4.5 Export flow
