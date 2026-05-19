@@ -129,8 +129,8 @@ parses `.xlsx`/`.xls` files for import but does not support writing.
 - `design/PRD.md` section 3.2 (deferred exports)
 - `design/SPEC.md` section 11.2 (deferred exports)
 - `design/SPEC.md` section 6.2 (result materialization rule)
-- `design/FUTURE_WINS.md` Priority 5 (JSON export) and Priority 14 (Parquet and
-  Excel export)
+- JSON export is a current foundation; `design/FUTURE_WINS.md` Priority 13
+  covers Parquet and Excel export
 
 ### Alternatives Considered
 

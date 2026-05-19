@@ -51,26 +51,24 @@ ordering, and risk reduction for later features.
 
 | Priority | Future Version | Status | Feature | Current Source Of Truth | Why This Rank |
 |---:|---|---|---|---|---|
-| 1 | vNext | IN PROGRESS | Native semantic and spatial type UX | New v2.5.x alignment item | Prevents Decent Bench from flattening the new engine value model into strings; required before table editing, import mapping, and schema inspection are trustworthy |
-| 2 | vNext | IN PROGRESS | Branch, snapshot, diff, restore, and safe-run workbench | `design/adr/0032-database-snapshot-and-safe-run.md` revised for v2.5.x | Major DecentDB differentiator; replaces file-copy-only backup thinking with native snapshots, branches, diffs, restore, and merge |
-| 3 | vNext | IN PROGRESS | Query parameterization UI powered by query contracts | New proposal | v2.5.x query contracts can infer parameters and result columns; this unlocks repeatable operational queries without hand-written JSON parameter arrays |
-| 4 | vNext | IN PROGRESS | Table data editor, type-aware and branch-safe | `design/adr/0028-inline-table-data-editor.md` revised for v2.5.x | Universal workbench feature, but it should build on query contracts, native type editors, and branch/snapshot safety instead of inventing a parallel editing model |
-| 5 | vNext | IN PROGRESS | Saved queries and workspace projects | `design/adr/0029-workspace-project-file-and-query-library.md`, `design/PRD.md` post-1.0 scope | Near-universal repeatability feature; becomes more valuable when saved queries carry parameter contracts, expected result columns, and optional schema fingerprints |
-| 6 | vNext+1 | IN PROGRESS | Query tab history, user-visible | `design/SPEC.md` marked optional for MVP | Useful productivity feature on existing persistence infrastructure; lower strategic impact than v2.5.x platform alignment |
-| 7 | vNext+1 | TODO | Schema browser expansion and v2.5.x metadata presentation | `design/SPEC.md` phased object coverage | Existing rich schema snapshot work should be extended to show triggers, constraints, generated columns, temp objects, native type details, enum labels, spatial metadata, and branch context |
-| 8 | vNext+1 | TODO | Schema-first strongly typed SDK generation prototype | Needs Decent Bench ADR/spec | No longer blocked by DecentDB metadata now that the metadata/query-contract bridge has landed; should move from backlog to ADR/prototype |
-| 9 | vNext+1 | TODO | Column statistics panel, type-aware | New proposal | Broad exploration value; should understand semantic/spatial types and avoid expensive scans by running lazily |
-| 10 | vNext+1 | TODO | Database statistics dashboard | New proposal | Operational visibility for file size, WAL status, table counts, branch state, index inventory, and maintenance signals |
-| 11 | vNext+1 | TODO | EXPLAIN visualization | `design/SPEC.md` pinned engine SQL surface | Lightweight diagnostics slice; still valuable, but follows metadata/type/safety work |
-| 12 | vNext+2 | TODO | Data visualization from query results | `design/adr/0030-charting-library-and-visualization-contract.md` | High impact for analysts; should consume typed result metadata and can later consider map/spatial views |
-| 13 | vNext+2 | TODO | Import/export profile persistence, GUI <-> headless | `design/adr/0022-headless-cli-import-mode-and-plan-file.md`, `design/adr/0029-workspace-project-file-and-query-library.md` | Workflow multiplier after the type-aware import/export contracts are stable |
-| 14 | vNext+2 | TODO | Parquet and Excel export | `design/adr/0031-parquet-excel-export-dependency-strategy.md`, `design/PRD.md`, `design/SPEC.md` Next scope | Valuable but dependency-heavy; should inherit mature typed export handling from JSON/CSV |
-| 15 | vNext+2 | TODO | Richer import transforms and connector expansion | `design/adr/0033-computed-column-transforms-during-import.md`, `design/IMPORT_SUPPORT_PLAN.md` | Power import work; important, but lower broad impact than making current DecentDB-native data first-class |
+| 1 | vNext | IN PROGRESS | Branch, snapshot, diff, restore, and safe-run workbench | `design/adr/0032-database-snapshot-and-safe-run.md` revised for v2.5.x | Major DecentDB differentiator; replaces file-copy-only backup thinking with native snapshots, branches, diffs, restore, and merge |
+| 2 | vNext | IN PROGRESS | Table data editor, type-aware and branch-safe | `design/adr/0028-inline-table-data-editor.md` revised for v2.5.x | Universal workbench feature, but it should build on query contracts, native type editors, and branch/snapshot safety instead of inventing a parallel editing model |
+| 3 | vNext | IN PROGRESS | Saved queries and workspace projects | `design/adr/0029-workspace-project-file-and-query-library.md`, `design/PRD.md` post-1.0 scope | Near-universal repeatability feature; becomes more valuable when saved queries carry parameter contracts, expected result columns, and optional schema fingerprints |
+| 4 | vNext+1 | IN PROGRESS | Query tab history, user-visible | `design/SPEC.md` marked optional for MVP | Useful productivity feature on existing persistence infrastructure; lower strategic impact than v2.5.x platform alignment |
+| 5 | vNext+1 | TODO | Schema browser expansion and v2.5.x metadata presentation | `design/SPEC.md` phased object coverage | Existing rich schema snapshot work should be extended to show triggers, constraints, generated columns, temp objects, native type details, enum labels, spatial metadata, and branch context |
+| 6 | vNext+1 | TODO | Schema-first strongly typed SDK generation prototype | Needs Decent Bench ADR/spec | No longer blocked by DecentDB metadata now that the metadata/query-contract bridge has landed; should move from backlog to ADR/prototype |
+| 7 | vNext+1 | TODO | Column statistics panel, type-aware | New proposal | Broad exploration value; should understand semantic/spatial types and avoid expensive scans by running lazily |
+| 8 | vNext+1 | TODO | Database statistics dashboard | New proposal | Operational visibility for file size, WAL status, table counts, branch state, index inventory, and maintenance signals |
+| 9 | vNext+1 | TODO | EXPLAIN visualization | `design/SPEC.md` pinned engine SQL surface | Lightweight diagnostics slice; still valuable, but follows metadata/type/safety work |
+| 10 | vNext+2 | TODO | Data visualization from query results | `design/adr/0030-charting-library-and-visualization-contract.md` | High impact for analysts; should consume typed result metadata and can later consider map/spatial views |
+| 11 | vNext+2 | TODO | Import/export profile persistence, GUI <-> headless | `design/adr/0022-headless-cli-import-mode-and-plan-file.md`, `design/adr/0029-workspace-project-file-and-query-library.md` | Workflow multiplier after the type-aware import/export contracts are stable |
+| 12 | vNext+2 | TODO | Parquet and Excel export | `design/adr/0031-parquet-excel-export-dependency-strategy.md`, `design/PRD.md`, `design/SPEC.md` Next scope | Valuable but dependency-heavy; should inherit mature typed export handling from JSON/CSV |
+| 13 | vNext+2 | TODO | Richer import transforms and connector expansion | `design/adr/0033-computed-column-transforms-during-import.md`, `design/IMPORT_SUPPORT_PLAN.md` | Power import work; important, but lower broad impact than making current DecentDB-native data first-class |
 | - | Future | BACKLOG | Query-plan and performance diagnostics, full suite | Needs ADR/spec | Broader than EXPLAIN visualization; covers plan comparison, index recommendations, runtime profiling, and historical plan tracking |
 
 ## Current Foundations
 
-These are shipped or present foundations as of the v1.1.x line and should not be
+These are shipped or present foundations as of the v2.0.0 line and should not be
 treated as future roadmap claims:
 
 - DecentDB-first desktop workspace
@@ -86,10 +84,16 @@ treated as future roadmap claims:
 - schema browser for tables, views, columns, and indexes
 - DecentDB v2.5.1 engine, binding, and fixture compatibility
 - DecentDB tooling metadata bridge with schema fingerprints and query contracts
+- Query-parameterized SQL execution with typed fields driven by contracts, plus
+  pre-execution validation for contract-required arguments; parameterized
+  defaults from a saved-query library remain deferred to the saved-queries
+  project scope.
+- DecentDB v2.5.x native semantic and spatial type UX across schema metadata,
+  result grids, copy actions, autocomplete, snippets, and import overrides
 - multi-tab SQL editor against the pinned DecentDB SQL surface
 - schema-aware autocomplete, snippets, and deterministic SQL formatter
 - paged/virtualized results grid with best-effort cancellation
-- CSV, JSON, and NDJSON export with typed DecentDB-native value handling
+- CSV, JSON, and NDJSON export with full v2.5.x native type handling
 - headless CLI import mode (`--in`, `--out`, `--plan`, `--silent`)
 - DecentDB native asset staging and hardened library resolution
 - DecentDB-backed application logging (`Tools -> View Log`)
@@ -97,60 +101,7 @@ treated as future roadmap claims:
 - command registry, native menu bridge, and command palette foundation
 - ADR-governed design process
 
-## 1. Native Semantic And Spatial Type UX
-
-**Status:** `IN PROGRESS`
-**Future Version:** vNext
-**Source of truth:** New v2.5.x alignment item
-
-### Why This Matters
-
-DecentDB v2.5.0 added compact native storage and typed binding exposure for
-semantic, temporal, network, MAC, enum, geometry, and geography values. Decent
-Bench should make those values understandable instead of rendering them as
-undifferentiated strings.
-
-This matters for trust. A user editing an `ENUM`, exporting `TIMESTAMPTZ`, or
-inspecting `GEOGRAPHY` should see that Decent Bench understands the value's
-database type.
-
-### Scope
-
-- Show native type families in schema details and result column metadata.
-- Render `ENUM` values with labels while preserving stable stored identity.
-- Render IP, CIDR, MAC, date, time, timestamp, and interval values with clear
-  copy/export behavior.
-- Render geometry/geography cells with compact summaries and copy actions for
-  WKT, WKB, and GeoJSON where available.
-- Extend autocomplete/snippets for new column types and common spatial
-  functions.
-- Add import type mapping options for the new native types.
-- Add JSON/CSV export tests for every new native type.
-
-### Implementation Notes
-
-- Native type descriptors now classify DecentDB values into enum, temporal,
-  network, MAC, UUID, spatial, and foundational families for schema details and
-  result-column tooltips.
-- The bridge now encodes DecentDB enum, interval, time, UUID, geometry, and
-  geography values into app-safe result values instead of leaking binding
-  implementation strings or treating spatial bytes as anonymous blobs.
-- Result cells and copy/export paths format native values with query-contract
-  type context, including enum label identity when labels are present in the
-  type declaration and compact EWKB summaries for `GEOMETRY`/`GEOGRAPHY`.
-- Autocomplete, default snippets, and import target overrides now include the
-  v2.5.x native semantic and spatial types plus common `ST_*` functions.
-- Smoke coverage now verifies direct native v2.5.x query values and CSV export
-  display behavior. JSON/NDJSON typed export is now treated as a current
-  foundation.
-
-### Non-Goals
-
-- Full map visualization.
-- Geometry editing widgets.
-- Spatial index design tools.
-
-## 2. Branch, Snapshot, Diff, Restore, And Safe-Run Workbench
+## 1. Branch, Snapshot, Diff, Restore, And Safe-Run Workbench
 
 **Status:** `IN PROGRESS`
 **Future Version:** vNext
@@ -193,6 +144,30 @@ row diff, and restore or merge only when satisfied.
 - Running mutating/destructive SQL from the editor now prompts before execution
   and clearly disables "Run on New Branch" until a public Dart branch API is
   available.
+- The workspace domain and bridge contracts now include branch/snapshot models,
+  branch diff rows, guarded restore, constrained merge, and branch-local query
+  gateway methods. The production DecentDB bridge returns an explicit
+  unavailable state instead of reaching into private binding internals.
+- The controller refreshes branch/snapshot availability during database open,
+  keeps native branch API unavailability out of the workspace error path, and
+  exposes a status-bar branch indicator plus a `Tools -> Branch & Snapshots`
+  workbench dialog.
+- Command palette, toolbar, and menu entries now expose branch/snapshot
+  workbench, create snapshot, create branch, diff, restore, and merge commands.
+  When a future public Dart API is present, these commands route through the
+  gateway. Today they explain the binding blocker and keep mutating operations
+  disabled for the production bridge.
+- Guarded restore applies an automatic pre-restore snapshot before a non-dry-run
+  restore through the gateway. Restore and merge prompts require dry-run review
+  before the apply path is offered.
+
+### Remaining Blocker
+
+Native branch execution, native snapshot creation, branch-local imports, and
+large-import "run on branch" cannot be completed against the production bridge
+until the DecentDB Dart package exposes a public branch/snapshot API. Decent
+Bench now owns the app-facing boundary and honest unavailable UI state for that
+external dependency.
 
 ### Non-Goals
 
@@ -201,46 +176,7 @@ row diff, and restore or merge only when satisfied.
 - Conflict-resolution UI beyond the constrained merge surface exposed by the
   engine.
 
-## 3. Query Parameterization UI Powered By Query Contracts
-
-**Status:** `IN PROGRESS`
-**Future Version:** vNext
-**Source of truth:** New proposal
-
-### Why This Matters
-
-The editor already has a low-level parameter JSON path, but that is not a good
-end-user interface. DecentDB v2.5.x query contracts let Decent Bench build a
-typed parameter panel from the SQL itself.
-
-This turns parameterized SQL into a normal GUI workflow: write a query, see the
-parameters, fill in values, execute, and save the query with parameter metadata.
-
-### Scope
-
-- Detect parameters through `describeQueryContract(sql)`.
-- Render one field per parameter with type-aware widgets when known.
-- Persist parameter values per tab and per saved query.
-- Show validation state before execution.
-- Support quick rerun with changed parameter values.
-- Keep the existing JSON parameter editor as an advanced/debug view.
-
-### Implementation Notes
-
-- The SQL editor now renders typed parameter fields from the current query
-  contract while keeping the raw JSON array editor visible for advanced/debug
-  workflows.
-- Field edits update the same per-tab `parameterJson` persisted by workspace
-  state, with basic type coercion for numeric and boolean parameter contracts.
-- Required non-nullable parameters surface inline validation before rerun.
-
-### Non-Goals
-
-- Named parameter support unless the engine exposes it.
-- Parameter presets beyond saved query defaults.
-- Query-generated dropdown values.
-
-## 4. Table Data Editor, Type-Aware And Branch-Safe
+## 2. Table Data Editor, Type-Aware And Branch-Safe
 
 **Status:** `IN PROGRESS`
 **Future Version:** vNext
@@ -268,7 +204,7 @@ contracts, native type metadata, and branches.
 
 - ADR-0028 has been revised around query-contract editability, native type
   handling, and branch-safe editing. Code implementation remains pending beyond
-  the native type display/copy foundations delivered under priority 1.
+  the native type display/copy foundations delivered as current foundations.
 
 ### Non-Goals
 
@@ -277,7 +213,7 @@ contracts, native type metadata, and branches.
 - Geometry drawing/editing tools.
 - Full undo history beyond the branch/snapshot safety model.
 
-## 5. Saved Queries And Workspace Projects
+## 3. Saved Queries And Workspace Projects
 
 **Status:** `IN PROGRESS`
 **Future Version:** vNext
@@ -316,7 +252,7 @@ parameters, expected result columns, schema fingerprints, and drift warnings.
 - Scheduled query execution.
 - Full query version-control integration.
 
-## 6. Query Tab History, User-Visible
+## 4. Query Tab History, User-Visible
 
 **Status:** `IN PROGRESS`
 **Future Version:** vNext+1
@@ -351,7 +287,7 @@ workspace state; users need a visible way to restore prior tab contents.
 - Result-set persistence with history entries.
 - Diff view between history entries.
 
-## 7. Schema Browser Expansion And v2.5.x Metadata Presentation
+## 5. Schema Browser Expansion And v2.5.x Metadata Presentation
 
 **Status:** `TODO`
 **Future Version:** vNext+1
@@ -377,7 +313,7 @@ tooling metadata so users see the real engine model.
 - ERD diagrams.
 - Cross-database schema diff.
 
-## 8. Schema-First Strongly Typed SDK Generation Prototype
+## 6. Schema-First Strongly Typed SDK Generation Prototype
 
 **Status:** `TODO`
 **Future Version:** vNext+1
@@ -405,7 +341,7 @@ developer integration tooling, but it is no longer a pure backlog item.
 - Dynamic SQL extraction from application repositories.
 - Full multi-language generator implementation in the first slice.
 
-## 9. Column Statistics Panel, Type-Aware
+## 7. Column Statistics Panel, Type-Aware
 
 **Status:** `TODO`
 **Future Version:** vNext+1
@@ -432,7 +368,7 @@ requiring hand-written exploratory SQL.
 - Cross-column correlation.
 - Histogram rendering.
 
-## 10. Database Statistics Dashboard
+## 8. Database Statistics Dashboard
 
 **Status:** `TODO`
 **Future Version:** vNext+1
@@ -459,7 +395,7 @@ PRAGMA inspection.
 - Automated tuning recommendations.
 - Query performance profiling.
 
-## 11. EXPLAIN Visualization
+## 9. EXPLAIN Visualization
 
 **Status:** `TODO`
 **Future Version:** vNext+1
@@ -485,7 +421,7 @@ basic plan structure visible without committing to a full diagnostics suite.
 - Index recommendation engine.
 - Runtime profiler.
 
-## 12. Data Visualization From Query Results
+## 10. Data Visualization From Query Results
 
 **Status:** `TODO`
 **Future Version:** vNext+2
@@ -511,7 +447,7 @@ should consume the same typed result metadata used by exports and editors.
 - Real-time streaming charts.
 - Full GIS/map workbench in the first slice.
 
-## 13. Import/Export Profile Persistence, GUI <-> Headless
+## 11. Import/Export Profile Persistence, GUI <-> Headless
 
 **Status:** `TODO`
 **Future Version:** vNext+2
@@ -539,7 +475,7 @@ and run the same plan in automation.
 - Scheduling.
 - Cloud profile sharing.
 
-## 14. Parquet And Excel Export
+## 12. Parquet And Excel Export
 
 **Status:** `TODO`
 **Future Version:** vNext+2
@@ -564,7 +500,7 @@ than define their own inconsistent mappings for v2.5.x values.
 - Implementing Parquet and Excel in the same first change.
 - Replacing CSV/JSON as the core export path.
 
-## 15. Richer Import Transforms And Connector Expansion
+## 13. Richer Import Transforms And Connector Expansion
 
 **Status:** `TODO`
 **Future Version:** vNext+2
@@ -617,44 +553,38 @@ scope.
 
 This sequence reflects the impact-ordered priority ranking from the Status Map.
 
-1. **Native semantic and spatial type UX**: make new v2.5.x values visible and
-   correctly encoded in schema views, result grids, copy, import, and export.
-
-2. **Branch, snapshot, diff, restore, and safe-run workbench**: revise ADR-0032
+1. **Branch, snapshot, diff, restore, and safe-run workbench**: revise ADR-0032
    and build the branch/snapshot safety workflow on native DecentDB primitives.
 
-3. **Query parameterization UI powered by query contracts**: replace raw JSON
-   parameter editing with a typed parameter panel.
-
-4. **Table data editor, type-aware and branch-safe**: implement inline editing
+2. **Table data editor, type-aware and branch-safe**: implement inline editing
    on top of query contracts, native type editors, and branch/snapshot safety.
 
-5. **Saved queries and workspace projects**: persist named queries, parameter
+3. **Saved queries and workspace projects**: persist named queries, parameter
    defaults, query contracts, and schema fingerprints.
 
-6. **Query tab history**: expose already-stored per-tab execution history.
+4. **Query tab history**: expose already-stored per-tab execution history.
 
-7. **Schema browser expansion and v2.5.x metadata presentation**: finish object
+5. **Schema browser expansion and v2.5.x metadata presentation**: finish object
    coverage and display the richer native metadata.
 
-8. **Schema-first strongly typed SDK generation prototype**: write the ADR and
+6. **Schema-first strongly typed SDK generation prototype**: write the ADR and
    prove one generator path using the new metadata surface.
 
-9. **Column statistics panel**: add lazy, type-aware data profiling.
+7. **Column statistics panel**: add lazy, type-aware data profiling.
 
-10. **Database statistics dashboard**: add database-level visibility for files,
+8. **Database statistics dashboard**: add database-level visibility for files,
     WAL, object counts, branches, and snapshots.
 
-11. **EXPLAIN visualization**: render plan output as a scannable tree/table.
+9. **EXPLAIN visualization**: render plan output as a scannable tree/table.
 
-12. **Data visualization**: add charts after result metadata and typed values are
+10. **Data visualization**: add charts after result metadata and typed values are
     stable.
 
-13. **Import/export profile persistence**: unify GUI and headless repeatable
+11. **Import/export profile persistence**: unify GUI and headless repeatable
     workflows.
 
-14. **Parquet and Excel export**: proceed after dependency evaluation and typed
+12. **Parquet and Excel export**: proceed after dependency evaluation and typed
     export semantics settle.
 
-15. **Richer import transforms and connector expansion**: continue import power
+13. **Richer import transforms and connector expansion**: continue import power
     features after v2.5.x-native workflows are stable.

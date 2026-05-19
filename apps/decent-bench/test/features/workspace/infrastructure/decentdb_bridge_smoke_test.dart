@@ -515,7 +515,7 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
     });
 
     test(
-      'surfaces native v2.5 values and exports typed CSV display values',
+      'surfaces native v2.5 values and exports typed CSV/JSON/NDJSON values',
       skip: skipReason,
       () async {
         await exec(
@@ -529,6 +529,7 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
           'ip IPADDR, '
           'net CIDR, '
           'mac MACADDR, '
+          'mac8 MACADDR8, '
           'geom GEOMETRY, '
           'geog GEOGRAPHY)',
         );
@@ -537,12 +538,13 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
           "1, 'published', '2026-05-01', '09:30:01', "
           "'2026-05-19T12:34:56Z', '1 day', "
           "'192.168.1.15', '10.0.0.0/24', '08:00:27:13:69:77', "
+          "'08:00:27:13:69:77:aa:bb', "
           "ST_GeomFromText('POINT(1 2)'), ST_GeogPoint(-90.0, 38.0))",
         );
 
         final rows = await queryAllRows(
           'SELECT status, seen_date, seen_time, seen_at, span, ip, net, mac, '
-          'geom, geog FROM native_values',
+          'mac8, geom, geog FROM native_values',
         );
         final row = rows.single;
 
@@ -554,6 +556,7 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
         expect(row['ip'], '192.168.1.15');
         expect(row['net'], '10.0.0.0/24');
         expect(row['mac'], '08:00:27:13:69:77');
+        expect(row['mac8'], '08:00:27:13:69:77:aa:bb');
         expect(row['geom'], isA<Uint8List>());
         expect(row['geog'], isA<Uint8List>());
         expect(
@@ -565,7 +568,7 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
         final export = await bridge.exportCsv(
           sql:
               'SELECT status, seen_date, seen_time, seen_at, span, ip, net, mac, '
-              'geom, geog FROM native_values',
+              'mac8, geom, geog FROM native_values',
           params: const <Object?>[],
           pageSize: 8,
           path: exportPath,
@@ -575,10 +578,20 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
         final csv = await File(exportPath).readAsString();
 
         expect(export.rowCount, 1);
-        expect(csv, contains('status,seen_date,seen_time,seen_at,span'));
+        expect(
+          csv,
+          contains(
+            'status,seen_date,seen_time,seen_at,span,ip,net,mac,mac8',
+          ),
+        );
         expect(csv, isNot(contains('DecentDBEnumValue')));
         expect(csv, isNot(contains('DecentDBIntervalValue')));
         expect(csv, contains('192.168.1.15'));
+        expect(csv, contains('10.0.0.0/24'));
+        expect(csv, contains('2026-05-01'));
+        expect(csv, contains('09:30:01'));
+        expect(csv, contains('1d'));
+        expect(csv, contains('08:00:27:13:69:77:aa:bb'));
         expect(csv, contains('GEOMETRY EWKB'));
         expect(csv, contains('GEOGRAPHY EWKB'));
 
@@ -586,7 +599,7 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
         final jsonExport = await bridge.exportJson(
           sql:
               'SELECT status, seen_date, seen_time, seen_at, span, ip, net, mac, '
-              'geom, geog FROM native_values',
+              'mac8, geom, geog FROM native_values',
           params: const <Object?>[],
           pageSize: 8,
           path: jsonPath,
@@ -607,11 +620,25 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
         expect(jsonRow['span'], isA<Map<String, Object?>>());
         expect(jsonRow['geom'], isA<Map<String, Object?>>());
         expect(jsonRow['geog'], isA<Map<String, Object?>>());
+        expect(jsonRow['seen_date'], '2026-05-01');
+        expect(jsonRow['seen_time'], '09:30:01');
+        expect(jsonRow['seen_at'], '2026-05-19T12:34:56.000Z');
         expect(jsonRow['ip'], '192.168.1.15');
+        expect(jsonRow['net'], '10.0.0.0/24');
+        expect(jsonRow['mac'], '08:00:27:13:69:77');
+        expect(jsonRow['mac8'], '08:00:27:13:69:77:aa:bb');
+        final jsonGeom = jsonRow['geom']! as Map<String, Object?>;
+        final jsonGeog = jsonRow['geog']! as Map<String, Object?>;
+        expect(jsonGeom['display'], contains('GEOMETRY EWKB'));
+        expect(jsonGeom['ewkb_base64'], isA<String>());
+        expect(jsonGeog['display'], contains('GEOGRAPHY EWKB'));
+        expect(jsonGeog['ewkb_base64'], isA<String>());
 
         final ndjsonPath = p.join(tempDir.path, 'native-values.ndjson');
         final ndjsonExport = await bridge.exportJson(
-          sql: 'SELECT ip, net, mac FROM native_values',
+          sql:
+              'SELECT status, seen_date, seen_time, seen_at, span, ip, net, mac, '
+              'mac8, geom, geog FROM native_values',
           params: const <Object?>[],
           pageSize: 1,
           path: ndjsonPath,
@@ -625,11 +652,24 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
 
         expect(ndjsonExport.rowCount, 1);
         expect(ndjsonLines, hasLength(1));
-        expect(jsonDecode(ndjsonLines.single), <String, Object?>{
-          'ip': '192.168.1.15',
-          'net': '10.0.0.0/24',
-          'mac': '08:00:27:13:69:77',
-        });
+        final ndjsonRow = jsonDecode(ndjsonLines.single)! as Map<String, Object?>;
+        expect(ndjsonRow['status'], isA<Map<String, Object?>>());
+        expect(ndjsonRow['seen_date'], '2026-05-01');
+        expect(ndjsonRow['seen_time'], '09:30:01');
+        expect(ndjsonRow['seen_at'], '2026-05-19T12:34:56.000Z');
+        expect(ndjsonRow['span'], isA<Map<String, Object?>>());
+        expect(ndjsonRow['ip'], '192.168.1.15');
+        expect(ndjsonRow['net'], '10.0.0.0/24');
+        expect(ndjsonRow['mac'], '08:00:27:13:69:77');
+        expect(ndjsonRow['mac8'], '08:00:27:13:69:77:aa:bb');
+        expect(ndjsonRow['geom'], isA<Map<String, Object?>>());
+        expect(ndjsonRow['geog'], isA<Map<String, Object?>>());
+        final ndjsonGeom = ndjsonRow['geom']! as Map<String, Object?>;
+        final ndjsonGeog = ndjsonRow['geog']! as Map<String, Object?>;
+        expect(ndjsonGeom['display'], contains('GEOMETRY EWKB'));
+        expect(ndjsonGeom['ewkb_base64'], isA<String>());
+        expect(ndjsonGeog['display'], contains('GEOGRAPHY EWKB'));
+        expect(ndjsonGeog['ewkb_base64'], isA<String>());
       },
     );
 
@@ -2126,6 +2166,21 @@ ORDER BY o.order_id, i.sku
         );
         expect(row['branch_name'], 'release');
         expect(row['branch_token'], isNotNull);
+        final branchToken = row['branch_token'];
+        expect(
+          branchToken,
+          anyOf(
+            isA<String>(),
+            isA<Uint8List>(),
+            isA<Map<Object?, Object?>>(),
+          ),
+        );
+        if (branchToken is Uint8List) {
+          expect(
+            formatTypedCellValue(branchToken, typeName: 'UUID'),
+            isNotEmpty,
+          );
+        }
 
         final exportPath = p.join(tempDir.path, 'v25-native-export.csv');
         final export = await bridge.exportCsv(
@@ -2142,8 +2197,39 @@ ORDER BY o.order_id, i.sku
         expect(export.rowCount, 1);
         expect(
           await File(exportPath).readAsString(),
-          contains('status_enum,temporal_timestamptz,ip_address,revenue'),
+          contains(
+            'status_enum,temporal_timestamptz,ip_address,revenue',
+          ),
         );
+
+        final jsonPath = p.join(tempDir.path, 'v25-native-export.json');
+        final jsonExport = await bridge.exportJson(
+          sql:
+              'SELECT branch_token, status_enum, ip_address, revenue '
+              'FROM imported_v25_native_features',
+          params: const <Object?>[],
+          pageSize: 64,
+          path: jsonPath,
+          format: 'json',
+          pretty: false,
+          includeMetadata: true,
+        );
+        final jsonPayload = jsonDecode(await File(jsonPath).readAsString())
+            as Map<String, Object?>;
+        final jsonRows = jsonPayload['rows']! as List<Object?>;
+        final jsonRow = jsonRows.single! as Map<String, Object?>;
+
+        expect(jsonExport.rowCount, 1);
+        final jsonBranchToken = jsonRow['branch_token'];
+        expect(
+          jsonBranchToken,
+          anyOf(
+            isA<String>(),
+            isA<Map<Object?, Object?>>(),
+          ),
+        );
+        expect(jsonRow['status_enum'], isA<String>());
+        expect(jsonRow['ip_address'], '192.168.1.15');
       },
     );
   });

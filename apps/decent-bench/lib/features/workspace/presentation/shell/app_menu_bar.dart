@@ -152,6 +152,16 @@ class NativeAppMenuHost extends StatelessWidget {
           ),
           PlatformMenuItemGroup(
             members: <PlatformMenuItem>[
+              _platformCommandItem('tools_branch_workbench'),
+              _platformCommandItem('tools_create_snapshot'),
+              _platformCommandItem('tools_create_branch'),
+              _platformCommandItem('tools_branch_diff'),
+              _platformCommandItem('tools_restore_branch'),
+              _platformCommandItem('tools_merge_branch'),
+            ],
+          ),
+          PlatformMenuItemGroup(
+            members: <PlatformMenuItem>[
               _platformCommandItem('tools_view_log'),
               _platformCommandItem('tools_query_history'),
               _platformCommandItem('tools_snippets'),
@@ -320,6 +330,13 @@ class AppMenuBar extends StatelessWidget {
               _commandItem('tools_stop_query'),
               _commandItem('tools_format_sql'),
               _commandItem('tools_new_query_tab'),
+              const Divider(height: 1),
+              _commandItem('tools_branch_workbench'),
+              _commandItem('tools_create_snapshot'),
+              _commandItem('tools_create_branch'),
+              _commandItem('tools_branch_diff'),
+              _commandItem('tools_restore_branch'),
+              _commandItem('tools_merge_branch'),
               const Divider(height: 1),
               _commandItem('tools_view_log'),
               _commandItem('tools_query_history'),

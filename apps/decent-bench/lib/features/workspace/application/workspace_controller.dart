@@ -23,6 +23,10 @@ import '../infrastructure/workspace_state_store.dart';
 class WorkspaceController extends ChangeNotifier {
   static const int _maxQueryHistoryEntries = 40;
   static const int _maxMessageHistoryEntries = 80;
+  static const String nativeBranchApiUnavailableReason =
+      'Native DecentDB branch and snapshot operations require a public Dart '
+      'binding API. DecentDB v2.5.x exposes the C ABI JSON bridge, but Decent '
+      'Bench does not call private binding internals.';
 
   WorkspaceController({
     WorkspaceDatabaseGateway? gateway,
@@ -48,6 +52,10 @@ class WorkspaceController extends ChangeNotifier {
   AppConfig config = AppConfig.defaults();
   SchemaSnapshot schema = SchemaSnapshot.empty();
   ToolingMetadata? toolingMetadata;
+  WorkspaceBranchState branchState = WorkspaceBranchState.unavailable(
+    nativeBranchApiUnavailableReason,
+  );
+  WorkspaceBranchDiff? lastBranchDiff;
   List<QueryTabState> tabs = const <QueryTabState>[];
   ExcelImportSession? excelImportSession;
   SqlDumpImportSession? sqlDumpImportSession;
@@ -61,6 +69,7 @@ class WorkspaceController extends ChangeNotifier {
   bool isInitializing = true;
   bool isSchemaLoading = false;
   bool isOpeningDatabase = false;
+  bool isBranchStateLoading = false;
 
   int _nextTabIdCounter = 1;
   int _nextTabTitleCounter = 1;
@@ -106,6 +115,9 @@ class WorkspaceController extends ChangeNotifier {
   bool get canRunActiveTab => canRunTab(activeTabId);
 
   bool get canCancelActiveTab => tabById(activeTabId)?.canCancel ?? false;
+
+  bool get canUseNativeBranchWorkflow =>
+      hasOpenDatabase && branchState.isNativeBranchApiAvailable;
 
   AppLogger get logger => _logger;
 
@@ -341,6 +353,10 @@ class WorkspaceController extends ChangeNotifier {
     isSchemaLoading = true;
     schema = SchemaSnapshot.empty();
     toolingMetadata = null;
+    branchState = WorkspaceBranchState.unavailable(
+      nativeBranchApiUnavailableReason,
+    );
+    lastBranchDiff = null;
     workspaceError = null;
     workspaceMessage = createIfMissing
         ? 'Creating database...'
@@ -365,6 +381,7 @@ class WorkspaceController extends ChangeNotifier {
       final restoredState = await _workspaceStateStore.load(session.path);
       _restoreTabs(restoredState, notify: false);
       await refreshSchema(showLoadingState: false);
+      await refreshBranchState(showLoadingState: false);
       if (restoreStartupQuery) {
         await _restoreStartupQueryState();
       }
@@ -392,6 +409,10 @@ class WorkspaceController extends ChangeNotifier {
       engineVersion = null;
       schema = SchemaSnapshot.empty();
       toolingMetadata = null;
+      branchState = WorkspaceBranchState.unavailable(
+        nativeBranchApiUnavailableReason,
+      );
+      lastBranchDiff = null;
       _setWorkspaceError(error.toString());
       _resetTabs(notify: false, resetCounters: true);
       _logError(
@@ -462,6 +483,347 @@ class WorkspaceController extends ChangeNotifier {
       );
     } finally {
       isSchemaLoading = false;
+      _safeNotify();
+    }
+  }
+
+  Future<void> refreshBranchState({bool showLoadingState = true}) async {
+    if (!hasOpenDatabase) {
+      branchState = WorkspaceBranchState.unavailable('Open a database first.');
+      lastBranchDiff = null;
+      if (showLoadingState) {
+        _safeNotify();
+      }
+      return;
+    }
+
+    if (showLoadingState) {
+      isBranchStateLoading = true;
+      workspaceError = null;
+      workspaceMessage = 'Refreshing branch and snapshot state...';
+      _safeNotify();
+    }
+
+    try {
+      final branches = await _gateway.listBranches();
+      final snapshots = await _gateway.listSnapshots();
+      final currentBranch = _currentBranchName(branches);
+      branchState = WorkspaceBranchState(
+        currentBranch: currentBranch,
+        isNativeBranchApiAvailable: true,
+        nativeBranchApiUnavailableReason: '',
+        branches: branches,
+        snapshots: snapshots,
+      );
+      workspaceError = null;
+      if (showLoadingState) {
+        workspaceMessage =
+            'Loaded ${branches.length} branches and '
+            '${snapshots.length} snapshots.';
+      }
+      _logInfo(
+        'refresh_branch_state',
+        'Loaded branch and snapshot state.',
+        databasePath: databasePath,
+        details: <String, Object?>{
+          'current_branch': currentBranch,
+          'branch_count': branches.length,
+          'snapshot_count': snapshots.length,
+        },
+      );
+    } on BranchWorkflowUnavailable catch (error) {
+      _setBranchWorkflowUnavailable(
+        error.message ?? nativeBranchApiUnavailableReason,
+        setMessage: showLoadingState,
+        notify: false,
+      );
+    } catch (error, stackTrace) {
+      _setBranchWorkflowUnavailable(
+        'Could not load native branch and snapshot state: $error',
+        setMessage: showLoadingState,
+        notify: false,
+      );
+      _logWarning(
+        'refresh_branch_state',
+        'Branch and snapshot state refresh failed.',
+        databasePath: databasePath,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    } finally {
+      isBranchStateLoading = false;
+      _safeNotify();
+    }
+  }
+
+  Future<WorkspaceSnapshotInfo?> createSnapshot(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      workspaceMessage = 'Snapshot name cannot be empty.';
+      _safeNotify();
+      return null;
+    }
+    if (!canUseNativeBranchWorkflow) {
+      _setBranchWorkflowUnavailable(
+        branchState.nativeBranchApiUnavailableReason,
+      );
+      return null;
+    }
+    try {
+      workspaceMessage = 'Creating snapshot "$trimmed"...';
+      _safeNotify();
+      final snapshot = await _gateway.createSnapshot(name: trimmed);
+      workspaceMessage = 'Created snapshot ${snapshot.name}.';
+      await refreshBranchState(showLoadingState: false);
+      _safeNotify();
+      return snapshot;
+    } on BranchWorkflowUnavailable catch (error) {
+      _setBranchWorkflowUnavailable(
+        error.message ?? nativeBranchApiUnavailableReason,
+      );
+      return null;
+    } catch (error) {
+      _setWorkspaceError(error.toString());
+      return null;
+    }
+  }
+
+  Future<WorkspaceBranchInfo?> createBranch({
+    required String branchName,
+    String fromRef = 'main',
+  }) async {
+    final trimmed = branchName.trim();
+    final sourceRef = fromRef.trim().isEmpty ? 'main' : fromRef.trim();
+    if (trimmed.isEmpty) {
+      workspaceMessage = 'Branch name cannot be empty.';
+      _safeNotify();
+      return null;
+    }
+    if (!canUseNativeBranchWorkflow) {
+      _setBranchWorkflowUnavailable(
+        branchState.nativeBranchApiUnavailableReason,
+      );
+      return null;
+    }
+    try {
+      workspaceMessage = 'Creating branch "$trimmed"...';
+      _safeNotify();
+      final branch = await _gateway.createBranch(
+        branchName: trimmed,
+        fromRef: sourceRef,
+      );
+      workspaceMessage = 'Created branch ${branch.name}.';
+      await refreshBranchState(showLoadingState: false);
+      _safeNotify();
+      return branch;
+    } on BranchWorkflowUnavailable catch (error) {
+      _setBranchWorkflowUnavailable(
+        error.message ?? nativeBranchApiUnavailableReason,
+      );
+      return null;
+    } catch (error) {
+      _setWorkspaceError(error.toString());
+      return null;
+    }
+  }
+
+  Future<WorkspaceBranchDiff?> previewBranchDiff({
+    required String leftRef,
+    required String rightRef,
+  }) async {
+    if (!canUseNativeBranchWorkflow) {
+      _setBranchWorkflowUnavailable(
+        branchState.nativeBranchApiUnavailableReason,
+      );
+      return null;
+    }
+    try {
+      final diff = await _gateway.branchDiff(
+        leftRef: leftRef.trim(),
+        rightRef: rightRef.trim(),
+      );
+      lastBranchDiff = diff;
+      workspaceMessage =
+          'Diff loaded: ${diff.totalChanges} row changes across '
+          '${diff.rows.map((row) => row.tableName).toSet().length} tables.';
+      _safeNotify();
+      return diff;
+    } on BranchWorkflowUnavailable catch (error) {
+      _setBranchWorkflowUnavailable(
+        error.message ?? nativeBranchApiUnavailableReason,
+      );
+      return null;
+    } catch (error) {
+      _setWorkspaceError(error.toString());
+      return null;
+    }
+  }
+
+  Future<WorkspaceBranchDiff?> previewRestoreBranch({
+    required String branchName,
+    required String targetRef,
+  }) async {
+    return _restoreBranch(
+      branchName: branchName,
+      targetRef: targetRef,
+      dryRun: true,
+    );
+  }
+
+  Future<WorkspaceBranchDiff?> applyRestoreBranch({
+    required String branchName,
+    required String targetRef,
+  }) async {
+    return _restoreBranch(
+      branchName: branchName,
+      targetRef: targetRef,
+      dryRun: false,
+    );
+  }
+
+  Future<WorkspaceBranchDiff?> previewMergeBranch({
+    required String sourceBranch,
+    required String targetBranch,
+  }) async {
+    return _mergeBranch(
+      sourceBranch: sourceBranch,
+      targetBranch: targetBranch,
+      dryRun: true,
+    );
+  }
+
+  Future<WorkspaceBranchDiff?> applyMergeBranch({
+    required String sourceBranch,
+    required String targetBranch,
+  }) async {
+    return _mergeBranch(
+      sourceBranch: sourceBranch,
+      targetBranch: targetBranch,
+      dryRun: false,
+    );
+  }
+
+  Future<WorkspaceBranchDiff?> _restoreBranch({
+    required String branchName,
+    required String targetRef,
+    required bool dryRun,
+  }) async {
+    if (!canUseNativeBranchWorkflow) {
+      _setBranchWorkflowUnavailable(
+        branchState.nativeBranchApiUnavailableReason,
+      );
+      return null;
+    }
+    try {
+      if (!dryRun) {
+        await _gateway.createSnapshot(name: _preRestoreSnapshotName());
+      }
+      final diff = await _gateway.restoreBranch(
+        branchName: branchName.trim(),
+        targetRef: targetRef.trim(),
+        dryRun: dryRun,
+      );
+      lastBranchDiff = diff;
+      workspaceMessage = dryRun
+          ? 'Restore dry run loaded ${diff.totalChanges} row changes.'
+          : 'Restored ${branchName.trim()} to ${targetRef.trim()}.';
+      if (!dryRun) {
+        await refreshSchema(showLoadingState: false);
+        await refreshBranchState(showLoadingState: false);
+      }
+      _safeNotify();
+      return diff;
+    } on BranchWorkflowUnavailable catch (error) {
+      _setBranchWorkflowUnavailable(
+        error.message ?? nativeBranchApiUnavailableReason,
+      );
+      return null;
+    } catch (error) {
+      _setWorkspaceError(error.toString());
+      return null;
+    }
+  }
+
+  Future<WorkspaceBranchDiff?> _mergeBranch({
+    required String sourceBranch,
+    required String targetBranch,
+    required bool dryRun,
+  }) async {
+    if (!canUseNativeBranchWorkflow) {
+      _setBranchWorkflowUnavailable(
+        branchState.nativeBranchApiUnavailableReason,
+      );
+      return null;
+    }
+    try {
+      final diff = await _gateway.mergeBranch(
+        sourceBranch: sourceBranch.trim(),
+        targetBranch: targetBranch.trim(),
+        dryRun: dryRun,
+      );
+      lastBranchDiff = diff;
+      workspaceMessage = dryRun
+          ? 'Merge dry run loaded ${diff.totalChanges} row changes.'
+          : 'Merged ${sourceBranch.trim()} into ${targetBranch.trim()}.';
+      if (!dryRun) {
+        await refreshSchema(showLoadingState: false);
+        await refreshBranchState(showLoadingState: false);
+      }
+      _safeNotify();
+      return diff;
+    } on BranchWorkflowUnavailable catch (error) {
+      _setBranchWorkflowUnavailable(
+        error.message ?? nativeBranchApiUnavailableReason,
+      );
+      return null;
+    } catch (error) {
+      _setWorkspaceError(error.toString());
+      return null;
+    }
+  }
+
+  String _currentBranchName(List<WorkspaceBranchInfo> branches) {
+    for (final branch in branches) {
+      if (branch.isCurrent) {
+        return branch.name;
+      }
+    }
+    return branches.isEmpty ? 'main' : branches.first.name;
+  }
+
+  String _preRestoreSnapshotName() {
+    final stamp = DateTime.now()
+        .toUtc()
+        .toIso8601String()
+        .replaceAll(RegExp(r'[^0-9A-Za-z]+'), '_')
+        .replaceAll(RegExp(r'_+$'), '');
+    return 'pre_restore_$stamp';
+  }
+
+  void _setBranchWorkflowUnavailable(
+    String reason, {
+    bool setMessage = true,
+    bool notify = true,
+  }) {
+    branchState = WorkspaceBranchState.unavailable(
+      reason.trim().isEmpty ? nativeBranchApiUnavailableReason : reason,
+    );
+    lastBranchDiff = null;
+    if (setMessage) {
+      workspaceMessage =
+          'Native branch workflow unavailable: '
+          '${branchState.nativeBranchApiUnavailableReason}';
+      workspaceError = null;
+    }
+    _logInfo(
+      'branch_workflow_unavailable',
+      'Native branch workflow unavailable.',
+      databasePath: databasePath,
+      details: <String, Object?>{
+        'reason': branchState.nativeBranchApiUnavailableReason,
+      },
+    );
+    if (notify) {
       _safeNotify();
     }
   }
@@ -782,98 +1144,113 @@ class WorkspaceController extends ChangeNotifier {
       if (!_isCurrentGeneration(tabId, generation)) {
         return;
       }
-      final page = await _gateway.runQuery(
-        sql: trimmedSql,
-        params: params,
-        pageSize: config.defaultPageSize,
+      _mutateTab(
+        tabId,
+        (current) => current.copyWith(queryContract: queryContract),
+        notify: false,
       );
-      if (!_isCurrentGeneration(tabId, generation)) {
-        if (page.cursorId != null) {
-          unawaited(_gateway.cancelQuery(page.cursorId!));
-        }
-        return;
-      }
-
-      _mutateTab(tabId, (current) {
-        final statusMessage = page.rowsAffected != null
-            ? 'Statement completed with ${page.rowsAffected} affected rows.'
-            : 'Loaded ${page.rows.length} rows from the first page.';
-        final explainsCurrentSql = _isExplainSql(trimmedSql);
-        final shouldLoadExecutionPlan = _shouldLoadExecutionPlan(
+      if (_validateQueryContractParameters(
+        tabId: tabId,
+        contract: queryContract,
+        parameterValues: params,
+      )) {
+        final page = await _gateway.runQuery(
           sql: trimmedSql,
-          page: page,
+          params: params,
+          pageSize: config.defaultPageSize,
         );
-        final updated = _applyFirstPage(
-          current,
-          page,
-          queryContract: queryContract,
-          statusMessage: statusMessage,
-        );
-        final withPlan = explainsCurrentSql
-            ? updated.copyWith(
-                executionPlan: QueryExecutionPlanState(
-                  columns: page.columns,
-                  rows: page.rows,
-                  isLoading: !page.done,
-                ),
-              )
-            : shouldLoadExecutionPlan
-            ? updated
-            : updated.copyWith(
-                executionPlan: const QueryExecutionPlanState.idle().copyWith(
-                  errorMessage:
-                      'Execution plan is only available for statements that return rows.',
-                ),
-              );
-        final withMessage = withPlan.copyWith(
-          messageHistory: _appendMessage(
-            withPlan.messageHistory,
-            QueryMessageLevel.info,
-            statusMessage,
-          ),
-        );
-        if (!page.done) {
+        if (!_isCurrentGeneration(tabId, generation)) {
+          if (page.cursorId != null) {
+            unawaited(_gateway.cancelQuery(page.cursorId!));
+          }
+          return;
+        }
+
+        _mutateTab(tabId, (current) {
+          final statusMessage = page.rowsAffected != null
+              ? 'Statement completed with ${page.rowsAffected} affected rows.'
+              : 'Loaded ${page.rows.length} rows from the first page.';
+          final explainsCurrentSql = _isExplainSql(trimmedSql);
+          final shouldLoadExecutionPlan = _shouldLoadExecutionPlan(
+            sql: trimmedSql,
+            page: page,
+          );
+          final updated = _applyFirstPage(
+            current,
+            page,
+            queryContract: queryContract,
+            statusMessage: statusMessage,
+          );
+          final withPlan = explainsCurrentSql
+              ? updated.copyWith(
+                  executionPlan: QueryExecutionPlanState(
+                    columns: page.columns,
+                    rows: page.rows,
+                    isLoading: !page.done,
+                  ),
+                )
+              : shouldLoadExecutionPlan
+              ? updated
+              : updated.copyWith(
+                  executionPlan: const QueryExecutionPlanState.idle().copyWith(
+                    errorMessage:
+                        'Execution plan is only available for statements that return rows.',
+                  ),
+                );
+          final withMessage = withPlan.copyWith(
+            messageHistory: _appendMessage(
+              withPlan.messageHistory,
+              QueryMessageLevel.info,
+              statusMessage,
+            ),
+          );
+          if (!page.done) {
+            _logger.logQueryTiming(
+              databasePath: databasePath ?? '',
+              sql: trimmedSql,
+              rowCount: page.rows.length,
+              rowsAffected: page.rowsAffected,
+              elapsedNanos: _durationToNanos(page.elapsed),
+              operation: 'query.first_page',
+              details: <String, Object?>{
+                'tab_id': tabId,
+                'has_more_rows': true,
+              },
+            );
+            return withMessage;
+          }
           _logger.logQueryTiming(
             databasePath: databasePath ?? '',
             sql: trimmedSql,
-            rowCount: page.rows.length,
-            rowsAffected: page.rowsAffected,
-            elapsedNanos: _durationToNanos(page.elapsed),
-            operation: 'query.first_page',
-            details: <String, Object?>{'tab_id': tabId, 'has_more_rows': true},
+            rowCount: withMessage.resultRows.length,
+            rowsAffected: withMessage.rowsAffected,
+            elapsedNanos: _durationToNanos(withMessage.elapsed ?? page.elapsed),
+            details: <String, Object?>{'tab_id': tabId, 'has_more_rows': false},
           );
-          return withMessage;
-        }
-        _logger.logQueryTiming(
-          databasePath: databasePath ?? '',
-          sql: trimmedSql,
-          rowCount: withMessage.resultRows.length,
-          rowsAffected: withMessage.rowsAffected,
-          elapsedNanos: _durationToNanos(withMessage.elapsed ?? page.elapsed),
-          details: <String, Object?>{'tab_id': tabId, 'has_more_rows': false},
-        );
-        return withMessage.copyWith(
-          queryHistory: _appendQueryHistory(
-            withMessage.queryHistory,
-            _buildQueryHistoryEntry(
-              withMessage,
-              outcome: QueryHistoryOutcome.completed,
-              rowsLoaded: withMessage.resultRows.length,
-              rowsAffected: withMessage.rowsAffected,
-              elapsed: withMessage.elapsed,
+          return withMessage.copyWith(
+            queryHistory: _appendQueryHistory(
+              withMessage.queryHistory,
+              _buildQueryHistoryEntry(
+                withMessage,
+                outcome: QueryHistoryOutcome.completed,
+                rowsLoaded: withMessage.resultRows.length,
+                rowsAffected: withMessage.rowsAffected,
+                elapsed: withMessage.elapsed,
+              ),
             ),
-          ),
-        );
-      }, notify: false);
-      if (_shouldLoadExecutionPlan(sql: trimmedSql, page: page)) {
-        unawaited(
-          _loadExecutionPlanForTab(
-            tabId,
-            generation: generation,
-            sql: trimmedSql,
-            params: params,
-          ),
-        );
+          );
+        }, notify: false);
+        if (_shouldLoadExecutionPlan(sql: trimmedSql, page: page)) {
+          unawaited(
+            _loadExecutionPlanForTab(
+              tabId,
+              generation: generation,
+              sql: trimmedSql,
+              params: params,
+            ),
+          );
+        }
+        return;
       }
     } catch (error) {
       if (_isCurrentGeneration(tabId, generation)) {
@@ -3181,6 +3558,392 @@ class WorkspaceController extends ChangeNotifier {
     return tab!.error!.toClipboardText(sql: tab.lastSql ?? tab.sql);
   }
 
+  TableEditabilityState tableEditabilityForTab([String? tabId]) {
+    final tab = tabId == null ? activeTab : tabById(tabId);
+    if (tab == null) {
+      return TableEditabilityState.noResults;
+    }
+    return _tableEditabilityFor(tab);
+  }
+
+  Future<TableEditCommitResult> updateResultCell({
+    required int rowIndex,
+    required String columnName,
+    required Object? value,
+    String? tabId,
+  }) async {
+    final resolvedTabId = tabId ?? activeTabId;
+    final tab = tabById(resolvedTabId);
+    if (tab == null) {
+      return const TableEditCommitResult(
+        success: false,
+        message: 'The selected query tab is no longer available.',
+      );
+    }
+
+    final editability = _tableEditabilityFor(tab);
+    final tableName = editability.tableName;
+    final primaryKeyColumn = editability.primaryKeyColumn;
+    final primaryKeyResultColumn = editability.primaryKeyResultColumn;
+    final sourceColumn = editability.editableColumns[columnName];
+    if (!editability.isEditable ||
+        tableName == null ||
+        primaryKeyColumn == null ||
+        primaryKeyResultColumn == null ||
+        sourceColumn == null) {
+      return TableEditCommitResult(
+        success: false,
+        message: editability.canEditColumn(columnName)
+            ? 'The selected cell cannot be edited.'
+            : editability.reason,
+      );
+    }
+    if (rowIndex < 0 || rowIndex >= tab.resultRows.length) {
+      return const TableEditCommitResult(
+        success: false,
+        message: 'The selected row is no longer loaded.',
+      );
+    }
+
+    final contract = tab.resultContractForColumn(columnName);
+    final schemaColumn = _schemaColumn(tableName, sourceColumn);
+    if (contract == null || schemaColumn == null) {
+      return const TableEditCommitResult(
+        success: false,
+        message: 'Column metadata is unavailable for this edit.',
+      );
+    }
+
+    final coerced = _coerceTableEditValue(
+      value: value,
+      tableName: tableName,
+      contract: contract,
+      schemaColumn: schemaColumn,
+    );
+    if (coerced.error != null) {
+      return TableEditCommitResult(success: false, message: coerced.error!);
+    }
+
+    final row = tab.resultRows[rowIndex];
+    final primaryKeyValue = row[primaryKeyResultColumn];
+    if (primaryKeyValue == null) {
+      return const TableEditCommitResult(
+        success: false,
+        message: 'The selected row does not expose a primary key value.',
+      );
+    }
+
+    final sql =
+        'UPDATE ${_quoteIdentifier(tableName)} '
+        'SET ${_quoteIdentifier(sourceColumn)} = \$1 '
+        'WHERE ${_quoteIdentifier(primaryKeyColumn)} = \$2';
+    try {
+      final page = await _gateway.runQuery(
+        sql: sql,
+        params: <Object?>[coerced.value, primaryKeyValue],
+        pageSize: config.defaultPageSize,
+      );
+      final rowsAffected = page.rowsAffected;
+      if (rowsAffected == 0) {
+        return const TableEditCommitResult(
+          success: false,
+          message: 'No rows were updated. Refresh the query and try again.',
+          rowsAffected: 0,
+        );
+      }
+
+      _mutateTab(resolvedTabId, (current) {
+        if (rowIndex < 0 || rowIndex >= current.resultRows.length) {
+          return current;
+        }
+        final rows = <Map<String, Object?>>[
+          for (final resultRow in current.resultRows)
+            Map<String, Object?>.from(resultRow),
+        ];
+        rows[rowIndex][columnName] = coerced.value;
+        final message = rowsAffected == null
+            ? 'Updated $tableName.$sourceColumn.'
+            : 'Updated $tableName.$sourceColumn with $rowsAffected affected rows.';
+        return current.copyWith(
+          resultRows: rows,
+          statusMessage: message,
+          messageHistory: _appendMessage(
+            current.messageHistory,
+            QueryMessageLevel.info,
+            message,
+          ),
+        );
+      }, notify: false);
+      _safeNotify();
+      return TableEditCommitResult(
+        success: true,
+        message: 'Updated $tableName.$sourceColumn.',
+        rowsAffected: rowsAffected,
+      );
+    } catch (error, stackTrace) {
+      _logWarning(
+        'update_result_cell',
+        'Table cell update failed.',
+        category: 'query',
+        databasePath: databasePath,
+        sql: sql,
+        error: error,
+        stackTrace: stackTrace,
+        details: <String, Object?>{
+          'tab_id': resolvedTabId,
+          'table': tableName,
+          'column': sourceColumn,
+        },
+      );
+      final failure = QueryErrorDetails.fromError(
+        error,
+        stage: QueryErrorStage.validation,
+      );
+      return TableEditCommitResult(success: false, message: failure.message);
+    }
+  }
+
+  Future<TableEditCommitResult> insertResultRow({
+    required Map<String, Object?> values,
+    String? tabId,
+  }) async {
+    final resolvedTabId = tabId ?? activeTabId;
+    final tab = tabById(resolvedTabId);
+    if (tab == null) {
+      return const TableEditCommitResult(
+        success: false,
+        message: 'The selected query tab is no longer available.',
+      );
+    }
+
+    final editability = _tableEditabilityFor(tab);
+    final tableName = editability.tableName;
+    if (!editability.canInsertRows || tableName == null) {
+      return TableEditCommitResult(
+        success: false,
+        message: editability.reason,
+      );
+    }
+
+    final insertedValues = <String, Object?>{};
+    for (final entry in editability.insertableColumns.entries) {
+      final sourceColumnName = entry.value;
+      final schemaColumn = _schemaColumn(tableName, sourceColumnName);
+      if (schemaColumn == null) {
+        continue;
+      }
+      final hasValue = values.containsKey(sourceColumnName);
+      final rawValue = values[sourceColumnName];
+      final emptyText = rawValue is String && rawValue.trim().isEmpty;
+      final requiredValue =
+          schemaColumn.notNull &&
+          schemaColumn.defaultExpr == null &&
+          !schemaColumn.primaryKey;
+      if (!hasValue || emptyText) {
+        if (requiredValue) {
+          return TableEditCommitResult(
+            success: false,
+            message: '${schemaColumn.name} is required.',
+          );
+        }
+        continue;
+      }
+
+      final contract = _resultContractForSourceColumn(tab, sourceColumnName);
+      final coerced = _coerceTableEditValue(
+        value: rawValue,
+        tableName: tableName,
+        contract: contract,
+        schemaColumn: schemaColumn,
+      );
+      if (coerced.error != null) {
+        return TableEditCommitResult(success: false, message: coerced.error!);
+      }
+      insertedValues[sourceColumnName] = coerced.value;
+    }
+
+    final sql = insertedValues.isEmpty
+        ? 'INSERT INTO ${_quoteIdentifier(tableName)} DEFAULT VALUES'
+        : 'INSERT INTO ${_quoteIdentifier(tableName)} '
+              '(${insertedValues.keys.map(_quoteIdentifier).join(', ')}) '
+              'VALUES (${List<String>.generate(insertedValues.length, (index) => '\$${index + 1}').join(', ')})';
+    try {
+      final page = await _gateway.runQuery(
+        sql: sql,
+        params: <Object?>[...insertedValues.values],
+        pageSize: config.defaultPageSize,
+      );
+      final rowsAffected = page.rowsAffected;
+      if (rowsAffected == 0) {
+        return const TableEditCommitResult(
+          success: false,
+          message: 'No rows were inserted. Refresh the query and try again.',
+          rowsAffected: 0,
+        );
+      }
+
+      _mutateTab(resolvedTabId, (current) {
+        final row = <String, Object?>{};
+        var canAppendVisibleRow = current.resultColumns.isNotEmpty;
+        for (final resultColumn in current.resultColumns) {
+          final sourceColumn = _resultSourceColumn(current, resultColumn);
+          if (sourceColumn == null || !insertedValues.containsKey(sourceColumn)) {
+            canAppendVisibleRow = false;
+            break;
+          }
+          row[resultColumn] = insertedValues[sourceColumn];
+        }
+        final rows = canAppendVisibleRow
+            ? <Map<String, Object?>>[
+                ...current.resultRows,
+                row,
+              ]
+            : current.resultRows;
+        final message = rowsAffected == null
+            ? 'Inserted row into $tableName.'
+            : 'Inserted row into $tableName with $rowsAffected affected rows.';
+        return current.copyWith(
+          resultRows: rows,
+          statusMessage: canAppendVisibleRow
+              ? message
+              : '$message Refresh results to load generated values.',
+          messageHistory: _appendMessage(
+            current.messageHistory,
+            QueryMessageLevel.info,
+            canAppendVisibleRow
+                ? message
+                : '$message Refresh results to load generated values.',
+          ),
+        );
+      }, notify: false);
+      _safeNotify();
+      return TableEditCommitResult(
+        success: true,
+        message: 'Inserted row into $tableName.',
+        rowsAffected: rowsAffected,
+      );
+    } catch (error, stackTrace) {
+      _logWarning(
+        'insert_result_row',
+        'Table row insert failed.',
+        category: 'query',
+        databasePath: databasePath,
+        sql: sql,
+        error: error,
+        stackTrace: stackTrace,
+        details: <String, Object?>{'tab_id': resolvedTabId, 'table': tableName},
+      );
+      final failure = QueryErrorDetails.fromError(
+        error,
+        stage: QueryErrorStage.validation,
+      );
+      return TableEditCommitResult(success: false, message: failure.message);
+    }
+  }
+
+  Future<TableEditCommitResult> deleteResultRow({
+    required int rowIndex,
+    String? tabId,
+  }) async {
+    final resolvedTabId = tabId ?? activeTabId;
+    final tab = tabById(resolvedTabId);
+    if (tab == null) {
+      return const TableEditCommitResult(
+        success: false,
+        message: 'The selected query tab is no longer available.',
+      );
+    }
+
+    final editability = _tableEditabilityFor(tab);
+    final tableName = editability.tableName;
+    final primaryKeyColumn = editability.primaryKeyColumn;
+    final primaryKeyResultColumn = editability.primaryKeyResultColumn;
+    if (!editability.canDeleteRows ||
+        tableName == null ||
+        primaryKeyColumn == null ||
+        primaryKeyResultColumn == null) {
+      return TableEditCommitResult(success: false, message: editability.reason);
+    }
+    if (rowIndex < 0 || rowIndex >= tab.resultRows.length) {
+      return const TableEditCommitResult(
+        success: false,
+        message: 'The selected row is no longer loaded.',
+      );
+    }
+
+    final primaryKeyValue = tab.resultRows[rowIndex][primaryKeyResultColumn];
+    if (primaryKeyValue == null) {
+      return const TableEditCommitResult(
+        success: false,
+        message: 'The selected row does not expose a primary key value.',
+      );
+    }
+
+    final sql =
+        'DELETE FROM ${_quoteIdentifier(tableName)} '
+        'WHERE ${_quoteIdentifier(primaryKeyColumn)} = \$1';
+    try {
+      final page = await _gateway.runQuery(
+        sql: sql,
+        params: <Object?>[primaryKeyValue],
+        pageSize: config.defaultPageSize,
+      );
+      final rowsAffected = page.rowsAffected;
+      if (rowsAffected == 0) {
+        return const TableEditCommitResult(
+          success: false,
+          message: 'No rows were deleted. Refresh the query and try again.',
+          rowsAffected: 0,
+        );
+      }
+
+      _mutateTab(resolvedTabId, (current) {
+        if (rowIndex < 0 || rowIndex >= current.resultRows.length) {
+          return current;
+        }
+        final rows = <Map<String, Object?>>[
+          for (var index = 0; index < current.resultRows.length; index++)
+            if (index != rowIndex)
+              Map<String, Object?>.from(current.resultRows[index]),
+        ];
+        final message = rowsAffected == null
+            ? 'Deleted row from $tableName.'
+            : 'Deleted row from $tableName with $rowsAffected affected rows.';
+        return current.copyWith(
+          resultRows: rows,
+          statusMessage: message,
+          messageHistory: _appendMessage(
+            current.messageHistory,
+            QueryMessageLevel.info,
+            message,
+          ),
+        );
+      }, notify: false);
+      _safeNotify();
+      return TableEditCommitResult(
+        success: true,
+        message: 'Deleted row from $tableName.',
+        rowsAffected: rowsAffected,
+      );
+    } catch (error, stackTrace) {
+      _logWarning(
+        'delete_result_row',
+        'Table row delete failed.',
+        category: 'query',
+        databasePath: databasePath,
+        sql: sql,
+        error: error,
+        stackTrace: stackTrace,
+        details: <String, Object?>{'tab_id': resolvedTabId, 'table': tableName},
+      );
+      final failure = QueryErrorDetails.fromError(
+        error,
+        stage: QueryErrorStage.validation,
+      );
+      return TableEditCommitResult(success: false, message: failure.message);
+    }
+  }
+
   List<SchemaObjectSummary> filterSchemaObjects(String rawFilter) {
     final filter = rawFilter.trim().toLowerCase();
     if (filter.isEmpty) {
@@ -3238,6 +4001,325 @@ class WorkspaceController extends ChangeNotifier {
       if (object.ddl == null || object.ddl!.trim().isEmpty)
         '${object.kind == SchemaObjectKind.table ? 'Table DDL' : 'View definition'} is unavailable for this object.',
     ];
+  }
+
+  TableEditabilityState _tableEditabilityFor(QueryTabState tab) {
+    if (!hasOpenDatabase) {
+      return const TableEditabilityState(
+        isEditable: false,
+        reason: 'Open a DecentDB file before editing rows.',
+      );
+    }
+    if (tab.resultColumns.isEmpty || tab.resultRows.isEmpty) {
+      return TableEditabilityState.noResults;
+    }
+
+    final contract = tab.queryContract;
+    if (contract == null) {
+      return const TableEditabilityState(
+        isEditable: false,
+        reason: 'Query contract metadata is unavailable for this result set.',
+      );
+    }
+    if (contract.diagnostics.isNotEmpty) {
+      return TableEditabilityState(
+        isEditable: false,
+        reason:
+            'Query contract diagnostics prevent safe editing: '
+            '${contract.diagnostics.first}',
+      );
+    }
+    final statementKind = contract.statementKind.trim().toLowerCase();
+    if (statementKind != 'query' && statementKind != 'select') {
+      return const TableEditabilityState(
+        isEditable: false,
+        reason: 'Only single-table SELECT results can be edited.',
+      );
+    }
+    if (!contract.readOnly) {
+      return const TableEditabilityState(
+        isEditable: false,
+        reason: 'Only read-only SELECT results can be edited.',
+      );
+    }
+
+    String? tableName;
+    final resultToSourceColumn = <String, String>{};
+    final readOnlyColumns = <String>{};
+    for (final resultColumn in tab.resultColumns) {
+      final columnContract = tab.resultContractForColumn(resultColumn);
+      if (columnContract == null ||
+          columnContract.diagnostics.isNotEmpty ||
+          columnContract.source != 'catalog_column' ||
+          columnContract.sourceTable == null ||
+          columnContract.sourceTable!.trim().isEmpty ||
+          columnContract.sourceColumn == null ||
+          columnContract.sourceColumn!.trim().isEmpty) {
+        return const TableEditabilityState(
+          isEditable: false,
+          reason:
+              'Every displayed column must map directly to one catalog table.',
+        );
+      }
+      final sourceTable = columnContract.sourceTable!;
+      if (tableName == null) {
+        tableName = sourceTable;
+      } else if (tableName != sourceTable) {
+        return const TableEditabilityState(
+          isEditable: false,
+          reason: 'Joined result sets are read-only in the table editor.',
+        );
+      }
+      resultToSourceColumn[resultColumn] = columnContract.sourceColumn!;
+    }
+
+    final resolvedTableName = tableName;
+    if (resolvedTableName == null) {
+      return TableEditabilityState.noResults;
+    }
+    final object = schema.objectNamed(resolvedTableName);
+    if (object == null || object.kind != SchemaObjectKind.table) {
+      return const TableEditabilityState(
+        isEditable: false,
+        reason: 'The query result does not resolve to a base table.',
+      );
+    }
+
+    final primaryKeyColumns = <SchemaColumn>[
+      for (final column in object.columns)
+        if (column.primaryKey) column,
+    ];
+    if (primaryKeyColumns.length != 1) {
+      return const TableEditabilityState(
+        isEditable: false,
+        reason:
+            'A single-column primary key must be selected to edit table rows.',
+      );
+    }
+    final primaryKeyColumn = primaryKeyColumns.single;
+    String? primaryKeyResultColumn;
+    for (final entry in resultToSourceColumn.entries) {
+      if (entry.value == primaryKeyColumn.name) {
+        primaryKeyResultColumn = entry.key;
+        break;
+      }
+    }
+    if (primaryKeyResultColumn == null) {
+      return const TableEditabilityState(
+        isEditable: false,
+        reason:
+            'The primary key column must be present in the result set before editing.',
+      );
+    }
+
+    final editableColumns = <String, String>{};
+    final resultContractBySourceColumn = <String, QueryResultColumnContract>{};
+    for (final resultColumn in tab.resultColumns) {
+      final sourceColumn = resultToSourceColumn[resultColumn];
+      final columnContract = tab.resultContractForColumn(resultColumn);
+      if (sourceColumn != null && columnContract != null) {
+        resultContractBySourceColumn[sourceColumn] = columnContract;
+      }
+    }
+    for (final entry in resultToSourceColumn.entries) {
+      final resultColumn = entry.key;
+      final sourceColumnName = entry.value;
+      final sourceColumn = _schemaColumn(resolvedTableName, sourceColumnName);
+      final columnContract = tab.resultContractForColumn(resultColumn);
+      if (sourceColumn == null ||
+          columnContract == null ||
+          sourceColumn.primaryKey ||
+          sourceColumn.generatedExpr != null ||
+          _columnDescriptor(
+            tableName: resolvedTableName,
+            schemaColumn: sourceColumn,
+            contract: columnContract,
+          ).isSpatial) {
+        readOnlyColumns.add(resultColumn);
+        continue;
+      }
+      editableColumns[resultColumn] = sourceColumnName;
+    }
+    final insertableColumns = <String, String>{};
+    for (final sourceColumn in object.columns) {
+      final columnContract = resultContractBySourceColumn[sourceColumn.name];
+      if (sourceColumn.generatedExpr != null ||
+          _columnDescriptor(
+            tableName: resolvedTableName,
+            schemaColumn: sourceColumn,
+            contract: columnContract,
+          ).isSpatial ||
+          _columnDescriptor(
+                tableName: resolvedTableName,
+                schemaColumn: sourceColumn,
+                contract: columnContract,
+              ).family ==
+              NativeTypeFamily.binary) {
+        continue;
+      }
+      insertableColumns[sourceColumn.name] = sourceColumn.name;
+    }
+
+    return TableEditabilityState(
+      isEditable: true,
+      reason: editableColumns.isEmpty
+          ? 'Rows can be deleted by primary key, but no result columns are editable.'
+          : 'Updates and deletes are parameterized by primary key.',
+      tableName: resolvedTableName,
+      primaryKeyColumn: primaryKeyColumn.name,
+      primaryKeyResultColumn: primaryKeyResultColumn,
+      editableColumns: editableColumns,
+      insertableColumns: insertableColumns,
+      readOnlyColumns: readOnlyColumns,
+    );
+  }
+
+  String? _resultSourceColumn(QueryTabState tab, String resultColumnName) {
+    return tab.resultContractForColumn(resultColumnName)?.sourceColumn;
+  }
+
+  QueryResultColumnContract? _resultContractForSourceColumn(
+    QueryTabState tab,
+    String sourceColumnName,
+  ) {
+    for (final resultColumn in tab.resultColumns) {
+      final contract = tab.resultContractForColumn(resultColumn);
+      if (contract?.sourceColumn == sourceColumnName) {
+        return contract;
+      }
+    }
+    return null;
+  }
+
+  SchemaColumn? _schemaColumn(String tableName, String columnName) {
+    final object = schema.objectNamed(tableName);
+    if (object == null) {
+      return null;
+    }
+    for (final column in object.columns) {
+      if (column.name == columnName) {
+        return column;
+      }
+    }
+    return null;
+  }
+
+  NativeTypeDescriptor _columnDescriptor({
+    required String tableName,
+    required SchemaColumn schemaColumn,
+    required QueryResultColumnContract? contract,
+  }) {
+    final toolingColumn = toolingMetadata?.columnTypeFor(
+      tableName: tableName,
+      columnName: schemaColumn.name,
+    );
+    if (toolingColumn != null) {
+      return toolingColumn.nativeTypeDescriptor;
+    }
+    return describeNativeType(
+      typeName: contract?.typeName?.trim().isNotEmpty == true
+          ? contract!.typeName
+          : schemaColumn.type,
+    );
+  }
+
+  _CoercedTableEditValue _coerceTableEditValue({
+    required Object? value,
+    required String tableName,
+    required QueryResultColumnContract? contract,
+    required SchemaColumn schemaColumn,
+  }) {
+    final descriptor = _columnDescriptor(
+      tableName: tableName,
+      schemaColumn: schemaColumn,
+      contract: contract,
+    );
+    if (descriptor.isSpatial || descriptor.family == NativeTypeFamily.binary) {
+      return _CoercedTableEditValue.failure(
+        '${schemaColumn.name} is view/copy-only in the table editor.',
+      );
+    }
+    final nullable = contract?.nullable ?? !schemaColumn.notNull;
+    if (value == null) {
+      if (!nullable) {
+        return _CoercedTableEditValue.failure(
+          '${schemaColumn.name} cannot be NULL.',
+        );
+      }
+      return const _CoercedTableEditValue.success(null);
+    }
+
+    if (value is! String) {
+      return _CoercedTableEditValue.success(value);
+    }
+
+    final rawText = value;
+    final trimmed = rawText.trim();
+    switch (descriptor.family) {
+      case NativeTypeFamily.numeric:
+        if (_isIntegerDescriptor(descriptor)) {
+          final parsed = int.tryParse(trimmed);
+          if (parsed == null) {
+            return _CoercedTableEditValue.failure(
+              '${schemaColumn.name} expects an integer value.',
+            );
+          }
+          return _CoercedTableEditValue.success(parsed);
+        }
+        final parsed = double.tryParse(trimmed);
+        if (parsed == null) {
+          return _CoercedTableEditValue.failure(
+            '${schemaColumn.name} expects a numeric value.',
+          );
+        }
+        return _CoercedTableEditValue.success(parsed);
+      case NativeTypeFamily.boolean:
+        final parsed = _parseBooleanEditValue(trimmed);
+        if (parsed == null) {
+          return _CoercedTableEditValue.failure(
+            '${schemaColumn.name} expects true or false.',
+          );
+        }
+        return _CoercedTableEditValue.success(parsed);
+      case NativeTypeFamily.binary:
+      case NativeTypeFamily.spatial:
+        return _CoercedTableEditValue.failure(
+          '${schemaColumn.name} is view/copy-only in the table editor.',
+        );
+      case NativeTypeFamily.text:
+      case NativeTypeFamily.uuid:
+      case NativeTypeFamily.enumValue:
+      case NativeTypeFamily.temporal:
+      case NativeTypeFamily.network:
+      case NativeTypeFamily.macAddress:
+      case NativeTypeFamily.unknown:
+        return _CoercedTableEditValue.success(rawText);
+    }
+  }
+
+  bool _isIntegerDescriptor(NativeTypeDescriptor descriptor) {
+    final baseType = descriptor.baseTypeName.toUpperCase();
+    final valueKind = descriptor.valueKind?.toLowerCase() ?? '';
+    return baseType.contains('INT') || valueKind.contains('int');
+  }
+
+  bool? _parseBooleanEditValue(String value) {
+    switch (value.toLowerCase()) {
+      case 'true':
+      case 't':
+      case '1':
+      case 'yes':
+      case 'y':
+        return true;
+      case 'false':
+      case 'f':
+      case '0':
+      case 'no':
+      case 'n':
+        return false;
+      default:
+        return null;
+    }
   }
 
   @override
@@ -3466,6 +4548,58 @@ class WorkspaceController extends ChangeNotifier {
   bool _isCurrentGeneration(String tabId, int generation) {
     final tab = tabById(tabId);
     return tab != null && tab.executionGeneration == generation;
+  }
+
+  bool _validateQueryContractParameters({
+    required String tabId,
+    required QueryContract contract,
+    required List<Object?> parameterValues,
+  }) {
+    final expectedCount = contract.parameters.isEmpty
+        ? 0
+        : contract.parameters.fold<int>(
+            0,
+            (highest, parameter) =>
+                highest > parameter.position ? highest : parameter.position,
+          );
+
+    if (parameterValues.length != expectedCount) {
+      _setTabError(
+        tabId,
+        QueryErrorDetails(
+          stage: QueryErrorStage.validation,
+          message:
+              'This query expects $expectedCount parameters, but received '
+              '${parameterValues.length}.',
+        ),
+      );
+      return false;
+    }
+
+    final missing = <String>[];
+    for (final parameter in contract.parameters) {
+      if (parameter.nullable == false) {
+        final index = parameter.position <= 0 ? 0 : parameter.position - 1;
+        final rawValue = index < 0 || index >= parameterValues.length
+            ? null
+            : parameterValues[index];
+        if (rawValue == null) {
+          missing.add(parameter.name);
+        }
+      }
+    }
+    if (missing.isNotEmpty) {
+      _setTabError(
+        tabId,
+        QueryErrorDetails(
+          stage: QueryErrorStage.validation,
+          message: 'Required parameters missing values: ${missing.join(', ')}.',
+        ),
+      );
+      return false;
+    }
+
+    return true;
   }
 
   void _setTabError(String tabId, QueryErrorDetails error) {
@@ -3984,4 +5118,13 @@ class _RestoredQueryReplay {
 
   final String tabId;
   final QueryHistoryEntry entry;
+}
+
+class _CoercedTableEditValue {
+  const _CoercedTableEditValue.success(this.value) : error = null;
+
+  const _CoercedTableEditValue.failure(this.error) : value = null;
+
+  final Object? value;
+  final String? error;
 }

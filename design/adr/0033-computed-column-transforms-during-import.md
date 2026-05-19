@@ -174,7 +174,7 @@ Columns and Type Overrides steps:
 - ADR-0008 SQL Dump Import MVP Parser and Warning Contract
 - `design/SPEC.md` section 7 (Import Specifications)
 - `design/SPEC.md` section 8.3 (Deferred Transforms — computed columns)
-- `design/FUTURE_WINS.md` Priority 15 (Richer Import Transforms)
+- `design/FUTURE_WINS.md` Priority 14 (Richer Import Transforms)
 
 ### Alternatives Considered
 

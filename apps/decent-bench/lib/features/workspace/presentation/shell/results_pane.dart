@@ -45,6 +45,7 @@ class ResultsGridInteractionState {
     this.selectedCell,
     this.pinnedColumns = const <String>{},
     this.cellOverrides = const <ResultsGridCellKey, Object?>{},
+    this.cellErrors = const <ResultsGridCellKey, String>{},
     this.executionGeneration = 0,
   });
 
@@ -52,6 +53,7 @@ class ResultsGridInteractionState {
   final ResultsGridCellSelection? selectedCell;
   final Set<String> pinnedColumns;
   final Map<ResultsGridCellKey, Object?> cellOverrides;
+  final Map<ResultsGridCellKey, String> cellErrors;
   final int executionGeneration;
 
   ResultsGridInteractionState copyWith({
@@ -59,6 +61,7 @@ class ResultsGridInteractionState {
     Object? selectedCell = _unset,
     Set<String>? pinnedColumns,
     Map<ResultsGridCellKey, Object?>? cellOverrides,
+    Map<ResultsGridCellKey, String>? cellErrors,
     int? executionGeneration,
   }) {
     return ResultsGridInteractionState(
@@ -68,6 +71,7 @@ class ResultsGridInteractionState {
           : selectedCell as ResultsGridCellSelection?,
       pinnedColumns: pinnedColumns ?? this.pinnedColumns,
       cellOverrides: cellOverrides ?? this.cellOverrides,
+      cellErrors: cellErrors ?? this.cellErrors,
       executionGeneration: executionGeneration ?? this.executionGeneration,
     );
   }
@@ -156,6 +160,7 @@ class ResultsPane extends StatelessWidget {
     required this.onSelectRow,
     required this.onTogglePinnedColumn,
     required this.usePlaceholderContent,
+    required this.tableEditabilityLabel,
     this.onLoadHistoryEntry,
     this.onRunHistoryEntry,
     this.onClearHistory,
@@ -174,6 +179,7 @@ class ResultsPane extends StatelessWidget {
   final ValueChanged<int> onSelectRow;
   final ValueChanged<String> onTogglePinnedColumn;
   final bool usePlaceholderContent;
+  final String tableEditabilityLabel;
   final ValueChanged<QueryHistoryEntry>? onLoadHistoryEntry;
   final Future<void> Function(QueryHistoryEntry entry)? onRunHistoryEntry;
   final VoidCallback? onClearHistory;
@@ -188,6 +194,7 @@ class ResultsPane extends StatelessWidget {
         activeTab: activeTab,
         pinnedColumnCount: interactionState.pinnedColumns.length,
         selectedRowCount: interactionState.selectedRows.length,
+        tableEditabilityLabel: tableEditabilityLabel,
       ),
       padding: EdgeInsets.zero,
       child: Column(
@@ -243,11 +250,13 @@ class _ResultsToolbar extends StatelessWidget {
     required this.activeTab,
     required this.pinnedColumnCount,
     required this.selectedRowCount,
+    required this.tableEditabilityLabel,
   });
 
   final QueryTabState activeTab;
   final int pinnedColumnCount;
   final int selectedRowCount;
+  final String tableEditabilityLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -268,6 +277,10 @@ class _ResultsToolbar extends StatelessWidget {
           label: 'Messages ${activeTab.messageHistory.length}',
         ),
         _InfoBadge(
+          icon: Icons.edit_note_outlined,
+          label: _shortLabel(tableEditabilityLabel),
+        ),
+        _InfoBadge(
           icon: activeTab.hasMoreRows
               ? Icons.unfold_more_outlined
               : Icons.check_circle_outline,
@@ -275,6 +288,13 @@ class _ResultsToolbar extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _shortLabel(String label) {
+    if (label.length <= 52) {
+      return label;
+    }
+    return '${label.substring(0, 49)}...';
   }
 }
 
@@ -554,6 +574,7 @@ class _ResultsGridState extends State<_ResultsGrid> {
                                       selected: _isCellSelected(index, column),
                                       rowSelected: rowSelected,
                                       edited: _isCellEdited(index, column),
+                                      errorText: _cellError(index, column),
                                       onTap: () =>
                                           widget.onSelectCell(index, column),
                                       onSecondaryTapDown: (position) =>
@@ -642,6 +663,10 @@ class _ResultsGridState extends State<_ResultsGrid> {
                                               index,
                                               column,
                                             ),
+                                            errorText: _cellError(
+                                              index,
+                                              column,
+                                            ),
                                             onTap: () => widget.onSelectCell(
                                               index,
                                               column,
@@ -700,6 +725,13 @@ class _ResultsGridState extends State<_ResultsGrid> {
     return widget.interactionState.cellOverrides.containsKey(
       ResultsGridCellKey(rowIndex: rowIndex, columnName: columnName),
     );
+  }
+
+  String? _cellError(int rowIndex, String columnName) {
+    return widget.interactionState.cellErrors[ResultsGridCellKey(
+      rowIndex: rowIndex,
+      columnName: columnName,
+    )];
   }
 
   double _widthFor(String columnName) =>
@@ -787,6 +819,7 @@ class _GridCell extends StatelessWidget {
     this.rowSelected = false,
     this.edited = false,
     this.pinned = false,
+    this.errorText,
     this.tooltip,
     this.onTap,
     this.onSecondaryTapDown,
@@ -802,6 +835,7 @@ class _GridCell extends StatelessWidget {
   final bool rowSelected;
   final bool edited;
   final bool pinned;
+  final String? errorText;
   final String? tooltip;
   final VoidCallback? onTap;
   final ValueChanged<Offset>? onSecondaryTapDown;
@@ -813,10 +847,13 @@ class _GridCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tokens = context.decentBenchTheme;
+    final hasError = errorText != null && errorText!.trim().isNotEmpty;
     final background = isHeader
         ? tokens.resultsGrid.headerBackground
         : selected
         ? tokens.resultsGrid.rowSelectedBackground
+        : hasError
+        ? tokens.colors.error.withValues(alpha: 0.16)
         : edited
         ? tokens.colors.warning.withValues(alpha: 0.18)
         : rowSelected
@@ -833,7 +870,9 @@ class _GridCell extends StatelessWidget {
         color: background,
         border: Border(
           right: BorderSide(color: tokens.resultsGrid.gridLine),
-          bottom: BorderSide(color: tokens.resultsGrid.gridLine),
+          bottom: BorderSide(
+            color: hasError ? tokens.colors.error : tokens.resultsGrid.gridLine,
+          ),
         ),
       ),
       child: isHeader
@@ -900,9 +939,14 @@ class _GridCell extends StatelessWidget {
             ),
     );
 
-    final wrappedChild = tooltip == null || tooltip!.trim().isEmpty
+    final effectiveTooltip = <String>[
+      if (hasError) errorText!.trim(),
+      if (tooltip != null && tooltip!.trim().isNotEmpty) tooltip!.trim(),
+    ].join('\n\n');
+
+    final wrappedChild = effectiveTooltip.isEmpty
         ? child
-        : Tooltip(message: tooltip!, child: child);
+        : Tooltip(message: effectiveTooltip, child: child);
 
     if (isHeader || onTap == null) {
       return wrappedChild;

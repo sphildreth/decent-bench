@@ -183,7 +183,7 @@ Key design choices:
 - ADR-0032 Native Branch, Snapshot, and Safe-Run Workbench
 - `design/PRD.md` section 3.2 (saved queries, workspace projects)
 - `design/SPEC.md` section 4.3 (SQL editor and results tabs)
-- `design/FUTURE_WINS.md` Priority 7
+- `design/FUTURE_WINS.md` Priority 4
 
 ### Alternatives Considered
 

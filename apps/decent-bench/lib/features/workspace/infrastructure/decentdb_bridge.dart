@@ -92,6 +92,45 @@ abstract class WorkspaceDatabaseGateway {
 
   Future<void> cancelImport(String jobId);
 
+  Future<List<WorkspaceBranchInfo>> listBranches();
+
+  Future<WorkspaceBranchInfo> createBranch({
+    required String branchName,
+    required String fromRef,
+  });
+
+  Future<void> deleteBranch({required String branchName});
+
+  Future<List<WorkspaceSnapshotInfo>> listSnapshots();
+
+  Future<WorkspaceSnapshotInfo> createSnapshot({required String name});
+
+  Future<void> deleteSnapshot({required String ref});
+
+  Future<QueryResultPage> runQueryOnBranch({
+    required String sql,
+    required String branchName,
+    required List<Object?> params,
+    required int pageSize,
+  });
+
+  Future<WorkspaceBranchDiff> branchDiff({
+    required String leftRef,
+    required String rightRef,
+  });
+
+  Future<WorkspaceBranchDiff> restoreBranch({
+    required String branchName,
+    required String targetRef,
+    required bool dryRun,
+  });
+
+  Future<WorkspaceBranchDiff> mergeBranch({
+    required String sourceBranch,
+    required String targetBranch,
+    required bool dryRun,
+  });
+
   Future<void> dispose();
 }
 
@@ -415,6 +454,83 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
     _isolate?.kill(priority: Isolate.immediate);
     _isolate = null;
   }
+
+  @override
+  Future<List<WorkspaceBranchInfo>>
+  listBranches() async => throw const BranchWorkflowUnavailable(
+    'Native branch APIs are not publicly exposed by the current Dart binding.',
+  );
+
+  @override
+  Future<WorkspaceBranchInfo> createBranch({
+    required String branchName,
+    required String fromRef,
+  }) async => throw const BranchWorkflowUnavailable(
+    'Native branch APIs are not publicly exposed by the current Dart binding.',
+  );
+
+  @override
+  Future<void> deleteBranch({required String branchName}) async {
+    throw const BranchWorkflowUnavailable(
+      'Native branch APIs are not publicly exposed by the current Dart binding.',
+    );
+  }
+
+  @override
+  Future<List<WorkspaceSnapshotInfo>>
+  listSnapshots() async => throw const BranchWorkflowUnavailable(
+    'Native branch APIs are not publicly exposed by the current Dart binding.',
+  );
+
+  @override
+  Future<WorkspaceSnapshotInfo> createSnapshot({
+    required String name,
+  }) async => throw const BranchWorkflowUnavailable(
+    'Native branch APIs are not publicly exposed by the current Dart binding.',
+  );
+
+  @override
+  Future<void> deleteSnapshot({required String ref}) async {
+    throw const BranchWorkflowUnavailable(
+      'Native branch APIs are not publicly exposed by the current Dart binding.',
+    );
+  }
+
+  @override
+  Future<QueryResultPage> runQueryOnBranch({
+    required String sql,
+    required String branchName,
+    required List<Object?> params,
+    required int pageSize,
+  }) async => throw const BranchWorkflowUnavailable(
+    'Native branch APIs are not publicly exposed by the current Dart binding.',
+  );
+
+  @override
+  Future<WorkspaceBranchDiff> branchDiff({
+    required String leftRef,
+    required String rightRef,
+  }) async => throw const BranchWorkflowUnavailable(
+    'Native branch APIs are not publicly exposed by the current Dart binding.',
+  );
+
+  @override
+  Future<WorkspaceBranchDiff> restoreBranch({
+    required String branchName,
+    required String targetRef,
+    required bool dryRun,
+  }) async => throw const BranchWorkflowUnavailable(
+    'Native branch APIs are not publicly exposed by the current Dart binding.',
+  );
+
+  @override
+  Future<WorkspaceBranchDiff> mergeBranch({
+    required String sourceBranch,
+    required String targetBranch,
+    required bool dryRun,
+  }) async => throw const BranchWorkflowUnavailable(
+    'Native branch APIs are not publicly exposed by the current Dart binding.',
+  );
 
   Future<Map<String, Object?>> _request(
     String action, [

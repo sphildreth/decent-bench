@@ -436,6 +436,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                           controller.clearActiveTabHistory,
                                       usePlaceholderContent:
                                           usePlaceholderContent,
+                                      tableEditabilityLabel: controller
+                                          .tableEditabilityForTab(activeTab.id)
+                                          .statusLabel,
                                     ),
                                   ),
                                 ),
@@ -454,6 +457,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                 rowsLabel:
                                     'Rows: ${activeTab.resultRows.isNotEmpty ? activeTab.resultRows.length : activeTab.rowsAffected ?? (controller.hasOpenDatabase ? 0 : 250)}',
                                 editorModeLabel: _editorModeLabel(),
+                                branchLabel: controller.branchState.branchLabel,
                               ),
                           ],
                         ),
@@ -1157,7 +1161,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       rowIndex: rowIndex,
       columnName: columnName,
     );
-    final canCopySpatialWkb = _isSelectedResultsCellSpatial(
+    final editability = widget.controller.tableEditabilityForTab(
+      widget.controller.activeTabId,
+    );
+    final canEditCell = editability.canEditColumn(columnName);
+    final spatialCopyProfile = _selectedResultsCellSpatialCopyProfile(
       rowIndex: rowIndex,
       columnName: columnName,
     );
@@ -1183,19 +1191,49 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           value: _ResultsCellMenuAction.copySpatialWkb,
           icon: Icons.public_outlined,
           label: 'Copy EWKB Base64',
-          enabled: canCopySpatialWkb,
+          enabled: spatialCopyProfile.canCopyWkb,
+        ),
+        _popupMenuItem(
+          value: _ResultsCellMenuAction.copySpatialWkt,
+          icon: Icons.location_on_outlined,
+          label: 'Copy WKT',
+          enabled: spatialCopyProfile.canCopyWkt,
+        ),
+        _popupMenuItem(
+          value: _ResultsCellMenuAction.copySpatialGeoJson,
+          icon: Icons.data_object_outlined,
+          label: 'Copy GeoJSON',
+          enabled: spatialCopyProfile.canCopyGeoJson,
+        ),
+        _popupMenuItem(
+          value: _ResultsCellMenuAction.edit,
+          icon: Icons.edit_outlined,
+          label: 'Edit Cell',
+          enabled: canEditCell,
+        ),
+        _popupMenuItem(
+          value: _ResultsCellMenuAction.insertRow,
+          icon: Icons.add_circle_outline,
+          label: 'Insert Row',
+          enabled: editability.canInsertRows,
         ),
         _popupMenuItem(
           value: _ResultsCellMenuAction.paste,
           icon: Icons.content_paste_outlined,
           label: 'Paste',
-          enabled: canPaste,
+          enabled: canEditCell && canPaste,
         ),
         _popupMenuItem(
           value: _ResultsCellMenuAction.setNull,
           icon: Icons.exposure_zero_outlined,
           label: 'Set To Null',
-          enabled: canSetNull,
+          enabled: canEditCell && canSetNull,
+        ),
+        _popupMenuItem(
+          value: _ResultsCellMenuAction.deleteRow,
+          icon: Icons.delete_outline,
+          label: 'Delete Row',
+          enabled: editability.canDeleteRows,
         ),
       ],
     );
@@ -1213,9 +1251,30 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           columnName: columnName,
         );
         break;
+      case _ResultsCellMenuAction.copySpatialWkt:
+        await _copySelectedSpatialWkt(
+          rowIndex: rowIndex,
+          columnName: columnName,
+        );
+        break;
+      case _ResultsCellMenuAction.copySpatialGeoJson:
+        await _copySelectedSpatialGeoJson(
+          rowIndex: rowIndex,
+          columnName: columnName,
+        );
+        break;
+      case _ResultsCellMenuAction.edit:
+        await _editSelectedResultsCell(
+          rowIndex: rowIndex,
+          columnName: columnName,
+        );
+        break;
+      case _ResultsCellMenuAction.insertRow:
+        await _insertResultRow(anchorRowIndex: rowIndex, columnName: columnName);
+        break;
       case _ResultsCellMenuAction.paste:
         if (clipboardText != null && clipboardText.isNotEmpty) {
-          _updateSelectedResultsCellValue(
+          await _commitSelectedResultsCellValue(
             rowIndex: rowIndex,
             columnName: columnName,
             value: clipboardText,
@@ -1223,11 +1282,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         }
         break;
       case _ResultsCellMenuAction.setNull:
-        _updateSelectedResultsCellValue(
+        await _commitSelectedResultsCellValue(
           rowIndex: rowIndex,
           columnName: columnName,
           value: null,
         );
+        break;
+      case _ResultsCellMenuAction.deleteRow:
+        await _deleteSelectedResultsRow(rowIndex: rowIndex);
         break;
     }
   }
@@ -1448,7 +1510,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       if (pasteText == null || pasteText.isEmpty || selectedCell == null) {
         return;
       }
-      _updateSelectedResultsCellValue(
+      await _commitSelectedResultsCellValue(
         rowIndex: selectedCell.rowIndex,
         columnName: selectedCell.columnName,
         value: pasteText,
@@ -1566,15 +1628,383 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     required String columnName,
   }) async {
     final tab = widget.controller.activeTab;
-    final state = _resultsStateFor(tab.id);
-    final value = resolveResultsCellValue(
+    final value = _resolveSelectedResultsCellValue(
+      tab: tab,
+      state: _resultsStateFor(tab.id),
+      rowIndex: rowIndex,
+      columnName: columnName,
+    );
+    await Clipboard.setData(ClipboardData(text: formatSpatialWkbBase64(value)));
+  }
+
+  Future<void> _copySelectedSpatialWkt({
+    required int rowIndex,
+    required String columnName,
+  }) async {
+    final tab = widget.controller.activeTab;
+    final value = _resolveSelectedResultsCellValue(
+      tab: tab,
+      state: _resultsStateFor(tab.id),
+      rowIndex: rowIndex,
+      columnName: columnName,
+    );
+    final text = _formatSelectedSpatialTextValue(
+      value: value,
+      contractTypeName: tab.resultContractForColumn(columnName)?.typeName,
+    );
+    await Clipboard.setData(ClipboardData(text: text));
+  }
+
+  Future<void> _copySelectedSpatialGeoJson({
+    required int rowIndex,
+    required String columnName,
+  }) async {
+    final tab = widget.controller.activeTab;
+    final value = _resolveSelectedResultsCellValue(
+      tab: tab,
+      state: _resultsStateFor(tab.id),
+      rowIndex: rowIndex,
+      columnName: columnName,
+    );
+    final text = _formatSelectedSpatialTextValue(
+      value: value,
+      contractTypeName: tab.resultContractForColumn(columnName)?.typeName,
+    );
+    await Clipboard.setData(ClipboardData(text: text));
+  }
+
+  String _formatSelectedSpatialTextValue({
+    required Object? value,
+    required String? contractTypeName,
+  }) {
+    return value == null
+        ? ''
+        : formatTypedCellValue(value, typeName: contractTypeName);
+  }
+
+  Object? _resolveSelectedResultsCellValue({
+    required QueryTabState tab,
+    required ResultsGridInteractionState state,
+    required int rowIndex,
+    required String columnName,
+  }) {
+    return resolveResultsCellValue(
       tab,
       state,
       rowIndex,
       columnName,
       usePlaceholderContent: _usePlaceholderContent(widget.controller),
     );
-    await Clipboard.setData(ClipboardData(text: formatSpatialWkbBase64(value)));
+  }
+
+  _ResultsCellSpatialCopyProfile _selectedResultsCellSpatialCopyProfile({
+    required int rowIndex,
+    required String columnName,
+  }) {
+    final tab = widget.controller.activeTab;
+    final state = _resultsStateFor(tab.id);
+    final contract = tab.resultContractForColumn(columnName);
+    if (contract?.nativeTypeDescriptor.isSpatial != true) {
+      return const _ResultsCellSpatialCopyProfile();
+    }
+    final value = _resolveSelectedResultsCellValue(
+      tab: tab,
+      state: state,
+      rowIndex: rowIndex,
+      columnName: columnName,
+    );
+    if (value is! Uint8List && value is! String) {
+      return const _ResultsCellSpatialCopyProfile(canCopyWkb: false);
+    }
+    if (value is String) {
+      return _ResultsCellSpatialCopyProfile(
+        canCopyWkt: _looksLikeSpatialWkt(value),
+        canCopyGeoJson: _looksLikeSpatialGeoJson(value),
+      );
+    }
+
+    return const _ResultsCellSpatialCopyProfile(canCopyWkb: true);
+  }
+
+  bool _looksLikeSpatialWkt(String value) {
+    final trimmed = value.trim();
+    return trimmed.startsWith('{')
+        ? false
+        : RegExp(r'^[A-Z][A-Z0-9_]*\s*\(').hasMatch(trimmed.toUpperCase());
+  }
+
+  bool _looksLikeSpatialGeoJson(String value) {
+    final trimmed = value.trim();
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+      return false;
+    }
+    return trimmed.contains('"type"') && trimmed.contains('"coordinates"');
+  }
+
+  Future<void> _editSelectedResultsCell({
+    required int rowIndex,
+    required String columnName,
+  }) async {
+    final tab = widget.controller.activeTab;
+    final currentValue = _resolveSelectedResultsCellValue(
+      tab: tab,
+      state: _resultsStateFor(tab.id),
+      rowIndex: rowIndex,
+      columnName: columnName,
+    );
+    final editorController = TextEditingController(
+      text: currentValue?.toString() ?? '',
+    );
+    final nextValue = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Edit $columnName'),
+          content: SizedBox(
+            width: 420,
+            child: TextField(
+              controller: editorController,
+              autofocus: true,
+              maxLines: 4,
+              minLines: 1,
+              decoration: const InputDecoration(labelText: 'Value'),
+              onSubmitted: (value) => Navigator.of(context).pop(value),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(editorController.text),
+              child: const Text('Apply'),
+            ),
+          ],
+        );
+      },
+    );
+    editorController.dispose();
+    if (nextValue == null) {
+      return;
+    }
+    await _commitSelectedResultsCellValue(
+      rowIndex: rowIndex,
+      columnName: columnName,
+      value: nextValue,
+    );
+  }
+
+  Future<void> _commitSelectedResultsCellValue({
+    required int rowIndex,
+    required String columnName,
+    required Object? value,
+  }) async {
+    final editability = widget.controller.tableEditabilityForTab(
+      widget.controller.activeTabId,
+    );
+    if (!editability.canEditColumn(columnName)) {
+      _setResultsCellError(
+        rowIndex: rowIndex,
+        columnName: columnName,
+        message: editability.reason,
+      );
+      return;
+    }
+    if (!await _confirmDirectTableEdit(actionLabel: 'Apply edit')) {
+      return;
+    }
+    _updateSelectedResultsCellValue(
+      rowIndex: rowIndex,
+      columnName: columnName,
+      value: value,
+    );
+    final result = await widget.controller.updateResultCell(
+      rowIndex: rowIndex,
+      columnName: columnName,
+      value: value,
+      tabId: widget.controller.activeTabId,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (result.success) {
+      _clearResultsCellOverride(rowIndex: rowIndex, columnName: columnName);
+      return;
+    }
+    _setResultsCellError(
+      rowIndex: rowIndex,
+      columnName: columnName,
+      message: result.message,
+    );
+  }
+
+  Future<void> _deleteSelectedResultsRow({required int rowIndex}) async {
+    if (!await _confirmDirectTableEdit(actionLabel: 'Delete row')) {
+      return;
+    }
+    final tabId = widget.controller.activeTabId;
+    final selectedCell = _resultsStateFor(tabId).selectedCell;
+    final result = await widget.controller.deleteResultRow(
+      rowIndex: rowIndex,
+      tabId: tabId,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (result.success) {
+      final current = _resultsStateFor(tabId);
+      setState(() {
+        _resultsStateByTabId[tabId] = current.copyWith(
+          selectedRows: const <int>{},
+          selectedCell: null,
+          cellOverrides: <ResultsGridCellKey, Object?>{
+            for (final entry in current.cellOverrides.entries)
+              if (entry.key.rowIndex != rowIndex) entry.key: entry.value,
+          },
+          cellErrors: <ResultsGridCellKey, String>{
+            for (final entry in current.cellErrors.entries)
+              if (entry.key.rowIndex != rowIndex) entry.key: entry.value,
+          },
+        );
+      });
+      return;
+    }
+    final resultColumns = widget.controller.activeTab.resultColumns;
+    final columnName =
+        selectedCell?.columnName ??
+        (resultColumns.isEmpty ? '' : resultColumns.first);
+    if (columnName.isEmpty) {
+      return;
+    }
+    _setResultsCellError(
+      rowIndex: rowIndex,
+      columnName: columnName,
+      message: result.message,
+    );
+  }
+
+  Future<void> _insertResultRow({
+    required int anchorRowIndex,
+    required String columnName,
+  }) async {
+    final editability = widget.controller.tableEditabilityForTab(
+      widget.controller.activeTabId,
+    );
+    if (!editability.canInsertRows) {
+      _setResultsCellError(
+        rowIndex: anchorRowIndex,
+        columnName: columnName,
+        message: editability.reason,
+      );
+      return;
+    }
+    final values = await _showInsertRowDialog(editability);
+    if (values == null) {
+      return;
+    }
+    if (!await _confirmDirectTableEdit(actionLabel: 'Insert row')) {
+      return;
+    }
+    final result = await widget.controller.insertResultRow(
+      values: values,
+      tabId: widget.controller.activeTabId,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (result.success) {
+      return;
+    }
+    _setResultsCellError(
+      rowIndex: anchorRowIndex,
+      columnName: columnName,
+      message: result.message,
+    );
+  }
+
+  Future<Map<String, Object?>?> _showInsertRowDialog(
+    TableEditabilityState editability,
+  ) async {
+    final controllers = <String, TextEditingController>{
+      for (final sourceColumn in editability.insertableColumns.keys)
+        sourceColumn: TextEditingController(),
+    };
+    final result = await showDialog<Map<String, Object?>?>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Insert Row${editability.tableName == null ? '' : ' Into ${editability.tableName}'}'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  for (final entry in controllers.entries) ...<Widget>[
+                    TextField(
+                      controller: entry.value,
+                      decoration: InputDecoration(labelText: entry.key),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop(<String, Object?>{
+                  for (final entry in controllers.entries)
+                    if (entry.value.text.trim().isNotEmpty)
+                      entry.key: entry.value.text,
+                });
+              },
+              child: const Text('Insert'),
+            ),
+          ],
+        );
+      },
+    );
+    for (final controller in controllers.values) {
+      controller.dispose();
+    }
+    return result;
+  }
+
+  Future<bool> _confirmDirectTableEdit({required String actionLabel}) async {
+    if (widget.controller.canUseNativeBranchWorkflow) {
+      return true;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Apply table edit?'),
+          content: Text(
+            'This will run generated SQL directly against the current '
+            'database because branch-safe editing is unavailable.\n\n'
+            '${WorkspaceController.nativeBranchApiUnavailableReason}',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(actionLabel),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed ?? false;
   }
 
   void _updateSelectedResultsCellValue({
@@ -1587,6 +2017,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final nextOverrides = Map<ResultsGridCellKey, Object?>.from(
       current.cellOverrides,
     )..[ResultsGridCellKey(rowIndex: rowIndex, columnName: columnName)] = value;
+    final nextErrors = Map<ResultsGridCellKey, String>.from(current.cellErrors)
+      ..remove(ResultsGridCellKey(rowIndex: rowIndex, columnName: columnName));
     setState(() {
       _resultsStateByTabId[tabId] = current.copyWith(
         selectedRows: <int>{rowIndex},
@@ -1595,6 +2027,56 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           columnName: columnName,
         ),
         cellOverrides: nextOverrides,
+        cellErrors: nextErrors,
+      );
+    });
+    _resultsFocusNode.requestFocus();
+  }
+
+  void _clearResultsCellOverride({
+    required int rowIndex,
+    required String columnName,
+  }) {
+    final tabId = widget.controller.activeTabId;
+    final current = _resultsStateFor(tabId);
+    final key = ResultsGridCellKey(rowIndex: rowIndex, columnName: columnName);
+    final nextOverrides = Map<ResultsGridCellKey, Object?>.from(
+      current.cellOverrides,
+    )..remove(key);
+    final nextErrors = Map<ResultsGridCellKey, String>.from(current.cellErrors)
+      ..remove(key);
+    setState(() {
+      _resultsStateByTabId[tabId] = current.copyWith(
+        selectedRows: <int>{rowIndex},
+        selectedCell: ResultsGridCellSelection(
+          rowIndex: rowIndex,
+          columnName: columnName,
+        ),
+        cellOverrides: nextOverrides,
+        cellErrors: nextErrors,
+      );
+    });
+    _resultsFocusNode.requestFocus();
+  }
+
+  void _setResultsCellError({
+    required int rowIndex,
+    required String columnName,
+    required String message,
+  }) {
+    final tabId = widget.controller.activeTabId;
+    final current = _resultsStateFor(tabId);
+    final key = ResultsGridCellKey(rowIndex: rowIndex, columnName: columnName);
+    final nextErrors = Map<ResultsGridCellKey, String>.from(current.cellErrors)
+      ..[key] = message;
+    setState(() {
+      _resultsStateByTabId[tabId] = current.copyWith(
+        selectedRows: <int>{rowIndex},
+        selectedCell: ResultsGridCellSelection(
+          rowIndex: rowIndex,
+          columnName: columnName,
+        ),
+        cellErrors: nextErrors,
       );
     });
     _resultsFocusNode.requestFocus();
@@ -1620,25 +2102,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       }
     }
     return false;
-  }
-
-  bool _isSelectedResultsCellSpatial({
-    required int rowIndex,
-    required String columnName,
-  }) {
-    final tab = widget.controller.activeTab;
-    final contract = tab.resultContractForColumn(columnName);
-    if (contract?.nativeTypeDescriptor.isSpatial != true) {
-      return false;
-    }
-    final value = resolveResultsCellValue(
-      tab,
-      _resultsStateFor(tab.id),
-      rowIndex,
-      columnName,
-      usePlaceholderContent: _usePlaceholderContent(widget.controller),
-    );
-    return value is Uint8List;
   }
 
   String? _firstObjectNameInFromClause(String sql) {
@@ -2036,6 +2499,48 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           label: 'Query History',
           icon: Icons.history_outlined,
           onInvoke: _showQueryHistoryDialog,
+        ),
+        command(
+          id: 'tools_branch_workbench',
+          label: 'Branch & Snapshots',
+          icon: Icons.account_tree_outlined,
+          onInvoke: _showBranchSnapshotWorkbench,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_create_snapshot',
+          label: 'Create Snapshot...',
+          icon: Icons.camera_alt_outlined,
+          onInvoke: _showCreateSnapshotDialog,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_create_branch',
+          label: 'Create Branch...',
+          icon: Icons.call_split_outlined,
+          onInvoke: _showCreateBranchDialog,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_branch_diff',
+          label: 'Branch Diff...',
+          icon: Icons.compare_arrows_outlined,
+          onInvoke: _showBranchDiffDialog,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_restore_branch',
+          label: 'Restore Branch...',
+          icon: Icons.restore_outlined,
+          onInvoke: _showRestoreBranchDialog,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_merge_branch',
+          label: 'Merge Branch...',
+          icon: Icons.merge_type,
+          onInvoke: _showMergeBranchDialog,
+          enabled: controller.hasOpenDatabase,
         ),
         command(
           id: 'tools_view_log',
@@ -2793,6 +3298,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (!assessment.requiresConfirmation) {
       return true;
     }
+    final branchState = widget.controller.branchState;
     final result = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -2804,9 +3310,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           ),
           content: Text(
             '${assessment.reason}\n\n'
-            'Native DecentDB branch execution is not available through the '
-            'current Dart binding, so this can only run against the open '
-            'database right now.',
+            '${branchState.nativeBranchApiUnavailableReason}\n\n'
+            'Run on New Branch is disabled until the public Dart binding '
+            'exposes native branch execution.',
           ),
           actions: <Widget>[
             TextButton(
@@ -2946,6 +3452,382 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         );
       },
     );
+  }
+
+  Future<void> _showBranchSnapshotWorkbench() {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AnimatedBuilder(
+          animation: widget.controller,
+          builder: (context, _) {
+            final controller = widget.controller;
+            final state = controller.branchState;
+            final diff = controller.lastBranchDiff;
+            final canUseNative = controller.canUseNativeBranchWorkflow;
+            return AlertDialog(
+              title: const Text('Branch & Snapshot Workbench'),
+              content: SizedBox(
+                width: 680,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 520),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            canUseNative
+                                ? Icons.account_tree_outlined
+                                : Icons.info_outline,
+                          ),
+                          title: Text(state.branchLabel),
+                          subtitle: Text(
+                            canUseNative
+                                ? 'Native DecentDB branch operations are available through the workspace gateway.'
+                                : state.nativeBranchApiUnavailableReason,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Branches',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 4),
+                        if (state.branches.isEmpty)
+                          const Text('No native branch list is available.')
+                        else
+                          ...state.branches.map(
+                            (branch) => ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(Icons.call_split_outlined),
+                              title: Text(branch.name),
+                              subtitle: Text(
+                                branch.isCurrent
+                                    ? 'Current branch'
+                                    : 'Parent ${branch.parentRef ?? 'unknown'}',
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Snapshots',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 4),
+                        if (state.snapshots.isEmpty)
+                          const Text('No native snapshots are available.')
+                        else
+                          ...state.snapshots.map(
+                            (snapshot) => ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(Icons.camera_alt_outlined),
+                              title: Text(snapshot.name),
+                              subtitle: Text(
+                                '${snapshot.ref}'
+                                '${snapshot.branch == null ? '' : ' on ${snapshot.branch}'}',
+                              ),
+                            ),
+                          ),
+                        if (diff != null) ...<Widget>[
+                          const SizedBox(height: 12),
+                          Text(
+                            'Last Diff',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${diff.leftRef} -> ${diff.rightRef}: '
+                            '${diff.addedRows} added, '
+                            '${diff.modifiedRows} modified, '
+                            '${diff.removedRows} removed.',
+                          ),
+                          const SizedBox(height: 4),
+                          for (final row in diff.rows.take(5))
+                            Text(
+                              '${row.tableName} ${row.operation}'
+                              '${row.primaryKey == null ? '' : ' ${row.primaryKey}'}',
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => controller.refreshBranchState(),
+                  child: const Text('Refresh'),
+                ),
+                TextButton(
+                  onPressed: canUseNative
+                      ? () {
+                          Navigator.of(dialogContext).pop();
+                          _showCreateSnapshotDialog();
+                        }
+                      : null,
+                  child: const Text('Create Snapshot'),
+                ),
+                TextButton(
+                  onPressed: canUseNative
+                      ? () {
+                          Navigator.of(dialogContext).pop();
+                          _showCreateBranchDialog();
+                        }
+                      : null,
+                  child: const Text('Create Branch'),
+                ),
+                TextButton(
+                  onPressed: canUseNative
+                      ? () {
+                          Navigator.of(dialogContext).pop();
+                          _showBranchDiffDialog();
+                        }
+                      : null,
+                  child: const Text('Diff'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showCreateSnapshotDialog() async {
+    if (!widget.controller.canUseNativeBranchWorkflow) {
+      await _showBranchSnapshotWorkbench();
+      return;
+    }
+    final name = await _promptBranchWorkflowValue(
+      title: 'Create Snapshot',
+      label: 'Snapshot name',
+      initialValue: 'snapshot_${_branchWorkflowTimestamp()}',
+    );
+    if (name == null) {
+      return;
+    }
+    await widget.controller.createSnapshot(name);
+  }
+
+  Future<void> _showCreateBranchDialog() async {
+    if (!widget.controller.canUseNativeBranchWorkflow) {
+      await _showBranchSnapshotWorkbench();
+      return;
+    }
+    final branchName = await _promptBranchWorkflowValue(
+      title: 'Create Branch',
+      label: 'Branch name',
+      initialValue: 'safe_run_${_branchWorkflowTimestamp()}',
+    );
+    if (branchName == null) {
+      return;
+    }
+    final fromRef = await _promptBranchWorkflowValue(
+      title: 'Create Branch',
+      label: 'Source branch or snapshot ref',
+      initialValue: widget.controller.branchState.currentBranch,
+    );
+    if (fromRef == null) {
+      return;
+    }
+    await widget.controller.createBranch(
+      branchName: branchName,
+      fromRef: fromRef,
+    );
+  }
+
+  Future<void> _showBranchDiffDialog() async {
+    if (!widget.controller.canUseNativeBranchWorkflow) {
+      await _showBranchSnapshotWorkbench();
+      return;
+    }
+    final leftRef = await _promptBranchWorkflowValue(
+      title: 'Branch Diff',
+      label: 'Left ref',
+      initialValue: 'main',
+    );
+    if (leftRef == null) {
+      return;
+    }
+    final rightRef = await _promptBranchWorkflowValue(
+      title: 'Branch Diff',
+      label: 'Right ref',
+      initialValue: widget.controller.branchState.currentBranch,
+    );
+    if (rightRef == null) {
+      return;
+    }
+    await widget.controller.previewBranchDiff(
+      leftRef: leftRef,
+      rightRef: rightRef,
+    );
+    if (mounted) {
+      await _showBranchSnapshotWorkbench();
+    }
+  }
+
+  Future<void> _showRestoreBranchDialog() async {
+    if (!widget.controller.canUseNativeBranchWorkflow) {
+      await _showBranchSnapshotWorkbench();
+      return;
+    }
+    final branchName = await _promptBranchWorkflowValue(
+      title: 'Restore Branch',
+      label: 'Branch name',
+      initialValue: widget.controller.branchState.currentBranch,
+    );
+    if (branchName == null) {
+      return;
+    }
+    final targetRef = await _promptBranchWorkflowValue(
+      title: 'Restore Branch',
+      label: 'Target branch or snapshot ref',
+      initialValue: 'main',
+    );
+    if (targetRef == null) {
+      return;
+    }
+    final diff = await widget.controller.previewRestoreBranch(
+      branchName: branchName,
+      targetRef: targetRef,
+    );
+    if (!mounted || diff == null) {
+      return;
+    }
+    final apply = await _confirmBranchApply(
+      title: 'Apply Restore',
+      message:
+          'Dry run found ${diff.totalChanges} row changes. A pre-restore '
+          'snapshot will be created before applying the restore.',
+    );
+    if (apply == true) {
+      await widget.controller.applyRestoreBranch(
+        branchName: branchName,
+        targetRef: targetRef,
+      );
+    }
+  }
+
+  Future<void> _showMergeBranchDialog() async {
+    if (!widget.controller.canUseNativeBranchWorkflow) {
+      await _showBranchSnapshotWorkbench();
+      return;
+    }
+    final sourceBranch = await _promptBranchWorkflowValue(
+      title: 'Merge Branch',
+      label: 'Source branch',
+      initialValue: widget.controller.branchState.currentBranch,
+    );
+    if (sourceBranch == null) {
+      return;
+    }
+    final targetBranch = await _promptBranchWorkflowValue(
+      title: 'Merge Branch',
+      label: 'Target branch',
+      initialValue: 'main',
+    );
+    if (targetBranch == null) {
+      return;
+    }
+    final diff = await widget.controller.previewMergeBranch(
+      sourceBranch: sourceBranch,
+      targetBranch: targetBranch,
+    );
+    if (!mounted || diff == null) {
+      return;
+    }
+    final apply = await _confirmBranchApply(
+      title: 'Apply Merge',
+      message:
+          'Dry run found ${diff.totalChanges} row changes. Apply the '
+          'constrained DecentDB merge now?',
+    );
+    if (apply == true) {
+      await widget.controller.applyMergeBranch(
+        sourceBranch: sourceBranch,
+        targetBranch: targetBranch,
+      );
+    }
+  }
+
+  Future<String?> _promptBranchWorkflowValue({
+    required String title,
+    required String label,
+    required String initialValue,
+  }) async {
+    final controller = TextEditingController(text: initialValue);
+    try {
+      return showDialog<String>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: Text(title),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: InputDecoration(labelText: label),
+              onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.of(context).pop(controller.text.trim()),
+                child: const Text('Continue'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<bool?> _confirmBranchApply({
+    required String title,
+    required String message,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Apply'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _branchWorkflowTimestamp() {
+    return DateTime.now()
+        .toUtc()
+        .toIso8601String()
+        .replaceAll(RegExp(r'[^0-9A-Za-z]+'), '_')
+        .replaceAll(RegExp(r'_+$'), '');
   }
 
   Future<void> _showShortcutDialog(Map<String, ShortcutBinding> shortcuts) {
@@ -3166,7 +4048,29 @@ class _EditableFieldBinding {
   final ValueChanged<String> onChanged;
 }
 
-enum _ResultsCellMenuAction { copy, copySpatialWkb, paste, setNull }
+enum _ResultsCellMenuAction {
+  copy,
+  copySpatialWkb,
+  copySpatialWkt,
+  copySpatialGeoJson,
+  edit,
+  insertRow,
+  paste,
+  setNull,
+  deleteRow,
+}
+
+class _ResultsCellSpatialCopyProfile {
+  const _ResultsCellSpatialCopyProfile({
+    this.canCopyWkb = false,
+    this.canCopyWkt = false,
+    this.canCopyGeoJson = false,
+  });
+
+  final bool canCopyWkb;
+  final bool canCopyWkt;
+  final bool canCopyGeoJson;
+}
 
 enum _SchemaNodeMenuAction {
   scriptDdl,

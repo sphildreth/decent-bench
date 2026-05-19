@@ -53,17 +53,15 @@ Future<void> _pumpShell(
       autoInitialize: false,
       logger: const NoOpAppLogger(),
       startupLaunchOptions: startupLaunchOptions,
-      appLifecycleService: appLifecycleService ??
-          const FlutterAppLifecycleService(),
+      appLifecycleService:
+          appLifecycleService ?? const FlutterAppLifecycleService(),
     ),
   );
 }
 
 void main() {
   group('Shell rendering', () {
-    testWidgets('renders the desktop shell with classic panes', (
-      tester,
-    ) async {
+    testWidgets('renders the desktop shell with classic panes', (tester) async {
       final controller = _createController();
       await _pumpShell(tester, controller);
       await tester.pumpAndSettle();
@@ -118,9 +116,7 @@ void main() {
       expect(find.text('Ctrl+Shift+Q'), findsOneWidget);
     });
 
-    testWidgets('File Exit requests an application shutdown', (
-      tester,
-    ) async {
+    testWidgets('File Exit requests an application shutdown', (tester) async {
       final lifecycle = FakeAppLifecycleService();
       final controller = _createController();
       await _pumpShell(tester, controller, appLifecycleService: lifecycle);
@@ -156,16 +152,12 @@ void main() {
   });
 
   group('Import wizards', () {
-    testWidgets('toolbar import entry opens the SQLite wizard', (
-      tester,
-    ) async {
+    testWidgets('toolbar import entry opens the SQLite wizard', (tester) async {
       final controller = _createController();
       await _pumpShell(tester, controller);
       await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.widgetWithText(OutlinedButton, 'Import SQLite...'),
-      );
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Import SQLite...'));
       await tester.pumpAndSettle();
 
       expect(find.text('SQLite Import Wizard'), findsOneWidget);
@@ -406,36 +398,35 @@ void main() {
       expect(find.byKey(columnsCountKey), findsNothing);
     });
 
-    testWidgets(
-      'empty schemas do not render sample schema placeholders',
-      (tester) async {
-        _configureDesktopViewport(tester);
-        addTearDown(() {
-          tester.view.resetPhysicalSize();
-          tester.view.resetDevicePixelRatio();
-        });
-        await tester.pumpWidget(
-          MaterialApp(
-            home: Scaffold(
-              body: SchemaExplorerPane(
-                schema: SchemaSnapshot.empty(),
-                databasePath: '/tmp/artistSearchEngine.ddb',
-                selectedNodeId: 'database',
-                onSelectNode: (_) {},
-                onShowNodeMenu: (_, _) {},
-                onRefresh: () {},
-                isLoading: false,
-              ),
+    testWidgets('empty schemas do not render sample schema placeholders', (
+      tester,
+    ) async {
+      _configureDesktopViewport(tester);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SchemaExplorerPane(
+              schema: SchemaSnapshot.empty(),
+              databasePath: '/tmp/artistSearchEngine.ddb',
+              selectedNodeId: 'database',
+              onSelectNode: (_) {},
+              onShowNodeMenu: (_, _) {},
+              onRefresh: () {},
+              isLoading: false,
             ),
           ),
-        );
-        await tester.pump();
+        ),
+      );
+      await tester.pump();
 
-        expect(find.text('customers'), findsNothing);
-        expect(find.text('orders'), findsNothing);
-        expect(find.text('active_orders'), findsNothing);
-      },
-    );
+      expect(find.text('customers'), findsNothing);
+      expect(find.text('orders'), findsNothing);
+      expect(find.text('active_orders'), findsNothing);
+    });
   });
 
   group('Results grid', () {
@@ -484,6 +475,7 @@ void main() {
                     onSelectRow: (_) {},
                     onTogglePinnedColumn: (_) {},
                     usePlaceholderContent: false,
+                    tableEditabilityLabel: 'Read-only results',
                   ),
                 ),
               ),
@@ -496,9 +488,7 @@ void main() {
       expect(find.textContaining('SCAN tasks'), findsOneWidget);
     });
 
-    testWidgets('columns resize by dragging the header handle', (
-      tester,
-    ) async {
+    testWidgets('columns resize by dragging the header handle', (tester) async {
       final verticalScrollController = ScrollController();
       final horizontalScrollController = ScrollController();
       final tab = QueryTabState.initial(id: 'query-tab-1', title: 'Query 1')
@@ -539,6 +529,7 @@ void main() {
                     onSelectRow: (_) {},
                     onTogglePinnedColumn: (_) {},
                     usePlaceholderContent: false,
+                    tableEditabilityLabel: 'Read-only results',
                   ),
                 ),
               ),
@@ -570,17 +561,14 @@ void main() {
       expect(shrunkWidth, greaterThanOrEqualTo(96));
     });
 
-    testWidgets('empty state avoids overflow in short panels', (
-      tester,
-    ) async {
+    testWidgets('empty state avoids overflow in short panels', (tester) async {
       final verticalScrollController = ScrollController();
       final horizontalScrollController = ScrollController();
-      final tab = QueryTabState.initial(id: 'tab-1', title: 'Query 1')
-          .copyWith(
-            lastSql: 'SELECT * FROM tasks',
-            statusMessage:
-                'Ready. Execute a query to capture elapsed time, row counts, and warnings.',
-          );
+      final tab = QueryTabState.initial(id: 'tab-1', title: 'Query 1').copyWith(
+        lastSql: 'SELECT * FROM tasks',
+        statusMessage:
+            'Ready. Execute a query to capture elapsed time, row counts, and warnings.',
+      );
       final previousOnError = FlutterError.onError;
       FlutterErrorDetails? overflowError;
 
@@ -620,6 +608,7 @@ void main() {
                     onSelectRow: (_) {},
                     onTogglePinnedColumn: (_) {},
                     usePlaceholderContent: false,
+                    tableEditabilityLabel: 'Read-only results',
                   ),
                 ),
               ),
@@ -635,59 +624,58 @@ void main() {
   });
 
   group('Preferences dialog', () {
-    testWidgets(
-      'previews theme changes without persisting until save',
-      (tester) async {
-        Future<void> settleUi() async {
-          await tester.pump();
-          await tester.pump(const Duration(milliseconds: 250));
-        }
+    testWidgets('previews theme changes without persisting until save', (
+      tester,
+    ) async {
+      Future<void> settleUi() async {
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
+      }
 
-        final initialConfig = AppConfig.defaults();
-        AppConfig? savedConfig;
-        String? previewedThemeId;
+      final initialConfig = AppConfig.defaults();
+      AppConfig? savedConfig;
+      String? previewedThemeId;
 
-        _configureDesktopViewport(tester);
-        addTearDown(() {
-          tester.view.resetPhysicalSize();
-          tester.view.resetDevicePixelRatio();
-        });
+      _configureDesktopViewport(tester);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
 
-        await tester.pumpWidget(
-          MaterialApp(
-            home: PreferencesDialog(
-              initialConfig: initialConfig,
-              configFilePath: '/tmp/config.toml',
-              shortcutConfigService: const ShortcutConfigService(),
-              createSnippetId: () => 'snippet-1',
-              availableThemesById: const <String, String>{
-                'classic-dark': 'Classic Dark',
-                'classic-light': 'Classic Light',
-              },
-              resolvedThemesDirectory: '/tmp/themes',
-              onPreviewTheme: (themeId) async {
-                previewedThemeId = themeId;
-              },
-              onSave: (config) async {
-                savedConfig = config;
-                return null;
-              },
-            ),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PreferencesDialog(
+            initialConfig: initialConfig,
+            configFilePath: '/tmp/config.toml',
+            shortcutConfigService: const ShortcutConfigService(),
+            createSnippetId: () => 'snippet-1',
+            availableThemesById: const <String, String>{
+              'classic-dark': 'Classic Dark',
+              'classic-light': 'Classic Light',
+            },
+            resolvedThemesDirectory: '/tmp/themes',
+            onPreviewTheme: (themeId) async {
+              previewedThemeId = themeId;
+            },
+            onSave: (config) async {
+              savedConfig = config;
+              return null;
+            },
           ),
-        );
-        await settleUi();
+        ),
+      );
+      await settleUi();
 
-        await tester.tap(
-          find.byKey(const ValueKey<String>('preferences.active_theme')),
-        );
-        await settleUi();
-        await tester.tap(find.text('Classic Light').last);
-        await settleUi();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('preferences.active_theme')),
+      );
+      await settleUi();
+      await tester.tap(find.text('Classic Light').last);
+      await settleUi();
 
-        expect(previewedThemeId, 'classic-light');
-        expect(savedConfig, isNull);
-        expect(initialConfig.appearance.activeTheme, 'classic-dark');
-      },
-    );
+      expect(previewedThemeId, 'classic-light');
+      expect(savedConfig, isNull);
+      expect(initialConfig.appearance.activeTheme, 'classic-dark');
+    });
   });
 }

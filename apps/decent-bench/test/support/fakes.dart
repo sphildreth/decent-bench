@@ -171,6 +171,19 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   int cancelCount = 0;
   String? lastExportPath;
   String? lastRunQuerySql;
+  List<Object?>? lastRunQueryParams;
+  String? lastBranchQuerySql;
+  String? lastCreatedBranchName;
+  String? lastCreatedBranchFromRef;
+  String? lastCreatedSnapshotName;
+  String? lastBranchDiffLeftRef;
+  String? lastBranchDiffRightRef;
+  String? lastRestoreBranchName;
+  String? lastRestoreTargetRef;
+  bool? lastRestoreDryRun;
+  String? lastMergeSourceBranch;
+  String? lastMergeTargetBranch;
+  bool? lastMergeDryRun;
   ExcelImportInspection excelInspection;
   SqlDumpImportInspection sqlDumpInspection;
   SqliteImportInspection sqliteInspection;
@@ -186,6 +199,16 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   bool holdSqlDumpImportOpen = false;
   bool failNextSqlDumpImport = false;
   Object? openDatabaseError;
+  bool branchApiAvailable = false;
+  String branchApiUnavailableReason =
+      'Native DecentDB branch and snapshot operations require a public Dart '
+      'binding API. DecentDB v2.5.x exposes the C ABI JSON bridge, but Decent '
+      'Bench does not call private binding internals.';
+  List<WorkspaceBranchInfo> branches = const <WorkspaceBranchInfo>[
+    WorkspaceBranchInfo(name: 'main', isCurrent: true),
+  ];
+  List<WorkspaceSnapshotInfo> snapshots = const <WorkspaceSnapshotInfo>[];
+  WorkspaceBranchDiff branchDiffResult = WorkspaceBranchDiff.empty;
   StreamController<ExcelImportUpdate>? _excelImportController;
   StreamController<SqlDumpImportUpdate>? _sqlDumpImportController;
   StreamController<SqliteImportUpdate>? _importController;
@@ -370,6 +393,123 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
     );
     await controller.close();
     _importController = null;
+  }
+
+  @override
+  Future<List<WorkspaceBranchInfo>> listBranches() async {
+    _ensureBranchApiAvailable();
+    return branches;
+  }
+
+  @override
+  Future<WorkspaceBranchInfo> createBranch({
+    required String branchName,
+    required String fromRef,
+  }) async {
+    _ensureBranchApiAvailable();
+    lastCreatedBranchName = branchName;
+    lastCreatedBranchFromRef = fromRef;
+    final branch = WorkspaceBranchInfo(name: branchName, parentRef: fromRef);
+    branches = <WorkspaceBranchInfo>[...branches, branch];
+    return branch;
+  }
+
+  @override
+  Future<void> deleteBranch({required String branchName}) async {
+    _ensureBranchApiAvailable();
+    branches = <WorkspaceBranchInfo>[
+      for (final branch in branches)
+        if (branch.name != branchName) branch,
+    ];
+  }
+
+  @override
+  Future<List<WorkspaceSnapshotInfo>> listSnapshots() async {
+    _ensureBranchApiAvailable();
+    return snapshots;
+  }
+
+  @override
+  Future<WorkspaceSnapshotInfo> createSnapshot({required String name}) async {
+    _ensureBranchApiAvailable();
+    lastCreatedSnapshotName = name;
+    final snapshot = WorkspaceSnapshotInfo(
+      name: name,
+      ref: 'snapshot:$name',
+      branch: branches
+          .firstWhere(
+            (branch) => branch.isCurrent,
+            orElse: () => branches.first,
+          )
+          .name,
+      createdAt: DateTime(2026, 5, 19, 12),
+    );
+    snapshots = <WorkspaceSnapshotInfo>[...snapshots, snapshot];
+    return snapshot;
+  }
+
+  @override
+  Future<void> deleteSnapshot({required String ref}) async {
+    _ensureBranchApiAvailable();
+    snapshots = <WorkspaceSnapshotInfo>[
+      for (final snapshot in snapshots)
+        if (snapshot.ref != ref) snapshot,
+    ];
+  }
+
+  @override
+  Future<QueryResultPage> runQueryOnBranch({
+    required String sql,
+    required String branchName,
+    required List<Object?> params,
+    required int pageSize,
+  }) async {
+    _ensureBranchApiAvailable();
+    lastBranchQuerySql = sql;
+    return runQuery(sql: sql, params: params, pageSize: pageSize);
+  }
+
+  @override
+  Future<WorkspaceBranchDiff> branchDiff({
+    required String leftRef,
+    required String rightRef,
+  }) async {
+    _ensureBranchApiAvailable();
+    lastBranchDiffLeftRef = leftRef;
+    lastBranchDiffRightRef = rightRef;
+    return branchDiffResult;
+  }
+
+  @override
+  Future<WorkspaceBranchDiff> restoreBranch({
+    required String branchName,
+    required String targetRef,
+    required bool dryRun,
+  }) async {
+    _ensureBranchApiAvailable();
+    lastRestoreBranchName = branchName;
+    lastRestoreTargetRef = targetRef;
+    lastRestoreDryRun = dryRun;
+    return branchDiffResult;
+  }
+
+  @override
+  Future<WorkspaceBranchDiff> mergeBranch({
+    required String sourceBranch,
+    required String targetBranch,
+    required bool dryRun,
+  }) async {
+    _ensureBranchApiAvailable();
+    lastMergeSourceBranch = sourceBranch;
+    lastMergeTargetBranch = targetBranch;
+    lastMergeDryRun = dryRun;
+    return branchDiffResult;
+  }
+
+  void _ensureBranchApiAvailable() {
+    if (!branchApiAvailable) {
+      throw BranchWorkflowUnavailable(branchApiUnavailableReason);
+    }
   }
 
   @override
@@ -758,6 +898,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
     required int pageSize,
   }) async {
     lastRunQuerySql = sql;
+    lastRunQueryParams = <Object?>[...params];
     if (sql.toUpperCase().startsWith('EXPLAIN')) {
       if (sql.toLowerCase().contains('projects')) {
         return QueryResultPage(
@@ -797,6 +938,17 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
         rows: const <Map<String, Object?>>[],
         done: true,
         rowsAffected: 0,
+        elapsed: const Duration(milliseconds: 2),
+      );
+    }
+    if (sql.toUpperCase().startsWith('UPDATE') ||
+        sql.toUpperCase().startsWith('DELETE')) {
+      return QueryResultPage(
+        cursorId: null,
+        columns: const <String>[],
+        rows: const <Map<String, Object?>>[],
+        done: true,
+        rowsAffected: 1,
         elapsed: const Duration(milliseconds: 2),
       );
     }

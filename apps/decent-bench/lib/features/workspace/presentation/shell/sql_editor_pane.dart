@@ -493,8 +493,10 @@ class _ParameterContractFieldState extends State<_ParameterContractField> {
   Widget build(BuildContext context) {
     final tokens = context.decentBenchTheme;
     final parameter = widget.parameter;
+    final parseError = _parameterInputParseError(_controller.text, parameter);
     final missingRequired =
         parameter.nullable == false && _controller.text.trim().isEmpty;
+    final helperText = parseError ?? _parameterInputHint(parameter);
     return SizedBox(
       width: 190,
       child: TextField(
@@ -505,12 +507,15 @@ class _ParameterContractFieldState extends State<_ParameterContractField> {
           fontSize: tokens.fonts.uiSize * widget.zoomFactor,
           color: tokens.dialog.inputText,
         ),
+        keyboardType: _parameterInputKeyboardType(parameter),
         decoration: InputDecoration(
           isDense: true,
           labelText: '${parameter.name} ${parameter.displayType}',
-          helperText: parameter.sourceLabel,
+          helperText: parameter.sourceLabel.isEmpty
+              ? helperText
+              : '$helperText • ${parameter.sourceLabel}',
           helperMaxLines: 1,
-          errorText: missingRequired ? 'Required' : null,
+          errorText: missingRequired ? 'Required' : parseError,
         ),
       ),
     );
@@ -588,6 +593,66 @@ Object? _coerceParameterValue(
     case NativeTypeFamily.unknown:
       return rawValue;
   }
+}
+
+String _parameterInputHint(QueryParameterContract parameter) {
+  return switch (parameter.nativeTypeDescriptor.family) {
+    NativeTypeFamily.boolean => 'Boolean (true/false)',
+    NativeTypeFamily.numeric => 'Numeric',
+    NativeTypeFamily.text ||
+    NativeTypeFamily.binary ||
+    NativeTypeFamily.uuid ||
+    NativeTypeFamily.enumValue ||
+    NativeTypeFamily.temporal ||
+    NativeTypeFamily.network ||
+    NativeTypeFamily.macAddress ||
+    NativeTypeFamily.spatial ||
+    NativeTypeFamily.unknown => 'String-like JSON value',
+  };
+}
+
+TextInputType _parameterInputKeyboardType(QueryParameterContract parameter) {
+  return switch (parameter.nativeTypeDescriptor.family) {
+    NativeTypeFamily.numeric => const TextInputType.numberWithOptions(
+      decimal: true,
+    ),
+    NativeTypeFamily.boolean => TextInputType.text,
+    NativeTypeFamily.text ||
+    NativeTypeFamily.binary ||
+    NativeTypeFamily.uuid ||
+    NativeTypeFamily.enumValue ||
+    NativeTypeFamily.temporal ||
+    NativeTypeFamily.network ||
+    NativeTypeFamily.macAddress ||
+    NativeTypeFamily.spatial ||
+    NativeTypeFamily.unknown => TextInputType.text,
+  };
+}
+
+String? _parameterInputParseError(
+  String rawValue,
+  QueryParameterContract parameter,
+) {
+  final trimmed = rawValue.trim();
+  if (trimmed.isEmpty || trimmed.toLowerCase() == 'null') {
+    return null;
+  }
+  final descriptor = parameter.nativeTypeDescriptor;
+  return switch (descriptor.family) {
+    NativeTypeFamily.boolean => switch (trimmed.toLowerCase()) {
+      'true' || 'false' => null,
+      _ => 'Use true or false',
+    },
+    NativeTypeFamily.numeric =>
+      (descriptor.baseTypeName == 'FLOAT' ||
+              descriptor.baseTypeName == 'FLOAT64' ||
+              descriptor.baseTypeName == 'DOUBLE' ||
+              descriptor.baseTypeName == 'REAL' ||
+              descriptor.baseTypeName == 'DECIMAL')
+          ? (num.tryParse(trimmed) == null ? 'Invalid number' : null)
+          : (int.tryParse(trimmed) == null ? 'Invalid integer' : null),
+    _ => null,
+  };
 }
 
 class _FindBar extends StatelessWidget {

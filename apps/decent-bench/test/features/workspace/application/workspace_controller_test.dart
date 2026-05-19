@@ -42,6 +42,51 @@ Future<File> _createTempDbFile() async {
   return file;
 }
 
+class _TrackingWorkspaceGateway extends FakeWorkspaceGateway {
+  _TrackingWorkspaceGateway({required this.queryContract});
+
+  final QueryContract queryContract;
+
+  int runQueryCallCount = 0;
+  List<Object?>? lastRunParams;
+  final List<List<Object?>> runQueryParamsHistory = <List<Object?>>[];
+
+  @override
+  Future<QueryContract> describeQueryContract(String sql) async {
+    lastDescribedQuerySql = sql;
+    return queryContract;
+  }
+
+  @override
+  Future<QueryResultPage> runQuery({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+  }) async {
+    runQueryCallCount += 1;
+    lastRunParams = <Object?>[...params];
+    runQueryParamsHistory.add(<Object?>[...params]);
+    return super.runQuery(sql: sql, params: params, pageSize: pageSize);
+  }
+}
+
+QueryContract _makeQueryContract({
+  List<QueryParameterContract> parameters = const <QueryParameterContract>[],
+}) {
+  return QueryContract(
+    contractVersion: 1,
+    sql: 'query',
+    statementKind: 'query',
+    readOnly: true,
+    schemaCookie: 1,
+    tempSchemaCookie: 0,
+    schemaFingerprint: 'fingerprint',
+    parameters: parameters,
+    resultColumns: const <QueryResultColumnContract>[],
+    diagnostics: const <String>[],
+  );
+}
+
 void main() {
   group('Initialization', () {
     test('initialize loads config and native library path', () async {
@@ -389,6 +434,103 @@ void main() {
     );
   });
 
+  group('Branch and snapshot workflow', () {
+    test(
+      'openDatabase records unavailable native branch APIs without failing the workspace',
+      () async {
+        final dbPath = _tempDbPath();
+        final controller = _createController();
+
+        await controller.initialize();
+        await controller.openDatabase(dbPath, createIfMissing: true);
+
+        expect(controller.databasePath, dbPath);
+        expect(controller.workspaceError, isNull);
+        expect(controller.canUseNativeBranchWorkflow, isFalse);
+        expect(
+          controller.branchState.nativeBranchApiUnavailableReason,
+          contains('public Dart binding API'),
+        );
+      },
+    );
+
+    test('loads branch state and routes dry-run/apply operations', () async {
+      final dbPath = _tempDbPath();
+      final gateway = FakeWorkspaceGateway()
+        ..branchApiAvailable = true
+        ..branches = const <WorkspaceBranchInfo>[
+          WorkspaceBranchInfo(name: 'main', isCurrent: true),
+          WorkspaceBranchInfo(name: 'experiment', parentRef: 'main'),
+        ]
+        ..snapshots = const <WorkspaceSnapshotInfo>[
+          WorkspaceSnapshotInfo(
+            name: 'baseline',
+            ref: 'snapshot:baseline',
+            branch: 'main',
+          ),
+        ]
+        ..branchDiffResult = const WorkspaceBranchDiff(
+          leftRef: 'main',
+          rightRef: 'experiment',
+          rows: <WorkspaceBranchDiffRow>[
+            WorkspaceBranchDiffRow(
+              tableName: 'tasks',
+              operation: 'modified',
+              primaryKey: '1',
+            ),
+          ],
+          addedRows: 0,
+          modifiedRows: 1,
+          removedRows: 0,
+        );
+      final controller = _createController(gateway: gateway);
+
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+
+      expect(controller.canUseNativeBranchWorkflow, isTrue);
+      expect(controller.branchState.currentBranch, 'main');
+      expect(controller.branchState.branches, hasLength(2));
+      expect(controller.branchState.snapshots.single.name, 'baseline');
+
+      await controller.createSnapshot('before_edit');
+      await controller.createBranch(
+        branchName: 'scratch',
+        fromRef: 'snapshot:baseline',
+      );
+      final diff = await controller.previewBranchDiff(
+        leftRef: 'main',
+        rightRef: 'scratch',
+      );
+      await controller.previewRestoreBranch(
+        branchName: 'scratch',
+        targetRef: 'main',
+      );
+      await controller.applyRestoreBranch(
+        branchName: 'scratch',
+        targetRef: 'main',
+      );
+      await controller.previewMergeBranch(
+        sourceBranch: 'scratch',
+        targetBranch: 'main',
+      );
+
+      expect(gateway.lastCreatedSnapshotName, startsWith('pre_restore_'));
+      expect(gateway.lastCreatedBranchName, 'scratch');
+      expect(gateway.lastCreatedBranchFromRef, 'snapshot:baseline');
+      expect(gateway.lastBranchDiffLeftRef, 'main');
+      expect(gateway.lastBranchDiffRightRef, 'scratch');
+      expect(diff?.totalChanges, 1);
+      expect(gateway.lastRestoreBranchName, 'scratch');
+      expect(gateway.lastRestoreTargetRef, 'main');
+      expect(gateway.lastRestoreDryRun, isFalse);
+      expect(gateway.lastMergeSourceBranch, 'scratch');
+      expect(gateway.lastMergeTargetBranch, 'main');
+      expect(gateway.lastMergeDryRun, isTrue);
+      expect(controller.lastBranchDiff?.totalChanges, 1);
+    });
+  });
+
   group('Configuration', () {
     test(
       'applyAppConfig persists and reloads TOML-backed preferences',
@@ -589,6 +731,228 @@ void main() {
         controller.activeTab.queryContract?.schemaFingerprint,
         gateway.toolingMetadata.schemaFingerprint,
       );
+    });
+
+    test(
+      'tableEditabilityForTab identifies editable table result sets',
+      () async {
+        final dbPath = _tempDbPath();
+        final controller = _createController();
+
+        await controller.initialize();
+        await controller.openDatabase(dbPath, createIfMissing: true);
+        controller.updateActiveSql('SELECT id, title FROM tasks ORDER BY id');
+        await controller.runActiveTab();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        final editability = controller.tableEditabilityForTab();
+
+        expect(editability.isEditable, isTrue);
+        expect(editability.tableName, 'tasks');
+        expect(editability.primaryKeyColumn, 'id');
+        expect(editability.primaryKeyResultColumn, 'id');
+        expect(editability.canEditColumn('title'), isTrue);
+        expect(editability.canEditColumn('id'), isFalse);
+        expect(editability.canDeleteRows, isTrue);
+      },
+    );
+
+    test(
+      'updateResultCell commits parameterized updates by primary key',
+      () async {
+        final dbPath = _tempDbPath();
+        final gateway = FakeWorkspaceGateway();
+        final controller = _createController(gateway: gateway);
+
+        await controller.initialize();
+        await controller.openDatabase(dbPath, createIfMissing: true);
+        controller.updateActiveSql('SELECT id, title FROM tasks ORDER BY id');
+        await controller.runActiveTab();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        final result = await controller.updateResultCell(
+          rowIndex: 0,
+          columnName: 'title',
+          value: 'Ship phase 2',
+        );
+
+        expect(result.success, isTrue);
+        expect(
+          gateway.lastRunQuerySql,
+          'UPDATE "tasks" SET "title" = \$1 WHERE "id" = \$2',
+        );
+        expect(gateway.lastRunQueryParams, <Object?>['Ship phase 2', 1]);
+        expect(controller.activeTab.resultRows.single['title'], 'Ship phase 2');
+      },
+    );
+
+    test('updateResultCell rejects read-only result columns', () async {
+      final dbPath = _tempDbPath();
+      final gateway = FakeWorkspaceGateway();
+      final controller = _createController(gateway: gateway);
+
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+      controller.updateActiveSql('SELECT id, title FROM tasks ORDER BY id');
+      await controller.runActiveTab();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final previousSql = gateway.lastRunQuerySql;
+
+      final result = await controller.updateResultCell(
+        rowIndex: 0,
+        columnName: 'id',
+        value: 2,
+      );
+
+      expect(result.success, isFalse);
+      expect(result.message, contains('primary key'));
+      expect(gateway.lastRunQuerySql, previousSql);
+    });
+
+    test(
+      'deleteResultRow commits parameterized deletes by primary key',
+      () async {
+        final dbPath = _tempDbPath();
+        final gateway = FakeWorkspaceGateway();
+        final controller = _createController(gateway: gateway);
+
+        await controller.initialize();
+        await controller.openDatabase(dbPath, createIfMissing: true);
+        controller.updateActiveSql('SELECT id, title FROM tasks ORDER BY id');
+        await controller.runActiveTab();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        final result = await controller.deleteResultRow(rowIndex: 0);
+
+        expect(result.success, isTrue);
+        expect(gateway.lastRunQuerySql, 'DELETE FROM "tasks" WHERE "id" = \$1');
+        expect(gateway.lastRunQueryParams, <Object?>[1]);
+        expect(controller.activeTab.resultRows, isEmpty);
+      },
+    );
+
+    test(
+      'runTab validates parameter count before execution using the query contract',
+      () async {
+        final dbPath = _tempDbPath();
+        final gateway = _TrackingWorkspaceGateway(
+          queryContract: _makeQueryContract(
+            parameters: const <QueryParameterContract>[
+              QueryParameterContract(
+                position: 1,
+                name: r'$1',
+                typeName: 'INT64',
+                nullable: false,
+                source: 'catalog_column',
+                sourceTable: 'tasks',
+                sourceColumn: 'id',
+                diagnostics: <String>[],
+              ),
+              QueryParameterContract(
+                position: 2,
+                name: r'$2',
+                typeName: 'TEXT',
+                nullable: false,
+                source: 'catalog_column',
+                sourceTable: 'tasks',
+                sourceColumn: 'title',
+                diagnostics: <String>[],
+              ),
+            ],
+          ),
+        );
+        final controller = _createController(gateway: gateway);
+
+        await controller.initialize();
+        await controller.openDatabase(dbPath, createIfMissing: true);
+        controller.updateActiveSql(
+          'SELECT id FROM tasks WHERE id = \$1 AND title = \$2',
+        );
+        controller.updateActiveParameterJson('[1]');
+        await controller.runActiveTab();
+
+        expect(gateway.runQueryCallCount, 0);
+        expect(controller.activeTab.phase, QueryPhase.failed);
+        expect(
+          controller.activeTab.error?.message,
+          contains('This query expects 2 parameters'),
+        );
+        expect(controller.activeTab.queryContract, isNotNull);
+        expect(controller.activeTab.queryContract?.parameters, hasLength(2));
+      },
+    );
+
+    test('runTab validates non-nullable parameters before execution', () async {
+      final dbPath = _tempDbPath();
+      final gateway = _TrackingWorkspaceGateway(
+        queryContract: _makeQueryContract(
+          parameters: const <QueryParameterContract>[
+            QueryParameterContract(
+              position: 1,
+              name: r'$1',
+              typeName: 'INT64',
+              nullable: false,
+              source: 'catalog_column',
+              sourceTable: 'tasks',
+              sourceColumn: 'id',
+              diagnostics: <String>[],
+            ),
+          ],
+        ),
+      );
+      final controller = _createController(gateway: gateway);
+
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+      controller.updateActiveSql('SELECT id FROM tasks WHERE id = \$1');
+      controller.updateActiveParameterJson('[null]');
+      await controller.runActiveTab();
+
+      expect(gateway.runQueryCallCount, 0);
+      expect(controller.activeTab.phase, QueryPhase.failed);
+      expect(
+        controller.activeTab.error?.message,
+        contains('Required parameters missing values: \$1.'),
+      );
+    });
+
+    test('runTab reruns with updated JSON parameter values', () async {
+      final dbPath = _tempDbPath();
+      final gateway = _TrackingWorkspaceGateway(
+        queryContract: _makeQueryContract(
+          parameters: const <QueryParameterContract>[
+            QueryParameterContract(
+              position: 1,
+              name: r'$1',
+              typeName: 'INT64',
+              nullable: false,
+              source: 'catalog_column',
+              sourceTable: 'tasks',
+              sourceColumn: 'id',
+              diagnostics: <String>[],
+            ),
+          ],
+        ),
+      );
+      final controller = _createController(gateway: gateway);
+
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+      controller.updateActiveSql('SELECT id FROM tasks WHERE id = \$1');
+      controller.updateActiveParameterJson('[1]');
+      await controller.runActiveTab();
+      expect(gateway.lastRunParams, <Object?>[1]);
+
+      controller.updateActiveParameterJson('[2]');
+      await controller.runActiveTab();
+      expect(gateway.lastRunParams, <Object?>[2]);
+      expect(gateway.runQueryCallCount, 4);
+      expect(gateway.runQueryParamsHistory, <List<Object?>>[
+        const <Object?>[1],
+        const <Object?>[1],
+        const <Object?>[2],
+        const <Object?>[2],
+      ]);
     });
 
     test(

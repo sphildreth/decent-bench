@@ -200,10 +200,75 @@ class _FakeLogGateway implements WorkspaceDatabaseGateway {
   Future<void> cancelImport(String jobId) async {}
 
   @override
+  Future<WorkspaceBranchDiff> branchDiff({
+    required String leftRef,
+    required String rightRef,
+  }) async {
+    throw const BranchWorkflowUnavailable();
+  }
+
+  @override
   Future<void> cancelQuery(String cursorId) async {}
 
   @override
+  Future<WorkspaceBranchInfo> createBranch({
+    required String branchName,
+    required String fromRef,
+  }) async {
+    throw const BranchWorkflowUnavailable();
+  }
+
+  @override
+  Future<WorkspaceSnapshotInfo> createSnapshot({required String name}) async {
+    throw const BranchWorkflowUnavailable();
+  }
+
+  @override
+  Future<void> deleteBranch({required String branchName}) async {}
+
+  @override
+  Future<void> deleteSnapshot({required String ref}) async {}
+
+  @override
   Future<void> dispose() async {}
+
+  @override
+  Future<List<WorkspaceBranchInfo>> listBranches() async {
+    throw const BranchWorkflowUnavailable();
+  }
+
+  @override
+  Future<List<WorkspaceSnapshotInfo>> listSnapshots() async {
+    throw const BranchWorkflowUnavailable();
+  }
+
+  @override
+  Future<WorkspaceBranchDiff> mergeBranch({
+    required String sourceBranch,
+    required String targetBranch,
+    required bool dryRun,
+  }) async {
+    throw const BranchWorkflowUnavailable();
+  }
+
+  @override
+  Future<WorkspaceBranchDiff> restoreBranch({
+    required String branchName,
+    required String targetRef,
+    required bool dryRun,
+  }) async {
+    throw const BranchWorkflowUnavailable();
+  }
+
+  @override
+  Future<QueryResultPage> runQueryOnBranch({
+    required String sql,
+    required String branchName,
+    required List<Object?> params,
+    required int pageSize,
+  }) async {
+    throw const BranchWorkflowUnavailable();
+  }
 
   @override
   Future<CsvExportResult> exportCsv({

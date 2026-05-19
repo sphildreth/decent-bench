@@ -124,7 +124,7 @@ high-risk workflows that require branch safety.
 - ADR-0032 Native Branch, Snapshot, and Safe-Run Workbench
 - `design/SPEC.md` section 6 (Query Execution and Paging Contract)
 - `design/SPEC.md` section 10 (Results Grid Specification)
-- `design/FUTURE_WINS.md` Priority 6
+- `design/FUTURE_WINS.md` Priority 3
 
 ### Alternatives Considered
 

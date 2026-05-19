@@ -66,7 +66,7 @@ aggregation for the chart data model.
 
 ### Chart Types and Scope
 
-**Initial chart types (Priority 8 scope):**
+**Initial chart types (Future Wins Priority 11 scope):**
 - **Line chart**: X = continuous or categorical, Y = one or more numeric series.
 - **Bar chart**: X = categorical, Y = one or more numeric series. Grouped or
   stacked.
@@ -120,7 +120,7 @@ aggregation for the chart data model.
 - ADR-0002 Results Paging and Streaming Contract
 - ADR-0023 External TOML Theme System
 - `design/SPEC.md` section 6 (Query Execution and Paging Contract)
-- `design/FUTURE_WINS.md` Priority 8
+- `design/FUTURE_WINS.md` Priority 11
 - `fl_chart` package: https://pub.dev/packages/fl_chart (MIT license)
 
 ### Alternatives Considered

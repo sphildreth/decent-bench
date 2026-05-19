@@ -119,7 +119,7 @@ primary rollback model.
 
 ## References
 
-- `design/FUTURE_WINS.md` priority 4
+- `design/FUTURE_WINS.md` Priority 1
 - `design/adr/0002-results-paging-and-streaming-contract.md`
 - `design/PRD.md` section 9.2
 - `design/PRD.md` section 9.4
