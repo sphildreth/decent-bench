@@ -21,6 +21,10 @@ The first implementation will:
   the existing top-X table preview query
 - support PNG and JPG/JPEG export for both the full diagram and the visible
   viewport
+- include table nodes only in the first slice; views remain excluded until a
+  separate view-overlay design is accepted
+- render missing referenced tables as warning-style placeholder nodes instead of
+  silently dropping those relationships
 - use Flutter-native rendering and layout before considering diagram packages or
   native graph engines
 
@@ -69,7 +73,9 @@ Native Flutter rendering avoids packaging and license risk for the first slice.
 - The current app-level schema model exposes FK references per column. The ERD
   model must be multi-column-capable, but richer composite-FK grouping may need
   future DecentDB snapshot metadata if the current snapshot cannot distinguish
-  all composite constraints cleanly.
+  all composite constraints cleanly. The first implementation may merge
+  same-table-pair column pairs into one synthetic edge when no upstream FK
+  constraint identity is exposed.
 
 ### References
 

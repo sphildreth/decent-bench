@@ -48,6 +48,16 @@ ERD designer.
 - Inferring cardinality from data values.
 - Building a general-purpose diagram editor.
 
+## Object Coverage
+
+The first implementation includes table nodes only. Views are excluded from the
+initial ERD because the current relationship source is explicit foreign-key
+metadata, and views do not carry FK metadata in the app-level schema model.
+
+Future work may add views as a separate optional overlay or isolated-node mode,
+but that should be designed separately so users do not confuse derived query
+objects with FK-backed table relationships.
+
 ## User Experience
 
 ### Entry points
@@ -98,7 +108,20 @@ The ERD view should include:
 - show all tables
 - show selected table neighborhood
 - export image
-- empty state for schemas with no foreign keys
+- empty and no-relationship states
+
+Default behavior:
+
+- show all tables, including isolated tables
+- show a non-blocking notice when tables exist but no foreign-key relationships
+  are found
+- show an empty state when the schema contains no tables
+- let users hide isolated tables after the initial render
+
+The search box should match the schema explorer's filtering style:
+case-insensitive substring matching over table names and visible column names.
+The filtered diagram should keep directly connected FK neighbors visible so
+relationship context is not lost.
 
 ### Table node content
 
@@ -112,6 +135,20 @@ Each table node should show:
 
 The node should not try to show every metadata detail from the schema browser.
 It should remain scan-friendly.
+
+Column display should default to a maximum of six visible columns per node before
+showing `+N more`. This should be a hardcoded first-slice UI constant, not a user
+preference. A preference can be added later if the default proves too dense or
+too sparse.
+
+Responsive density rules:
+
+- wide navigation pane: show table name plus up to six columns
+- medium navigation pane: show table name plus key columns first, capped at
+  three visible columns
+- narrow navigation pane: show table names and relationship edges only
+- avoid text overflow; node labels must truncate or wrap within stable node
+  dimensions
 
 ### Edge content
 
@@ -133,6 +170,37 @@ contract. If the current snapshot cannot distinguish all composite FK constraint
 groups cleanly, the first implementation should group only relationships it can
 represent deterministically and leave richer grouping for a follow-up bridge
 contract update.
+
+First-slice edge grouping:
+
+- Prefer an upstream FK constraint id/name when it is available.
+- Otherwise generate a synthetic `constraintId`.
+- The synthetic fallback groups column pairs by `childTable`, `parentTable`, and
+  matching delete/update actions.
+- If two same-table-pair relationships have different actions, render separate
+  edges so labels remain truthful.
+- If two independent same-table-pair relationships have the same actions, merge
+  them into one edge with multiple column-pair labels. This is visually compact
+  and reflects the best grouping the current app-level snapshot can provide.
+- Do not emit one edge per column by default; that is too noisy for common
+  composite or role-based relationships.
+
+The edge label should list multiple column pairs compactly, for example:
+`user_id -> users.id, approver_id -> users.id`.
+
+### Missing-reference rendering
+
+If a FK references a table that is not present in `SchemaSnapshot.tables`, the
+diagram should render a placeholder node rather than silently dropping the
+relationship:
+
+- placeholder label: referenced table name
+- visual style: dashed outline and subdued/italic label
+- edge style: dashed edge from child table to placeholder
+- tooltip/note: `Referenced table is not present in the loaded schema snapshot`
+
+Image export must include missing-reference placeholder nodes and dashed edges so
+exported diagrams preserve the same warning context as the live view.
 
 ## Double-click Table Loading
 
@@ -244,6 +312,8 @@ SchemaRelationshipNode
 
 SchemaRelationshipEdge
   id
+  constraintId
+  constraintName
   childTable
   parentTable
   columnPairs
@@ -251,20 +321,33 @@ SchemaRelationshipEdge
   onUpdate
   isSelfReference
   hasMissingParent
+
+SchemaRelationshipColumnPair
+  childColumn
+  parentColumn
+  onDelete
+  onUpdate
 ```
 
 The graph builder should accept `SchemaSnapshot` and produce a deterministic
 graph. It should not depend on Flutter widgets.
 
+`constraintName` is nullable. `constraintId` is always present and may be a
+synthetic grouping key when the loaded schema snapshot does not expose an
+upstream FK constraint identity. Edge-level `onDelete` and `onUpdate` should be
+set only when all column pairs in the edge share the same actions; otherwise the
+pair-level action fields are the source of truth for labels/tooltips.
+
 ## Layout Strategy
 
-Use a deterministic layout for the first implementation:
+Use a deterministic Sugiyama-style layered layout for the first implementation:
 
 - group connected components
-- rank referenced parent tables upstream
+- rank referenced parent tables upstream with a topological pass where possible
 - place child tables downstream
 - place isolated tables in a compact grid when visible
-- detect cycles and use stable fallback placement
+- detect strongly connected components for cycles and use stable fallback
+  packing inside the component
 - route self-references as loop edges around the node
 
 Keep layout separate from graph construction:
@@ -276,6 +359,11 @@ Keep layout separate from graph construction:
 For small and medium schemas, synchronous layout is acceptable. For larger
 schemas, run layout through an isolate or scheduled background task before
 painting to preserve UI responsiveness.
+
+Arrow-key navigation is intentionally not part of the first layout contract. If
+it is added later, prefer spatial navigation based on rendered node positions so
+arrow keys match what users see on screen. Graph-adjacency traversal can be added
+as a separate relationship navigation command if needed.
 
 ## Rendering Strategy
 
@@ -315,19 +403,33 @@ solid background because JPEG does not support transparency.
 Implementation guidance:
 
 - Use Flutter-native rasterization first.
-- For visible-viewport export, capture the diagram surface through a
-  `RepaintBoundary`.
-- For full-diagram export, render the laid-out graph into an offscreen image
-  using the same node/edge paint contract so clipped or offscreen nodes are
-  included.
+- Use one offscreen export renderer for both full-diagram and visible-viewport
+  export so 1x/2x/3x output is deterministic and not limited by the on-screen
+  device pixel ratio.
+- The visible-viewport export should pass the current viewport transform and
+  bounds into the offscreen renderer.
+- The full-diagram export should render the complete laid-out graph so clipped
+  or offscreen nodes are included.
+- A `RepaintBoundary` capture can remain useful for tests or diagnostics, but it
+  should not be the primary high-resolution export path.
 - Use the existing file picker/save-location flow for destination selection.
 - Keep image encoding off the UI thread for large diagrams where practical.
 - Show progress or a disabled export button while an image export is running.
 
 Exported images should include table nodes, visible column labels, edges,
-arrowheads, edge labels, and the current diagram title/context. They should not
-include transient UI controls such as search fields, toolbar buttons, hover
-states, or open context menus.
+arrowheads, edge labels, missing-reference placeholders, and the current diagram
+title/context. They should not include transient UI controls such as search
+fields, toolbar buttons, hover states, or open context menus.
+
+The diagram title/context should be:
+
+```text
+<database filename or sample.decentdb> - ERD - <table count> tables, <relationship count> relationships
+```
+
+SVG export remains deferred. It is not a simple `CustomPainter` export; it needs
+a separate vector rendering path that maps nodes, text, and routed edges into SVG
+primitives.
 
 ## Implementation Slices
 
@@ -341,25 +443,40 @@ states, or open context menus.
 
 ### Slice 1 - Domain graph
 
+Depends on Slice 0.
+
 - Build graph from `SchemaSnapshot.tables`.
 - Add unit tests for simple FK, multiple FKs, self-FK, missing parent,
   isolated tables, and cycles.
 - Keep edge model multi-column-capable.
+- Add `constraintId` and nullable `constraintName` to edges.
+- Merge same-table-pair column pairs into one edge when the current schema
+  snapshot cannot expose a more precise FK constraint grouping.
 
 ### Slice 2 - Layout
+
+Depends on Slice 1.
 
 - Add deterministic layout with stable node ordering.
 - Add unit tests for coordinate stability and cycle fallback.
 - Add graph options for all tables vs selected-table neighborhood.
+- Add missing-reference placeholder node placement.
 
 ### Slice 3 - ERD viewer
+
+Depends on Slices 1 and 2.
 
 - Add an ERD tab/mode to the upper-left navigation pane.
 - Render nodes and edges.
 - Support pan, zoom, zoom-to-fit, search, and selection.
-- Add empty state for schemas without foreign keys.
+- Add empty states for schemas with no tables and schemas with tables but no
+  foreign-key relationships.
+- Add responsive node density for wide, medium, and narrow navigation widths.
 
 ### Slice 4 - Workspace integration
+
+Depends on Slice 3 and the existing workspace controller/table-preview query
+path.
 
 - Add menu, command palette, and schema table context-menu entry points.
 - Double-click table nodes to select schema navigation and load table data.
@@ -367,6 +484,9 @@ states, or open context menus.
 - Preserve active diagram selection after loading table data.
 
 ### Slice 5 - Image export and polish
+
+Depends on Slice 3. Full-diagram export also depends on the layout contract from
+Slice 2.
 
 - Add PNG and JPG export.
 - Support full-diagram and visible-viewport export scopes.
@@ -380,7 +500,7 @@ states, or open context menus.
   snapshot.
 - Do not block the UI thread for large layouts.
 - Avoid rendering all column labels at high zoom-out levels.
-- Provide a maximum visible-column count per node with a `+N more` indicator.
+- Provide a six-column default maximum per node with a `+N more` indicator.
 - Keep pan and zoom smooth by repainting edges separately from node widgets
   where practical.
 
@@ -414,20 +534,30 @@ upper-left navigation tab, or adds schema-editing behavior.
 Automated validation:
 
 - graph-builder unit tests
+- test that views are excluded from the first-slice graph
+- test same-table-pair FK columns are grouped into deterministic edges when no
+  upstream constraint identity exists
+- test missing referenced tables produce placeholder nodes and dashed edges
 - layout unit tests
 - widget tests for opening ERD from menu/command palette
 - widget tests for double-clicking a table node
+- widget tests for case-insensitive table search and connected-neighbor context
 - test that double-clicking `invoices` selects `table:invoices`
 - test that double-clicking `invoices` opens the top-X preview query
 - image export tests for PNG and JPG encoder paths where the test environment
   supports image bytes
 - test full-diagram export includes offscreen nodes
+- test exported image metadata/title context includes database label, table
+  count, and relationship count
 
 Manual validation:
 
 - open a schema with `users`, `products`, and `invoices`
 - open `Tools -> Entity Relationship Diagram`
 - verify `invoices -> users` and `invoices -> products` edges
+- verify a schema with no FKs still shows table nodes with a no-relationships
+  notice
+- verify missing referenced tables render as placeholder nodes
 - double-click `invoices`
 - verify schema explorer selects `invoices`
 - verify query tab contains the limited table preview query

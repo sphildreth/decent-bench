@@ -327,12 +327,18 @@ metadata in the latest loaded `SchemaSnapshot`.
 Required behavior:
 
 - derive table nodes and FK edges from in-memory schema metadata
+- exclude views from the first implementation unless a separate view-overlay
+  design is accepted
 - remain read-only; no schema editing, modeling, migration, or DDL mutation
 - integrate as a non-modal tab/mode in the upper-left navigation pane alongside
   the schema explorer, preserving the ADR-0010 2x2 shell
 - double-clicking a table node selects that table in schema navigation, opens or
   activates a top-X table-preview query, and loads the first page of results when
   a database is open
+- group FK column pairs into deterministic relationship edges, using upstream FK
+  constraint identity when available and synthetic same-table-pair grouping when
+  not available
+- render missing referenced tables as non-editable warning placeholder nodes
 - support search, zoom, zoom-to-fit, selected-table focus, isolated-table
   visibility, and keyboard focus traversal
 - export the full diagram or visible viewport as PNG or JPG/JPEG
