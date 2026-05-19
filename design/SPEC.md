@@ -131,11 +131,15 @@ formatter, JSON/Parquet/Excel export, and multi-tab editing.
 - Collaboration features
 - Full migration tooling
 - External databases as first-class query targets
-- ERD designer
+- ERD designer/schema modeling workflows
 - Query plan visualizer
 - Stored procedure workflow tooling
 - Script orchestration engine
 - Computed-column transforms during import
+
+The read-only ERD viewer is intentionally not classified as an ERD designer.
+ADR-0035 accepts it as a post-`v1.0.0` scope expansion for schema discovery,
+navigation, table-preview loading, and PNG/JPG image export.
 
 ---
 
@@ -314,6 +318,28 @@ Selecting an object shows details such as:
 
 Search/filter should be responsive and operate on an in-memory metadata model
 derived from the latest loaded schema snapshot.
+
+### 4.4a Read-only ERD viewer
+
+The ERD viewer is a schema-navigation surface generated from foreign-key
+metadata in the latest loaded `SchemaSnapshot`.
+
+Required behavior:
+
+- derive table nodes and FK edges from in-memory schema metadata
+- remain read-only; no schema editing, modeling, migration, or DDL mutation
+- integrate as a non-modal tab/mode in the upper-left navigation pane alongside
+  the schema explorer, preserving the ADR-0010 2x2 shell
+- double-clicking a table node selects that table in schema navigation, opens or
+  activates a top-X table-preview query, and loads the first page of results when
+  a database is open
+- support search, zoom, zoom-to-fit, selected-table focus, isolated-table
+  visibility, and keyboard focus traversal
+- export the full diagram or visible viewport as PNG or JPG/JPEG
+
+The initial implementation should use Flutter-native rendering and avoid a
+third-party diagram/layout dependency unless a separate dependency review and ADR
+accept the package.
 
 ### 4.5 Export flow
 

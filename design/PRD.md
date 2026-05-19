@@ -127,6 +127,8 @@ These are important, but were intentionally deferred beyond the shipped
 - Richer import transforms
 - Saved queries / workspace projects
 - More advanced SQL productivity features beyond the MVP set
+- Read-only Entity Relationship Diagram (ERD) viewer generated from foreign-key
+  metadata, with table-preview navigation and PNG/JPG image export
 
 ### 3.3 Non-goals (explicitly out of scope for `v1.0.0`)
 - Managing external databases as first-class live query targets
@@ -136,7 +138,10 @@ These are important, but were intentionally deferred beyond the shipped
 - Advanced script orchestration engines
 - Multi-workspace support (multiple DecentDB files open simultaneously)
 - Postgres custom-format backup import
-- ERD designer, query plans, or stored procedure workflows
+- ERD designer/schema modeling workflows, stored procedure workflows, and other
+  admin-client surfaces
+- Read-only ERD viewing is a post-`v1.0.0` accepted scope expansion governed by
+  ADR-0035; it must not create, edit, or drop schema objects
 
 ---
 
@@ -401,6 +406,8 @@ Heavy work must not run on the UI thread. This includes:
 | Postgres custom backup import | No | Candidate |
 | Live external DB querying | No | Candidate |
 | Schema browser | Yes, phased toward pinned-engine object coverage | Broader UX polish |
+| Read-only ERD viewer | No | Yes, ADR-0035 |
+| ERD designer/schema modeling | No | No |
 | Multi-tab SQL editor | Yes | — |
 | Schema-aware autocomplete | Yes | Further refinement |
 | Snippets | Yes | Further refinement |
