@@ -12,7 +12,9 @@ void main() {
 
   setUp(() async {
     service = ImportDetectionService();
-    tempDir = await Directory.systemTemp.createTemp('decent-bench-detect-test-');
+    tempDir = await Directory.systemTemp.createTemp(
+      'decent-bench-detect-test-',
+    );
   });
 
   tearDown(() async {
@@ -64,12 +66,31 @@ void main() {
   });
 
   test('recognizes planned spreadsheet formats', () async {
-    final file = File(p.join(tempDir.path, 'report.ods'))..writeAsStringSync('');
+    final file = File(p.join(tempDir.path, 'report.ods'))
+      ..writeAsStringSync('');
 
     final result = await service.detect(file.path);
 
     expect(result.format.key, ImportFormatKey.ods);
     expect(result.format.isRecognizedButUnavailable, isTrue);
     expect(result.format.supportState, ImportSupportState.planned);
+  });
+
+  test('keeps connector expansion formats explicit but unavailable', () async {
+    final cases = <String, ImportSupportState>{
+      'warehouse.duckdb': ImportSupportState.planned,
+      'analytics.parquet': ImportSupportState.planned,
+      'legacy.dbf': ImportSupportState.investigate,
+      'report.pdf': ImportSupportState.deferred,
+    };
+
+    for (final entry in cases.entries) {
+      final file = File(p.join(tempDir.path, entry.key))..writeAsStringSync('');
+
+      final result = await service.detect(file.path);
+
+      expect(result.format.isRecognizedButUnavailable, isTrue);
+      expect(result.format.supportState, entry.value);
+    }
   });
 }

@@ -18,6 +18,7 @@ void main() {
       gateway: FakeWorkspaceGateway(),
       configStore: InMemoryConfigStore(),
       workspaceStateStore: InMemoryWorkspaceStateStore(),
+      savedQueryLibraryStore: InMemorySavedQueryLibraryStore(),
     );
     final themeManager = ThemeManager();
 

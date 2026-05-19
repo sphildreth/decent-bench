@@ -21,6 +21,9 @@ import '../application/menu_command_registry.dart';
 import '../application/workspace_controller.dart';
 import '../application/workspace_shell_controller.dart';
 import '../domain/app_config.dart';
+import '../domain/column_statistics.dart';
+import '../domain/database_statistics.dart';
+import '../domain/saved_query_models.dart';
 import '../domain/sql_autocomplete.dart';
 import '../domain/sql_execution_target.dart';
 import '../domain/sql_editor_selection.dart';
@@ -32,6 +35,7 @@ import '../infrastructure/app_lifecycle_service.dart';
 import '../infrastructure/shortcut_config_service.dart';
 import 'excel_import_dialog.dart';
 import 'export_results_csv_dialog.dart';
+import 'export_results_excel_dialog.dart';
 import 'export_results_json_dialog.dart';
 import 'ms_sql_bak_import_dialog.dart';
 import 'preferences_dialog.dart';
@@ -79,6 +83,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   static const _jsonTypeGroup = XTypeGroup(
     label: 'JSON',
     extensions: <String>['json', 'jsonl', 'ndjson'],
+  );
+  static const _excelExportTypeGroup = XTypeGroup(
+    label: 'Excel',
+    extensions: <String>['xlsx'],
+  );
+  static const _projectTypeGroup = XTypeGroup(
+    label: 'Decent Bench Project',
+    extensions: <String>['toml'],
   );
 
   late final SqlHighlightingTextEditingController _sqlController =
@@ -301,6 +313,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                   schemaExplorer: SchemaExplorerPane(
                                     schema: controller.schema,
                                     databasePath: controller.databasePath,
+                                    toolingMetadata: controller.toolingMetadata,
+                                    branchLabel:
+                                        controller.branchState.branchLabel,
                                     selectedNodeId: selectedSelection?.nodeId,
                                     onSelectNode: (nodeId) {
                                       setState(() {
@@ -421,6 +436,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                       onShowCellMenu: _showResultsCellMenu,
                                       onSelectRow: _selectResultsRow,
                                       onTogglePinnedColumn: _togglePinnedColumn,
+                                      onShowColumnStatistics:
+                                          _showResultColumnStatistics,
                                       onLoadHistoryEntry: (entry) {
                                         controller
                                             .loadHistoryEntryIntoActiveTab(
@@ -1270,7 +1287,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         );
         break;
       case _ResultsCellMenuAction.insertRow:
-        await _insertResultRow(anchorRowIndex: rowIndex, columnName: columnName);
+        await _insertResultRow(
+          anchorRowIndex: rowIndex,
+          columnName: columnName,
+        );
         break;
       case _ResultsCellMenuAction.paste:
         if (clipboardText != null && clipboardText.isNotEmpty) {
@@ -1304,6 +1324,229 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     setState(() {
       _resultsStateByTabId[tabId] = current.copyWith(pinnedColumns: nextPinned);
     });
+  }
+
+  Future<void> _showResultColumnStatistics(String columnName) async {
+    final tab = widget.controller.activeTab;
+    final usePlaceholderContent = _usePlaceholderContent(widget.controller);
+    final rows = resolveResultsRows(
+      tab,
+      usePlaceholderContent: usePlaceholderContent,
+    );
+    final contract = tab.resultContractForColumn(columnName);
+    final statistics = buildColumnStatistics(
+      columnName: columnName,
+      rows: rows,
+      nativeType: contract?.nativeTypeDescriptor,
+    );
+    await _showColumnStatisticsDialog(statistics);
+  }
+
+  Future<void> _showSchemaColumnStatistics(String nodeId) async {
+    final parts = nodeId.split(':');
+    if (parts.length < 3) {
+      return;
+    }
+    final objectName = parts[1];
+    final columnName = parts[2];
+    final object = widget.controller.schema.objectNamed(objectName);
+    final column = object == null
+        ? null
+        : _firstOrNull(object.columns.where((item) => item.name == columnName));
+    final typeMetadata = widget.controller.toolingMetadata?.columnTypeFor(
+      tableName: objectName,
+      columnName: columnName,
+    );
+    final nativeType =
+        typeMetadata?.nativeTypeDescriptor ??
+        (column == null ? null : describeNativeType(typeName: column.type));
+    final activeTab = widget.controller.activeTab;
+    final canUseLoadedRows =
+        activeTab.resultRows.isNotEmpty &&
+        activeTab.resultColumns.contains(columnName);
+    final statistics = buildColumnStatistics(
+      columnName: columnName,
+      rows: canUseLoadedRows
+          ? activeTab.resultRows
+          : const <Map<String, Object?>>[],
+      nativeType: nativeType,
+    );
+    await _showColumnStatisticsDialog(
+      statistics,
+      note: canUseLoadedRows
+          ? null
+          : 'Open or run a result set containing this column to profile loaded values.',
+    );
+  }
+
+  Future<void> _showColumnStatisticsDialog(
+    ColumnStatistics statistics, {
+    String? note,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Column Statistics: ${statistics.columnName}'),
+        content: SizedBox(
+          width: 520,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _KeyValueList(rows: statistics.summaryRows),
+              if (note != null) ...<Widget>[
+                const SizedBox(height: 12),
+                Text(note),
+              ],
+              if (statistics.topValues.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 12),
+                Text(
+                  'Top values',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                for (final value in statistics.topValues)
+                  Text('${value.label}: ${value.count}'),
+              ],
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(
+                ClipboardData(text: statistics.toClipboardText()),
+              );
+              if (context.mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+            child: const Text('Copy Summary'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showDatabaseStatisticsDashboard() async {
+    final statistics = await _buildDatabaseStatistics();
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Database Statistics'),
+        content: SizedBox(
+          width: 620,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _KeyValueList(rows: statistics.summaryRows),
+                if (statistics.maintenanceHints.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Maintenance hints',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  for (final hint in statistics.maintenanceHints)
+                    Text('- $hint'),
+                ],
+                if (statistics.rowCountQueries.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Lazy row counts',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${statistics.rowCountQueries.length} COUNT query template'
+                    '${statistics.rowCountQueries.length == 1 ? '' : 's'} available.',
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: statistics.rowCountQueries.isEmpty
+                ? null
+                : () {
+                    Navigator.of(context).pop();
+                    _openSqlTemplate(_rowCountQuery(statistics));
+                  },
+            child: const Text('Open Row Count Query'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(
+                ClipboardData(text: statistics.toClipboardText()),
+              );
+              if (context.mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+            child: const Text('Copy Summary'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<DatabaseStatistics> _buildDatabaseStatistics() async {
+    final databasePath = widget.controller.databasePath;
+    final databaseFileBytes = await _fileSize(databasePath);
+    final walFileBytes = await _fileSize(
+      databasePath == null ? null : '$databasePath-wal',
+    );
+    final shmFileBytes = await _fileSize(
+      databasePath == null ? null : '$databasePath-shm',
+    );
+    return buildDatabaseStatistics(
+      schema: widget.controller.schema,
+      branchState: widget.controller.branchState,
+      databasePath: databasePath,
+      databaseFileBytes: databaseFileBytes,
+      walFileBytes: walFileBytes,
+      shmFileBytes: shmFileBytes,
+    );
+  }
+
+  Future<int?> _fileSize(String? path) async {
+    if (path == null || path.trim().isEmpty) {
+      return null;
+    }
+    final file = File(path);
+    if (!await file.exists()) {
+      return 0;
+    }
+    return file.length();
+  }
+
+  String _rowCountQuery(DatabaseStatistics statistics) {
+    final entries = statistics.rowCountQueries.entries.toList();
+    if (entries.isEmpty) {
+      return '-- No tables are available for row counting.';
+    }
+    return entries
+        .map(
+          (entry) =>
+              'SELECT ${_quoteStringLiteral(entry.key)} AS table_name, '
+              'COUNT(*) AS row_count\nFROM ${quoteSqlIdentifier(entry.key)}',
+        )
+        .join('\nUNION ALL\n');
   }
 
   void _selectAllResultsRows() {
@@ -1934,7 +2177,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text('Insert Row${editability.tableName == null ? '' : ' Into ${editability.tableName}'}'),
+          title: Text(
+            'Insert Row${editability.tableName == null ? '' : ' Into ${editability.tableName}'}',
+          ),
           content: SizedBox(
             width: 460,
             child: SingleChildScrollView(
@@ -2204,6 +2449,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           onInvoke: _openWorkspace,
         ),
         command(
+          id: 'file_open_project',
+          label: 'Open Project...',
+          icon: Icons.folder_special_outlined,
+          onInvoke: _openWorkspaceProject,
+        ),
+        command(
           id: 'file_save',
           label: 'Save',
           icon: Icons.save_outlined,
@@ -2220,6 +2471,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             'Save As',
             'Database duplication is not wired in this prerelease build yet.',
           ),
+        ),
+        command(
+          id: 'file_export_project',
+          label: 'Export Project...',
+          icon: Icons.drive_folder_upload_outlined,
+          onInvoke: _exportWorkspaceProject,
+          enabled: controller.hasOpenDatabase,
         ),
         command(
           id: 'file_close',
@@ -2352,19 +2610,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           id: 'export_results_parquet',
           label: 'Export Results as Parquet...',
           icon: Icons.view_column_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Export Parquet',
-            'Parquet export is planned but not implemented yet.',
-          ),
+          onInvoke: _showParquetExportUnavailableDialog,
         ),
         command(
           id: 'export_results_excel',
           label: 'Export Results as Excel...',
           icon: Icons.table_view_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Export Excel',
-            'Excel export is planned but not implemented yet.',
-          ),
+          onInvoke: _showExcelExportDialog,
+          enabled: controller.activeTab.canExport,
         ),
         command(
           id: 'export_table',
@@ -2495,10 +2748,24 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           onInvoke: () async => controller.createTab(),
         ),
         command(
+          id: 'tools_saved_queries',
+          label: 'Saved Queries',
+          icon: Icons.bookmarks_outlined,
+          onInvoke: _showSavedQueriesDialog,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
           id: 'tools_query_history',
           label: 'Query History',
           icon: Icons.history_outlined,
           onInvoke: _showQueryHistoryDialog,
+        ),
+        command(
+          id: 'tools_database_statistics',
+          label: 'Database Statistics',
+          icon: Icons.monitor_heart_outlined,
+          onInvoke: _showDatabaseStatisticsDashboard,
+          enabled: controller.hasOpenDatabase,
         ),
         command(
           id: 'tools_branch_workbench',
@@ -2612,6 +2879,27 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return;
     }
     await widget.controller.openDatabase(file.path, createIfMissing: false);
+  }
+
+  Future<void> _openWorkspaceProject() async {
+    final file = await openFile(
+      acceptedTypeGroups: const <XTypeGroup>[_projectTypeGroup],
+    );
+    if (file == null) {
+      return;
+    }
+    await widget.controller.openWorkspaceProject(file.path);
+  }
+
+  Future<void> _exportWorkspaceProject() async {
+    final result = await getSaveLocation(
+      suggestedName: '.dbench-project.toml',
+      acceptedTypeGroups: const <XTypeGroup>[_projectTypeGroup],
+    );
+    if (result == null) {
+      return;
+    }
+    await widget.controller.exportWorkspaceProject(result.path);
   }
 
   Future<void> _openRecentWorkspace(String path) async {
@@ -2892,6 +3180,60 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
+  Future<void> _showExcelExportDialog() async {
+    final controller = widget.controller;
+    final activeTab = controller.activeTab;
+    final result = await showDialog<ExcelExportDialogResult>(
+      context: context,
+      builder: (context) {
+        final currentPath = activeTab.exportPath.trim();
+        final suggestedPath = currentPath.isEmpty
+            ? controller.suggestExportPath().replaceAll(
+                RegExp(r'\.csv$', caseSensitive: false),
+                '.xlsx',
+              )
+            : currentPath.replaceAll(
+                RegExp(
+                  r'\.(csv|json|jsonl|ndjson|xlsx)$',
+                  caseSensitive: false,
+                ),
+                '.xlsx',
+              );
+        return ExcelExportDialog(
+          queryTitle: activeTab.title,
+          initialPath: suggestedPath,
+          initialIncludeHeaders: controller.config.csvIncludeHeaders,
+          onBrowse: (currentPath) async {
+            final initialName = currentPath.trim().isEmpty
+                ? p.basename(suggestedPath)
+                : p.basename(currentPath.trim());
+            final location = await getSaveLocation(
+              suggestedName: initialName,
+              acceptedTypeGroups: const <XTypeGroup>[_excelExportTypeGroup],
+            );
+            return location?.path;
+          },
+        );
+      },
+    );
+    if (result == null) {
+      return;
+    }
+
+    controller.updateActiveExportPath(result.path);
+    await controller.exportCurrentQueryAsExcel(
+      path: result.path,
+      includeHeaders: result.includeHeaders,
+    );
+  }
+
+  Future<void> _showParquetExportUnavailableDialog() {
+    return _showPlaceholderNotice(
+      'Export Parquet',
+      'Parquet export remains blocked until a maintained Apache-compatible Dart or FFI writer is selected and validated for desktop builds. Excel export is available now.',
+    );
+  }
+
   Future<void> _handleIncomingFiles(Iterable<String> rawPaths) async {
     final decision = decideWorkspaceIncomingFiles(rawPaths);
     final path = decision.primaryPath;
@@ -3031,12 +3373,24 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       case _SchemaNodeMenuAction.newView:
         _openSqlTemplate(_newViewTemplate());
         break;
+      case _SchemaNodeMenuAction.columnStatistics:
+        await _showSchemaColumnStatistics(nodeId);
+        break;
     }
   }
 
   List<PopupMenuEntry<_SchemaNodeMenuAction>> _schemaMenuItemsForNode(
     String nodeId,
   ) {
+    if (nodeId.startsWith('column:')) {
+      return <PopupMenuEntry<_SchemaNodeMenuAction>>[
+        _popupMenuItem(
+          value: _SchemaNodeMenuAction.columnStatistics,
+          icon: Icons.query_stats_outlined,
+          label: 'Column Statistics',
+        ),
+      ];
+    }
     if (nodeId.startsWith('table:')) {
       return <PopupMenuEntry<_SchemaNodeMenuAction>>[
         _popupMenuItem(
@@ -3238,6 +3592,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     return '"${value.replaceAll('"', '""')}"';
   }
 
+  String _quoteStringLiteral(String value) {
+    return "'${value.replaceAll("'", "''")}'";
+  }
+
   T? _firstOrNull<T>(Iterable<T> values) {
     final iterator = values.iterator;
     return iterator.moveNext() ? iterator.current : null;
@@ -3370,6 +3728,222 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       selection: TextSelection.collapsed(offset: offset),
     );
     widget.controller.updateActiveSql(updated);
+  }
+
+  Future<void> _showSavedQueriesDialog() async {
+    final filterController = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AnimatedBuilder(
+              animation: widget.controller,
+              builder: (context, _) {
+                final queries = _filterSavedQueries(
+                  widget.controller.savedQueries,
+                  filterController.text,
+                );
+                return AlertDialog(
+                  title: const Text('Saved Queries'),
+                  content: SizedBox(
+                    width: 780,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        TextField(
+                          controller: filterController,
+                          decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.search_outlined),
+                            labelText: 'Filter by name, folder, tag, or SQL',
+                          ),
+                          onChanged: (_) => setDialogState(() {}),
+                        ),
+                        const SizedBox(height: 12),
+                        Flexible(
+                          child: queries.isEmpty
+                              ? const Text(
+                                  'No saved queries match this workspace filter.',
+                                )
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  itemCount: queries.length,
+                                  separatorBuilder: (_, _) =>
+                                      const Divider(height: 1),
+                                  itemBuilder: (context, index) {
+                                    final query = queries[index];
+                                    return ListTile(
+                                      dense: true,
+                                      leading: Icon(
+                                        query.hasSchemaDrift(
+                                              widget.controller.toolingMetadata,
+                                            )
+                                            ? Icons.warning_amber_outlined
+                                            : Icons.bookmark_outline,
+                                      ),
+                                      title: Text(query.name),
+                                      subtitle: Text(
+                                        _savedQuerySubtitle(query),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      trailing: Wrap(
+                                        spacing: 6,
+                                        children: <Widget>[
+                                          TextButton(
+                                            onPressed: () {
+                                              widget.controller.loadSavedQuery(
+                                                query.id,
+                                              );
+                                              Navigator.of(context).pop();
+                                            },
+                                            child: const Text('Open'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () {
+                                              widget.controller.loadSavedQuery(
+                                                query.id,
+                                                openInNewTab: true,
+                                              );
+                                              Navigator.of(context).pop();
+                                            },
+                                            child: const Text('New Tab'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () async {
+                                              await widget.controller
+                                                  .deleteSavedQuery(query.id);
+                                            },
+                                            child: const Text('Delete'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: <Widget>[
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Close'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: () async =>
+                          _showSaveActiveQueryDialog(context),
+                      icon: const Icon(Icons.bookmark_add_outlined),
+                      label: const Text('Save Active Query'),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+    filterController.dispose();
+  }
+
+  List<SavedQuery> _filterSavedQueries(
+    List<SavedQuery> queries,
+    String filter,
+  ) {
+    final normalized = filter.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return queries;
+    }
+    return queries.where((query) {
+      return query.name.toLowerCase().contains(normalized) ||
+          query.folder.toLowerCase().contains(normalized) ||
+          query.tags.any((tag) => tag.toLowerCase().contains(normalized)) ||
+          query.sql.toLowerCase().contains(normalized);
+    }).toList();
+  }
+
+  Future<void> _showSaveActiveQueryDialog(BuildContext dialogContext) async {
+    final nameController = TextEditingController(
+      text: widget.controller.activeTab.title,
+    );
+    final folderController = TextEditingController();
+    final tagsController = TextEditingController();
+    final descriptionController = TextEditingController();
+    final saved = await showDialog<bool>(
+      context: dialogContext,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Save Active Query'),
+          content: SizedBox(
+            width: 460,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                TextField(
+                  controller: nameController,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: 'Name'),
+                ),
+                TextField(
+                  controller: folderController,
+                  decoration: const InputDecoration(labelText: 'Folder'),
+                ),
+                TextField(
+                  controller: tagsController,
+                  decoration: const InputDecoration(
+                    labelText: 'Tags',
+                    hintText: 'comma,separated',
+                  ),
+                ),
+                TextField(
+                  controller: descriptionController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Description'),
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+    if (saved == true) {
+      await widget.controller.saveActiveQuery(
+        name: nameController.text,
+        folder: folderController.text,
+        description: descriptionController.text,
+        tags: tagsController.text
+            .split(',')
+            .map((tag) => tag.trim())
+            .where((tag) => tag.isNotEmpty)
+            .toList(),
+      );
+    }
+    nameController.dispose();
+    folderController.dispose();
+    tagsController.dispose();
+    descriptionController.dispose();
+  }
+
+  String _savedQuerySubtitle(SavedQuery query) {
+    final parts = <String>[
+      if (query.folder.trim().isNotEmpty) query.folder,
+      if (query.tags.isNotEmpty) query.tags.join(', '),
+      if (query.hasSchemaDrift(widget.controller.toolingMetadata))
+        'schema drift',
+      query.sql.replaceAll('\n', ' '),
+    ];
+    return parts.join(' - ');
   }
 
   Future<void> _showQueryHistoryDialog() {
@@ -4027,6 +4601,37 @@ class _DropOverlay extends StatelessWidget {
   }
 }
 
+class _KeyValueList extends StatelessWidget {
+  const _KeyValueList({required this.rows});
+
+  final List<MapEntry<String, String>> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: <Widget>[
+        for (final row in rows)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SizedBox(
+                  width: 130,
+                  child: Text(
+                    row.key,
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                ),
+                Expanded(child: Text(row.value)),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _TextMatch {
   const _TextMatch(this.start, this.end);
 
@@ -4084,4 +4689,5 @@ enum _SchemaNodeMenuAction {
   newIndex,
   rebuildAllIndexes,
   newView,
+  columnStatistics,
 }

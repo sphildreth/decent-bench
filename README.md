@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  Import CSV/TSV, JSON/NDJSON, XML, HTML, Excel, SQLite, SQL dumps, and archive-wrapped sources into DecentDB, inspect schema, iterate on SQL in a multi-tab editor, and export shaped results from a fast, responsive desktop app built with Flutter.
+  Import CSV/TSV, JSON/NDJSON, XML, HTML, Excel, SQLite, SQL dumps, and archive-wrapped sources into DecentDB, inspect schema, iterate on SQL in a multi-tab editor, visualize results, and export shaped data from a fast, responsive desktop app built with Flutter.
 </p>
 
 <p align="center">
@@ -43,7 +43,7 @@
 ## ✨ Features
 
 - 🚀 **DecentDB-First:** A fully local-first workflow. Fast open/create, recent files, and intuitive drag-and-drop support.
-- 📥 **Smart Import Wizards:** Import delimited text, JSON/NDJSON, XML, HTML tables, Excel, SQLite, SQL dumps, and wrapped archives (`.zip`, `.gz`, `.bz2`). Includes previews, rename/type-override transforms, progress reporting, and post-import summaries.
+- 📥 **Smart Import Wizards:** Import delimited text, JSON/NDJSON, XML, HTML tables, Excel, SQLite, SQL dumps, and wrapped archives (`.zip`, `.gz`, `.bz2`). Includes previews, rename/type-override transforms, row-local filters/defaults/computed columns/dedup plans for generic imports, progress reporting, and post-import summaries.
 - 🛠️ **Modern SQL Workbench:** Iterate in a multi-tab editor with isolated per-tab results, schema-aware autocomplete, editable snippets, deterministic formatting, typed parameter fields, per-tab query history, and a searchable command palette.
 - ⚡ **Performance-Focused:** Background imports, paginated/streamed results grids, and best-effort query cancellation ensure the UI never freezes.
 - 🧭 **Rich Engine Metadata:** Schema browsing is powered by DecentDB's rich
@@ -54,6 +54,9 @@
 - 🧬 **Native Type Awareness:** DecentDB v2.5.x semantic and spatial types are
   surfaced in schema details, result metadata, autocomplete, snippets, import
   type overrides, copy behavior, and CSV export display values.
+- 📊 **Diagnostics & Visualization:** Column statistics, database statistics,
+  EXPLAIN visualization, and result charts help users understand data and query
+  behavior without leaving the workspace.
 - 🛡️ **Safer SQL Execution:** Query contracts and SQL risk classification power
   typed parameters, result-column metadata, and prompts before mutating or
   destructive statements. Native branch execution is surfaced as unavailable
@@ -61,8 +64,9 @@
 - 🎨 **Workspace Persistence:** Application preferences are stored as TOML, and per-database workspace state is stored separately for reliable tab and query restoration.
 - 🪵 **Operational Visibility:** Open the DecentDB-backed application log database directly from `Tools -> View Log`.
 - 🧪 **Import Validation:** Blocking failure dialogs and richer import summaries make unsuccessful imports obvious and successful imports easier to verify.
-- 📤 **Typed Exports:** CSV, JSON, and NDJSON export stream result pages and
-  preserve DecentDB v2.5.x native value metadata where the format supports it.
+- 📤 **Typed Exports:** CSV, JSON, NDJSON, and Excel export stream result pages
+  and preserve DecentDB v2.5.x native value metadata where the format supports
+  it. Result charts can be exported as PNG.
 - 📦 **Desktop Native:** Packaged for Linux, macOS, and Windows with a repeatable native-library staging helper.
 
 ### Supported File Types
@@ -82,13 +86,13 @@
 | `.zip` | **Unwrap & Import** | Archive wrapper that discovers supported inner files and routes them to the normal import flow. |
 | `.gz`, `.tar.gz`, `.tgz` | **Unwrap & Import** | Supports single-file gzip unwrap and tar+gzip archive inspection/extraction. |
 | `.bz2`, `.tar.bz2`, `.tbz2` | **Unwrap & Import** | Supports single-file bzip2 unwrap and tar+bzip2 archive inspection/extraction. |
-| `.bak` | **Environment-Gated / Scaffold** | Detected and routed to the MS SQL backup flow, which currently checks Docker availability and surfaces the planned container-assisted import path. |
+| `.bak` | *Recognized / Not Implemented* | Tracked for future container-assisted SQL Server backup import. |
 
 ### Recognized But Not Yet Implemented
 
 The current build recognizes, but does not yet import, several formats and
-wrappers including `.ods`, `.yaml`, `.yml`, `.toml`, `.md`, `.duckdb`,
-`.mdb`, `.accdb`, `.dbf`, `.parquet`, `.pdf`, and `.xz`.
+wrappers including fixed-width text, `.ods`, `.yaml`, `.yml`, `.toml`, `.md`,
+`.duckdb`, `.mdb`, `.accdb`, `.dbf`, `.bak`, `.parquet`, `.pdf`, and `.xz`.
 
 ## 🚀 Getting Started (End Users)
 
@@ -108,8 +112,8 @@ dbench --version
 - `--import` reuses drag-and-drop detection rules and opens the matching wizard.
 - `--in` / `--out` run the shipped headless import path.
 - `--silent` suppresses headless progress output.
-- `--plan` is parsed but intentionally rejected for now; it is reserved for a
-  future plan-file execution flow.
+- `--plan` loads and validates a versioned import/export profile document for
+  repeatable headless workflows.
 - `--help` and `--version` print CLI help and the app version.
 
 ## 💻 Developer Onboarding
@@ -205,20 +209,21 @@ Typical files under that root include:
 - ✅ Schema browsing, metadata fingerprints, query contracts, and native type display
 - ✅ Multi-tab SQL editing with typed parameters, autocomplete, snippets, formatter, command palette, and query history
 - ✅ Paged results, query cancellation, safe-run prompts, and CSV/JSON/NDJSON export
+- ✅ Excel result export and PNG chart export
+- ✅ Column statistics, database statistics, EXPLAIN visualization, and result charts
+- ✅ Import/export profiles plus row-local generic import transforms
 - ✅ Local app config plus persistent per-database workspaces
 
 **Near-Term Roadmap:**
-- 🔜 **Native semantic and spatial type UX:** Continue polishing first-class
-  schema, result, copy, import, and export behavior for DecentDB-native values.
-- 🔜 **Branch/snapshot safe-run workbench:** Build on DecentDB native
-  branch/snapshot/diff/restore primitives as the Dart binding exposes them.
-- 🔜 **Table editor and saved workflows:** Add type-aware, branch-safe table
-  editing plus saved queries and workspace project files.
-- 🔜 **Schema and diagnostics expansion:** Broaden schema metadata presentation,
-  add type-aware statistics, and make `EXPLAIN` output easier to inspect.
-- 🔜 **Later import/export expansion:** Parquet/Excel export, import/export
-  profiles, richer import transforms, and connector expansion remain planned
-  after the DecentDB-native workbench surfaces mature.
+- 🔜 **Public branch/snapshot API wiring:** Complete branch-local execution,
+  edits, imports, restore, and merge once the DecentDB Dart package exposes the
+  native branch API publicly.
+- 🔜 **Parquet export:** Select and validate an Apache-compatible Dart or FFI
+  writer before shipping the format.
+- 🔜 **SDK generation workflow:** Promote the schema-first TypeScript prototype
+  into a user-facing CLI/UI workflow.
+- 🔜 **Connector expansion:** Add dependency-vetted imports for ODS, DuckDB,
+  Parquet, PostgreSQL dumps, live database sources, and legacy formats.
 
 ## 🤝 Contributing
 

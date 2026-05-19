@@ -15,6 +15,8 @@ class SchemaExplorerPane extends StatefulWidget {
     required this.onShowNodeMenu,
     required this.onRefresh,
     required this.isLoading,
+    this.toolingMetadata,
+    this.branchLabel,
   });
 
   final SchemaSnapshot schema;
@@ -24,6 +26,8 @@ class SchemaExplorerPane extends StatefulWidget {
   final void Function(String nodeId, Offset globalPosition) onShowNodeMenu;
   final VoidCallback onRefresh;
   final bool isLoading;
+  final ToolingMetadata? toolingMetadata;
+  final String? branchLabel;
 
   @override
   State<SchemaExplorerPane> createState() => _SchemaExplorerPaneState();
@@ -36,6 +40,48 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
     'folder:sample.customers:columns',
     'folder:sample.orders:columns',
   };
+  final TextEditingController _filterController = TextEditingController();
+  String _filter = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _filterController.addListener(_handleFilterChanged);
+  }
+
+  @override
+  void dispose() {
+    _filterController
+      ..removeListener(_handleFilterChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleFilterChanged() {
+    final next = _filterController.text;
+    if (next == _filter) {
+      return;
+    }
+    setState(() {
+      _filter = next;
+      if (next.trim().isNotEmpty) {
+        _expandedNodes.addAll(<String>{
+          'section:tables',
+          'section:views',
+          'section:indexes',
+          'section:triggers',
+          'section:temporary',
+          for (final object in widget.schema.objects) ...<String>[
+            '${object.kind.name}:${object.name}',
+            'folder:${object.name}:columns',
+            'folder:${object.name}:indexes',
+            'folder:${object.name}:constraints',
+            'folder:${object.name}:triggers',
+          ],
+        });
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,6 +90,12 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
         ? 'sample.decentdb'
         : p.basename(widget.databasePath!);
     final schema = widget.schema;
+    final filteredTables = _filterObjects(schema.tables);
+    final filteredViews = _filterObjects(schema.views);
+    final filteredIndexes = _filterIndexes(schema.indexes);
+    final filteredTriggers = _filterTriggers(schema.triggers);
+    final temporaryItems = _filterTemporaryItems(_temporaryItems(schema));
+    final hasFilter = _normalizedFilter.isNotEmpty;
 
     return ShellPaneFrame(
       title: 'Schema Explorer',
@@ -71,13 +123,31 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
                     selected: widget.selectedNodeId == 'database',
                     onTap: () => widget.onSelectNode('database'),
                   ),
+                  _SchemaContextSummary(
+                    toolingMetadata: widget.toolingMetadata,
+                    branchLabel: widget.branchLabel,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(2, 8, 2, 4),
+                    child: TextField(
+                      key: const ValueKey<String>('schema.filter'),
+                      controller: _filterController,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        prefixIcon: Icon(Icons.search_rounded, size: 18),
+                        hintText: 'Filter schema',
+                        border: OutlineInputBorder(),
+                      ),
+                      textInputAction: TextInputAction.search,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   _SectionBranch(
                     nodeId: 'section:tables',
                     title: 'Tables',
                     count: showSampleSchema && schema.tables.isEmpty
                         ? _sampleTables.length
-                        : schema.tables.length,
+                        : filteredTables.length,
                     icon: Icons.table_chart_outlined,
                     selected: widget.selectedNodeId == 'section:tables',
                     expanded: _expandedNodes.contains('section:tables'),
@@ -86,11 +156,13 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
                     onExpansionChanged: _setExpanded,
                     children: showSampleSchema && schema.tables.isEmpty
                         ? _buildSampleTableNodes()
+                        : filteredTables.isEmpty && hasFilter
+                        ? _emptyFilterNode('tables')
                         : <Widget>[
-                            for (final object in schema.tables)
+                            for (final object in filteredTables)
                               _ObjectBranch(
                                 nodeId: 'table:${object.name}',
-                                label: object.name,
+                                label: _objectLabel(object),
                                 icon: Icons.table_rows_outlined,
                                 selectedNodeId: widget.selectedNodeId,
                                 expandedNodes: _expandedNodes,
@@ -115,7 +187,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
                     title: 'Views',
                     count: showSampleSchema && schema.views.isEmpty
                         ? _sampleViews.length
-                        : schema.views.length,
+                        : filteredViews.length,
                     icon: Icons.visibility_outlined,
                     selected: widget.selectedNodeId == 'section:views',
                     expanded: _expandedNodes.contains('section:views'),
@@ -124,11 +196,13 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
                     onExpansionChanged: _setExpanded,
                     children: showSampleSchema && schema.views.isEmpty
                         ? _buildSampleViewNodes()
+                        : filteredViews.isEmpty && hasFilter
+                        ? _emptyFilterNode('views')
                         : <Widget>[
-                            for (final object in schema.views)
+                            for (final object in filteredViews)
                               _ObjectBranch(
                                 nodeId: 'view:${object.name}',
-                                label: object.name,
+                                label: _objectLabel(object),
                                 icon: Icons.view_sidebar_outlined,
                                 selectedNodeId: widget.selectedNodeId,
                                 expandedNodes: _expandedNodes,
@@ -154,7 +228,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
                     title: 'Indexes',
                     count: showSampleSchema && schema.indexes.isEmpty
                         ? _sampleIndexLabels.length
-                        : schema.indexes.length,
+                        : filteredIndexes.length,
                     icon: Icons.filter_alt_outlined,
                     selected: widget.selectedNodeId == 'section:indexes',
                     expanded: _expandedNodes.contains('section:indexes'),
@@ -174,13 +248,14 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
                                 onTap: widget.onSelectNode,
                               ),
                           ]
+                        : filteredIndexes.isEmpty && hasFilter
+                        ? _emptyFilterNode('indexes')
                         : <Widget>[
-                            for (final index in schema.indexes)
+                            for (final index in filteredIndexes)
                               _LeafNode(
                                 nodeId: 'index:${index.name}',
                                 icon: Icons.label_outline,
-                                label:
-                                    '${index.name} (${index.columns.join(", ")})',
+                                label: _indexLabel(index),
                                 selected:
                                     widget.selectedNodeId ==
                                     'index:${index.name}',
@@ -188,6 +263,63 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
                               ),
                           ],
                   ),
+                  if (!showSampleSchema || schema.triggers.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _SectionBranch(
+                      nodeId: 'section:triggers',
+                      title: 'Triggers',
+                      count: filteredTriggers.length,
+                      icon: Icons.bolt_outlined,
+                      selected: widget.selectedNodeId == 'section:triggers',
+                      expanded: _expandedNodes.contains('section:triggers'),
+                      onSelected: widget.onSelectNode,
+                      onShowContextMenu: widget.onShowNodeMenu,
+                      onExpansionChanged: _setExpanded,
+                      children: filteredTriggers.isEmpty && hasFilter
+                          ? _emptyFilterNode('triggers')
+                          : <Widget>[
+                              for (final trigger in filteredTriggers)
+                                _LeafNode(
+                                  nodeId:
+                                      'trigger:${trigger.targetName}:${trigger.name}',
+                                  icon: Icons.bolt_outlined,
+                                  label: _triggerLabel(trigger),
+                                  selected:
+                                      widget.selectedNodeId ==
+                                      'trigger:${trigger.targetName}:${trigger.name}',
+                                  onTap: widget.onSelectNode,
+                                ),
+                            ],
+                    ),
+                  ],
+                  if (temporaryItems.isNotEmpty ||
+                      (!showSampleSchema && hasFilter)) ...[
+                    const SizedBox(height: 8),
+                    _SectionBranch(
+                      nodeId: 'section:temporary',
+                      title: 'Temporary',
+                      count: temporaryItems.length,
+                      icon: Icons.access_time_outlined,
+                      selected: widget.selectedNodeId == 'section:temporary',
+                      expanded: _expandedNodes.contains('section:temporary'),
+                      onSelected: widget.onSelectNode,
+                      onShowContextMenu: widget.onShowNodeMenu,
+                      onExpansionChanged: _setExpanded,
+                      children: temporaryItems.isEmpty
+                          ? _emptyFilterNode('temporary objects')
+                          : <Widget>[
+                              for (final item in temporaryItems)
+                                _LeafNode(
+                                  nodeId: item.nodeId,
+                                  icon: item.icon,
+                                  label: item.label,
+                                  selected:
+                                      widget.selectedNodeId == item.nodeId,
+                                  onTap: widget.onSelectNode,
+                                ),
+                            ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -217,7 +349,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
             _LeafNode(
               nodeId: 'column:${object.name}:${column.name}',
               icon: Icons.subdirectory_arrow_right,
-              label: '${column.name}  ${column.type}',
+              label: _columnLabel(object, column),
               selected:
                   widget.selectedNodeId ==
                   'column:${object.name}:${column.name}',
@@ -251,7 +383,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
                   _LeafNode(
                     nodeId: 'index:${index.name}',
                     icon: Icons.label_outline,
-                    label: '${index.name} (${index.columns.join(", ")})',
+                    label: _indexLabel(index),
                     selected: widget.selectedNodeId == 'index:${index.name}',
                     onTap: widget.onSelectNode,
                   ),
@@ -304,8 +436,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
                     _LeafNode(
                       nodeId: 'trigger:${object.name}:${trigger.name}',
                       icon: Icons.bolt_outlined,
-                      label:
-                          '${trigger.name} (${trigger.timing.toUpperCase()} ${trigger.events.join(", ")})',
+                      label: _triggerLabel(trigger),
                       selected:
                           widget.selectedNodeId ==
                           'trigger:${object.name}:${trigger.name}',
@@ -498,6 +629,234 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
       }
     });
   }
+
+  String get _normalizedFilter => _filter.trim().toLowerCase();
+
+  List<SchemaObjectSummary> _filterObjects(List<SchemaObjectSummary> objects) {
+    final filter = _normalizedFilter;
+    if (filter.isEmpty) {
+      return objects;
+    }
+    return objects.where((object) {
+      if (_matchesText(object.name, filter) ||
+          _matchesText(object.kind.name, filter) ||
+          _matchesText(object.ddl, filter) ||
+          (object.temporary && _matchesText('temporary temp', filter))) {
+        return true;
+      }
+      for (final column in object.columns) {
+        if (_matchesColumn(object, column, filter)) {
+          return true;
+        }
+      }
+      for (final check in object.checks) {
+        if (_matchesText(check.name, filter) ||
+            _matchesText(check.exprSql, filter) ||
+            _matchesText(check.summary, filter)) {
+          return true;
+        }
+      }
+      return widget.schema
+              .indexesForObject(object.name)
+              .any((index) => _matchesIndex(index, filter)) ||
+          widget.schema
+              .triggersForObject(object.name)
+              .any((trigger) => _matchesTrigger(trigger, filter));
+    }).toList();
+  }
+
+  List<IndexSummary> _filterIndexes(List<IndexSummary> indexes) {
+    final filter = _normalizedFilter;
+    if (filter.isEmpty) {
+      return indexes;
+    }
+    return indexes.where((index) => _matchesIndex(index, filter)).toList();
+  }
+
+  List<TriggerSummary> _filterTriggers(List<TriggerSummary> triggers) {
+    final filter = _normalizedFilter;
+    if (filter.isEmpty) {
+      return triggers;
+    }
+    return triggers
+        .where((trigger) => _matchesTrigger(trigger, filter))
+        .toList();
+  }
+
+  List<_TemporarySchemaItem> _filterTemporaryItems(
+    List<_TemporarySchemaItem> items,
+  ) {
+    final filter = _normalizedFilter;
+    if (filter.isEmpty) {
+      return items;
+    }
+    return items
+        .where(
+          (item) =>
+              _matchesText(item.label, filter) ||
+              _matchesText(item.kind, filter),
+        )
+        .toList();
+  }
+
+  bool _matchesColumn(
+    SchemaObjectSummary object,
+    SchemaColumn column,
+    String filter,
+  ) {
+    final nativeType = _nativeTypeFor(object, column);
+    return _matchesText(column.name, filter) ||
+        _matchesText(column.type, filter) ||
+        _matchesText(column.defaultExpr, filter) ||
+        _matchesText(column.generatedExpr, filter) ||
+        _matchesText(nativeType.summaryLabel, filter) ||
+        column.constraintSummaries.any(
+          (summary) => _matchesText(summary, filter),
+        );
+  }
+
+  bool _matchesIndex(IndexSummary index, String filter) {
+    return _matchesText(index.name, filter) ||
+        _matchesText(index.table, filter) ||
+        _matchesText(index.kind, filter) ||
+        _matchesText(index.predicateSql, filter) ||
+        _matchesText(index.ddl, filter) ||
+        (index.temporary && _matchesText('temporary temp', filter)) ||
+        (index.unique && _matchesText('unique', filter)) ||
+        index.columns.any((column) => _matchesText(column, filter));
+  }
+
+  bool _matchesTrigger(TriggerSummary trigger, String filter) {
+    return _matchesText(trigger.name, filter) ||
+        _matchesText(trigger.targetName, filter) ||
+        _matchesText(trigger.targetKind, filter) ||
+        _matchesText(trigger.timing, filter) ||
+        _matchesText(trigger.actionSql, filter) ||
+        _matchesText(trigger.ddl, filter) ||
+        (trigger.temporary && _matchesText('temporary temp', filter)) ||
+        trigger.events.any((event) => _matchesText(event, filter));
+  }
+
+  bool _matchesText(String? value, String filter) {
+    return value?.toLowerCase().contains(filter) ?? false;
+  }
+
+  List<_TemporarySchemaItem> _temporaryItems(SchemaSnapshot schema) {
+    return <_TemporarySchemaItem>[
+      for (final object in schema.objects)
+        if (object.temporary)
+          _TemporarySchemaItem(
+            nodeId: '${object.kind.name}:${object.name}',
+            label: '${object.name} (${object.kind.name})',
+            kind: object.kind.name,
+            icon: object.kind == SchemaObjectKind.table
+                ? Icons.table_rows_outlined
+                : Icons.view_sidebar_outlined,
+          ),
+      for (final index in schema.indexes)
+        if (index.temporary)
+          _TemporarySchemaItem(
+            nodeId: 'index:${index.name}',
+            label: '${index.name} (index on ${index.table})',
+            kind: 'index',
+            icon: Icons.filter_alt_outlined,
+          ),
+      for (final trigger in schema.triggers)
+        if (trigger.temporary)
+          _TemporarySchemaItem(
+            nodeId: 'trigger:${trigger.targetName}:${trigger.name}',
+            label: '${trigger.name} (trigger on ${trigger.targetName})',
+            kind: 'trigger',
+            icon: Icons.bolt_outlined,
+          ),
+    ];
+  }
+
+  String _objectLabel(SchemaObjectSummary object) {
+    return object.temporary ? '${object.name}  TEMP' : object.name;
+  }
+
+  String _columnLabel(SchemaObjectSummary object, SchemaColumn column) {
+    final nativeType = _nativeTypeFor(object, column);
+    final parts = <String>[column.name, column.type];
+    if (nativeType.isNativeV25Type) {
+      parts.add(nativeType.summaryLabel);
+    } else if (nativeType.family != NativeTypeFamily.unknown &&
+        nativeType.familyLabel.toUpperCase() != column.type.toUpperCase()) {
+      parts.add(nativeType.familyLabel);
+    }
+    if (column.isGenerated) {
+      parts.add(column.generatedStored ? 'GENERATED STORED' : 'GENERATED');
+    }
+    if (column.primaryKey) {
+      parts.add('PK');
+    }
+    if (column.notNull) {
+      parts.add('NOT NULL');
+    }
+    return parts.join('  ');
+  }
+
+  NativeTypeDescriptor _nativeTypeFor(
+    SchemaObjectSummary object,
+    SchemaColumn column,
+  ) {
+    final typeMetadata = widget.toolingMetadata?.columnTypeFor(
+      tableName: object.name,
+      columnName: column.name,
+    );
+    return typeMetadata?.nativeTypeDescriptor ??
+        describeNativeType(typeName: column.type);
+  }
+
+  String _indexLabel(IndexSummary index) {
+    final parts = <String>[
+      index.name,
+      '(${index.columns.join(", ")})',
+      index.kind,
+      if (index.unique) 'UNIQUE',
+      if (index.temporary) 'TEMP',
+    ];
+    return parts.join(' ');
+  }
+
+  String _triggerLabel(TriggerSummary trigger) {
+    final parts = <String>[
+      trigger.name,
+      'on ${trigger.targetName}',
+      trigger.timing.toUpperCase(),
+      trigger.events.join(', ').toUpperCase(),
+      if (trigger.temporary) 'TEMP',
+    ];
+    return parts.join(' ');
+  }
+
+  List<Widget> _emptyFilterNode(String label) {
+    return <Widget>[
+      _LeafNode(
+        nodeId: 'filter-empty:$label',
+        icon: Icons.horizontal_rule,
+        label: 'No matching $label',
+        selected: false,
+        enabled: false,
+        onTap: widget.onSelectNode,
+      ),
+    ];
+  }
+}
+
+class _TemporarySchemaItem {
+  const _TemporarySchemaItem({
+    required this.nodeId,
+    required this.label,
+    required this.kind,
+    required this.icon,
+  });
+
+  final String nodeId;
+  final String label;
+  final String kind;
+  final IconData icon;
 }
 
 const List<String> _sampleTables = <String>['customers', 'orders'];
@@ -546,6 +905,56 @@ class _RootNode extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SchemaContextSummary extends StatelessWidget {
+  const _SchemaContextSummary({this.toolingMetadata, this.branchLabel});
+
+  final ToolingMetadata? toolingMetadata;
+  final String? branchLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final metadata = toolingMetadata;
+    final tokens = context.decentBenchTheme;
+    final theme = Theme.of(context);
+    final branch = branchLabel?.trim();
+    final fingerprint = metadata?.schemaFingerprint.trim();
+    final rows = <String>[
+      if (metadata?.engineVersion.trim().isNotEmpty == true)
+        'Engine ${metadata!.engineVersion.trim()}',
+      if (branch != null && branch.isNotEmpty) 'Branch $branch',
+      if (fingerprint != null && fingerprint.isNotEmpty)
+        'Schema ${fingerprint.substring(0, fingerprint.length > 12 ? 12 : fingerprint.length)}',
+    ];
+    if (rows.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: <Widget>[
+          for (final row in rows)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: tokens.sidebar.headerBackground,
+                border: Border.all(color: tokens.sidebar.treeLine),
+              ),
+              child: Text(
+                row,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: tokens.sidebar.itemText,
+                  fontFamily: tokens.fonts.editorFamily,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -931,6 +1340,7 @@ class _LeafNode extends StatelessWidget {
           Expanded(
             child: Text(
               label,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
                 fontFamily: tokens.fonts.editorFamily,
                 color: enabled

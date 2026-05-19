@@ -296,6 +296,17 @@ class _FakeLogGateway implements WorkspaceDatabaseGateway {
   }
 
   @override
+  Future<ExcelExportResult> exportExcel({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    required bool includeHeaders,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<QueryResultPage> fetchNextPage({
     required String cursorId,
     required int pageSize,

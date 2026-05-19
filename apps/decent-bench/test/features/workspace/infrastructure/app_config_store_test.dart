@@ -15,6 +15,7 @@ void main() {
       logging: const LoggingSettings(verbosity: LogVerbosity.debug),
       recentFiles: const <String>['/tmp/a.ddb', '/tmp/b.ddb'],
       defaultPageSize: 250,
+      queryHistoryLimit: 12,
       csvDelimiter: ';',
       csvIncludeHeaders: false,
       editorSettings: const EditorSettings(
@@ -67,6 +68,7 @@ void main() {
     expect(parsed.logging.verbosity, LogVerbosity.debug);
     expect(parsed.recentFiles, config.recentFiles);
     expect(parsed.defaultPageSize, 250);
+    expect(parsed.queryHistoryLimit, 12);
     expect(parsed.csvDelimiter, ';');
     expect(parsed.csvIncludeHeaders, isFalse);
     expect(parsed.editorSettings.autocompleteEnabled, isFalse);
@@ -108,6 +110,7 @@ recent_files = ["/tmp/example.ddb"]
       AppearanceSettings.defaultActiveTheme,
     );
     expect(parsed.defaultPageSize, 500);
+    expect(parsed.queryHistoryLimit, AppConfig.defaultQueryHistoryLimitValue);
     expect(parsed.editorSettings.autocompleteEnabled, isTrue);
     expect(parsed.shellPreferences, isNotNull);
     expect(

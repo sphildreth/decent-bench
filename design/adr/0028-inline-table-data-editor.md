@@ -4,9 +4,9 @@
 
 ### Decision
 
-Decent Bench's results grid will gain an inline cell editing mode. When a
-result set is determined to be editable, users can double-click cells to edit
-values in place. On commit, the tool generates and executes parameterized DML
+Decent Bench's results grid will gain a table editing mode. When a result set
+is determined to be editable, users can edit cells, insert rows, or delete rows
+from the grid surface. On commit, the tool generates and executes parameterized DML
 (`UPDATE`, `INSERT`, `DELETE`) against the database through the existing
 `DecentDbBridge` isolate. The grid becomes a write-through surface, not a
 separate "data editor" view.
@@ -53,10 +53,11 @@ If the result set is NOT editable, the grid status bar shows why (e.g.,
 always sent as bound parameters through the existing parameterized execution
 path; never interpolated into SQL strings.
 
-**INSERT**: An empty "new row" is rendered at the bottom of editable result
-sets. Typing into any cell in that row triggers an `INSERT INTO <table>
-(<cols>) VALUES ($1, $2, ...)` on first commit, using column defaults for
-unfilled cells. Subsequent edits to the same new row produce UPDATEs.
+**INSERT**: The grid exposes an insert-row action for editable result sets. The
+insert dialog generates `INSERT INTO <table> (<cols>) VALUES ($1, $2, ...)`,
+using column defaults for unfilled cells. If generated/defaulted values are not
+known after commit, the visible result set asks the user to refresh before
+assuming a complete inserted row.
 
 **DELETE**: Right-click or keyboard shortcut on a row generates `DELETE FROM
 <table> WHERE <pk> = $1`. Requires confirmation unless the user has enabled "skip
@@ -90,8 +91,25 @@ When native branch operations are exposed by the Dart binding:
 - Risky sessions offer "Edit on Branch" before the first write.
 - Branch diffs are the review path before merge.
 
-Until that API is available, Decent Bench should keep editing disabled for
-high-risk workflows that require branch safety.
+Until that API is available, Decent Bench must clearly confirm that generated
+DML will write directly to the current database.
+
+### Implementation Notes
+
+- Implemented in the v2.0.0 line as a query-contract and schema-driven editing
+  surface.
+- The controller derives editability from read-only single-table query
+  contracts, catalog-column source mappings, and a single primary key exposed in
+  the result set.
+- The results grid exposes editability status and context-menu actions for cell
+  editing, paste, set NULL, insert row, and delete row.
+- Generated `INSERT`, `UPDATE`, and `DELETE` statements use bound parameters
+  and quoted identifiers. Text, numeric, and boolean values are parsed before
+  binding; native semantic text-like values bind as strings; binary and spatial
+  values remain view/copy-only.
+- Failed commits preserve the pending cell value and show a cell-level error.
+- Branch-local edit sessions remain gated on the public DecentDB Dart
+  branch/snapshot API tracked by ADR-0032.
 
 ### Non-Goals
 
@@ -124,7 +142,7 @@ high-risk workflows that require branch safety.
 - ADR-0032 Native Branch, Snapshot, and Safe-Run Workbench
 - `design/SPEC.md` section 6 (Query Execution and Paging Contract)
 - `design/SPEC.md` section 10 (Results Grid Specification)
-- `design/FUTURE_WINS.md` Priority 3
+- `design/FUTURE_WINS.md` Priority 2
 
 ### Alternatives Considered
 

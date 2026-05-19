@@ -9,6 +9,7 @@ import '../../../app/logging/app_logger.dart';
 import '../../../app/logging/import_log_details.dart';
 import '../domain/app_config.dart';
 import '../domain/excel_import_models.dart';
+import '../domain/saved_query_models.dart';
 import '../domain/sql_dump_import_models.dart';
 import '../domain/sqlite_import_models.dart';
 import '../domain/workspace_file_entry.dart';
@@ -18,10 +19,10 @@ import '../domain/workspace_state.dart';
 import '../infrastructure/app_config_store.dart';
 import '../infrastructure/decentdb_bridge.dart';
 import '../infrastructure/layout_persistence_service.dart';
+import '../infrastructure/saved_query_library_store.dart';
 import '../infrastructure/workspace_state_store.dart';
 
 class WorkspaceController extends ChangeNotifier {
-  static const int _maxQueryHistoryEntries = 40;
   static const int _maxMessageHistoryEntries = 80;
   static const String nativeBranchApiUnavailableReason =
       'Native DecentDB branch and snapshot operations require a public Dart '
@@ -32,12 +33,15 @@ class WorkspaceController extends ChangeNotifier {
     WorkspaceDatabaseGateway? gateway,
     WorkspaceConfigStore? configStore,
     WorkspaceStateStore? workspaceStateStore,
+    SavedQueryLibraryStore? savedQueryLibraryStore,
     LayoutPersistenceService? layoutPersistenceService,
     AppLogger? logger,
   }) : _logger = logger ?? const NoOpAppLogger(),
        _gateway = gateway ?? DecentDbBridge(),
        _configStore = configStore ?? AppConfigStore(logger: logger),
        _workspaceStateStore = workspaceStateStore ?? FileWorkspaceStateStore(),
+       _savedQueryLibraryStore =
+           savedQueryLibraryStore ?? FileSavedQueryLibraryStore(),
        _layoutPersistenceService =
            layoutPersistenceService ?? const LayoutPersistenceService() {
     _resetTabs(notify: false, resetCounters: true);
@@ -47,6 +51,7 @@ class WorkspaceController extends ChangeNotifier {
   final WorkspaceDatabaseGateway _gateway;
   final WorkspaceConfigStore _configStore;
   final WorkspaceStateStore _workspaceStateStore;
+  final SavedQueryLibraryStore _savedQueryLibraryStore;
   final LayoutPersistenceService _layoutPersistenceService;
 
   AppConfig config = AppConfig.defaults();
@@ -56,6 +61,7 @@ class WorkspaceController extends ChangeNotifier {
     nativeBranchApiUnavailableReason,
   );
   WorkspaceBranchDiff? lastBranchDiff;
+  SavedQueryLibrary savedQueryLibrary = SavedQueryLibrary.empty;
   List<QueryTabState> tabs = const <QueryTabState>[];
   ExcelImportSession? excelImportSession;
   SqlDumpImportSession? sqlDumpImportSession;
@@ -102,6 +108,8 @@ class WorkspaceController extends ChangeNotifier {
     return entries;
   }
 
+  List<SavedQuery> get savedQueries => savedQueryLibrary.queries;
+
   bool get hasRunningTabs => tabs.any(
     (tab) =>
         tab.canCancel ||
@@ -111,6 +119,11 @@ class WorkspaceController extends ChangeNotifier {
   );
 
   String get configFilePath => _configStore.describeLocation();
+
+  String get savedQueryLibraryLocation {
+    final path = databasePath;
+    return path == null ? '' : _savedQueryLibraryStore.describeLocation(path);
+  }
 
   bool get canRunActiveTab => canRunTab(activeTabId);
 
@@ -379,6 +392,7 @@ class WorkspaceController extends ChangeNotifier {
       config = config.pushRecentFile(session.path);
       await _configStore.save(config);
       final restoredState = await _workspaceStateStore.load(session.path);
+      await _loadSavedQueryLibrary(session.path);
       _restoreTabs(restoredState, notify: false);
       await refreshSchema(showLoadingState: false);
       await refreshBranchState(showLoadingState: false);
@@ -413,6 +427,7 @@ class WorkspaceController extends ChangeNotifier {
         nativeBranchApiUnavailableReason,
       );
       lastBranchDiff = null;
+      savedQueryLibrary = SavedQueryLibrary.empty;
       _setWorkspaceError(error.toString());
       _resetTabs(notify: false, resetCounters: true);
       _logError(
@@ -432,6 +447,74 @@ class WorkspaceController extends ChangeNotifier {
   Future<void> openLogDatabase() async {
     await _logger.initialize(minimumLevel: config.logging.verbosity);
     await openDatabase(_logger.logDatabasePath, createIfMissing: false);
+  }
+
+  Future<void> openWorkspaceProject(String projectPath) async {
+    final normalized = p.normalize(projectPath);
+    final project = WorkspaceProjectFile.fromToml(
+      await File(normalized).readAsString(),
+    );
+    if (project.openOnLoad) {
+      await openDatabase(
+        project.resolveDatabasePath(normalized),
+        createIfMissing: false,
+      );
+    }
+    final queryLibraryPath = project.resolveQueryLibraryPath(normalized);
+    if (queryLibraryPath != null) {
+      savedQueryLibrary = await _savedQueryLibraryStore.loadFromPath(
+        queryLibraryPath,
+      );
+      for (final queryId in project.autoOpenQueryIds) {
+        final query = savedQueryLibrary.queryById(queryId);
+        if (query != null) {
+          createTab(sql: query.sql);
+          _mutateTab(
+            activeTabId,
+            (tab) => tab.copyWith(
+              parameterJson: query.parameterJson,
+              queryContract: query.queryContract,
+            ),
+            persist: true,
+            notify: false,
+          );
+        }
+      }
+    }
+    workspaceError = null;
+    workspaceMessage =
+        'Opened project ${p.basename(normalized)}'
+        '${project.runRiskyQueriesOnBranch && !canUseNativeBranchWorkflow ? ' (branch-safe risky queries unavailable).' : '.'}';
+    _safeNotify();
+  }
+
+  Future<void> exportWorkspaceProject(String projectPath) async {
+    final currentDatabasePath = databasePath;
+    if (currentDatabasePath == null) {
+      workspaceError = 'Open a DecentDB file before exporting a project.';
+      workspaceMessage = null;
+      _safeNotify();
+      return;
+    }
+    final normalized = p.normalize(projectPath);
+    final queryLibraryPath = p.join(p.dirname(normalized), 'queries.toml');
+    await _savedQueryLibraryStore.saveToPath(
+      queryLibraryPath,
+      savedQueryLibrary,
+    );
+    final project = WorkspaceProjectFile(
+      databasePath: p.relative(
+        currentDatabasePath,
+        from: p.dirname(normalized),
+      ),
+      queryLibraryPath: p.basename(queryLibraryPath),
+    );
+    final file = File(normalized);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(project.toToml());
+    workspaceError = null;
+    workspaceMessage = 'Exported project ${p.basename(normalized)}.';
+    _safeNotify();
   }
 
   Future<void> refreshSchema({bool showLoadingState = true}) async {
@@ -979,6 +1062,103 @@ class WorkspaceController extends ChangeNotifier {
       (tab) => tab.copyWith(queryHistory: const <QueryHistoryEntry>[]),
       persist: true,
     );
+  }
+
+  Future<SavedQuery?> saveActiveQuery({
+    required String name,
+    String description = '',
+    String folder = '',
+    List<String> tags = const <String>[],
+  }) async {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) {
+      workspaceError = 'Saved query name is required.';
+      workspaceMessage = null;
+      _safeNotify();
+      return null;
+    }
+    if (!hasOpenDatabase) {
+      workspaceError = 'Open a DecentDB file before saving queries.';
+      workspaceMessage = null;
+      _safeNotify();
+      return null;
+    }
+    final sql = activeTab.sql.trim();
+    if (sql.isEmpty) {
+      workspaceError = 'Enter SQL before saving a query.';
+      workspaceMessage = null;
+      _safeNotify();
+      return null;
+    }
+
+    final now = DateTime.now().toUtc();
+    final query = SavedQuery(
+      id: _createSavedQueryId(),
+      name: trimmedName,
+      description: description.trim(),
+      folder: folder.trim(),
+      tags: <String>[
+        for (final tag in tags)
+          if (tag.trim().isNotEmpty) tag.trim(),
+      ],
+      sql: activeTab.sql,
+      parameterJson: activeTab.parameterJson,
+      createdAt: now,
+      updatedAt: now,
+      schemaFingerprint: toolingMetadata?.schemaFingerprint,
+      schemaFingerprintAlgorithm: toolingMetadata?.schemaFingerprintAlgorithm,
+      queryContract: activeTab.queryContract,
+    );
+    savedQueryLibrary = savedQueryLibrary.upsert(query);
+    await _persistSavedQueryLibrary();
+    workspaceError = null;
+    workspaceMessage = 'Saved query "${query.name}".';
+    _safeNotify();
+    return query;
+  }
+
+  void loadSavedQueryIntoActiveTab(
+    SavedQuery query, {
+    bool openInNewTab = false,
+  }) {
+    loadSavedQuery(query.id, openInNewTab: openInNewTab);
+  }
+
+  void loadSavedQuery(String queryId, {bool openInNewTab = false}) {
+    final query = savedQueryLibrary.queryById(queryId);
+    if (query == null) {
+      workspaceError = 'Saved query not found.';
+      workspaceMessage = null;
+      _safeNotify();
+      return;
+    }
+    if (openInNewTab) {
+      createTab(sql: query.sql);
+    }
+    _mutateActiveTab(
+      (tab) => tab.copyWith(
+        sql: query.sql,
+        parameterJson: query.parameterJson,
+        queryContract: query.queryContract,
+      ),
+      persist: true,
+    );
+    workspaceError = null;
+    workspaceMessage = query.hasSchemaDrift(toolingMetadata)
+        ? 'Loaded "${query.name}" with a schema drift warning.'
+        : 'Loaded saved query "${query.name}".';
+    _safeNotify();
+  }
+
+  Future<void> deleteSavedQuery(String queryId) async {
+    final query = savedQueryLibrary.queryById(queryId);
+    savedQueryLibrary = savedQueryLibrary.remove(queryId);
+    await _persistSavedQueryLibrary();
+    workspaceError = null;
+    workspaceMessage = query == null
+        ? 'Saved query library updated.'
+        : 'Deleted saved query "${query.name}".';
+    _safeNotify();
   }
 
   void createTab({String? sql}) {
@@ -1620,6 +1800,15 @@ class WorkspaceController extends ChangeNotifier {
     includeMetadata: includeMetadata,
   );
 
+  Future<void> exportCurrentQueryAsExcel({
+    required String path,
+    required bool includeHeaders,
+  }) => exportTabQueryAsExcel(
+    activeTabId,
+    path: path,
+    includeHeaders: includeHeaders,
+  );
+
   Future<void> exportTabQuery(String tabId) async {
     final tab = tabById(tabId);
     if (tab == null) {
@@ -1888,6 +2077,135 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
+  Future<void> exportTabQueryAsExcel(
+    String tabId, {
+    required String path,
+    required bool includeHeaders,
+  }) async {
+    final tab = tabById(tabId);
+    if (tab == null) {
+      return;
+    }
+    final exportPath = path.trim();
+    final stopwatch = Stopwatch()..start();
+    if (!tab.canExport) {
+      _setTabError(
+        tabId,
+        QueryErrorDetails(
+          stage: QueryErrorStage.export,
+          message: 'Run a row-producing query before exporting Excel.',
+        ),
+      );
+      return;
+    }
+    if (exportPath.isEmpty) {
+      _setTabError(
+        tabId,
+        QueryErrorDetails(
+          stage: QueryErrorStage.export,
+          message: 'Enter an Excel destination path first.',
+        ),
+      );
+      return;
+    }
+
+    _mutateTab(
+      tabId,
+      (current) => current.copyWith(
+        isExporting: true,
+        error: null,
+        statusMessage: 'Exporting Excel...',
+        messageHistory: _appendMessage(
+          current.messageHistory,
+          QueryMessageLevel.info,
+          'Exporting Excel...',
+        ),
+      ),
+      notify: false,
+    );
+    _safeNotify();
+    _logInfo(
+      'export_excel',
+      'Exporting query results to Excel.',
+      category: 'export',
+      databasePath: databasePath,
+      sql: tab.lastSql,
+      details: <String, Object?>{
+        'tab_id': tabId,
+        'path': exportPath,
+        'include_headers': includeHeaders,
+        ..._queryContractLogDetails(tab.queryContract),
+      },
+    );
+
+    try {
+      final result = await _gateway.exportExcel(
+        sql: tab.lastSql!,
+        params: tab.lastParams,
+        pageSize: config.defaultPageSize,
+        path: exportPath,
+        includeHeaders: includeHeaders,
+      );
+      _mutateTab(tabId, (current) {
+        final statusMessage =
+            'Exported ${result.rowCount} rows to ${result.path}.';
+        return current.copyWith(
+          isExporting: false,
+          statusMessage: statusMessage,
+          messageHistory: _appendMessage(
+            current.messageHistory,
+            QueryMessageLevel.info,
+            statusMessage,
+          ),
+        );
+      }, notify: false);
+      _logInfo(
+        'export_excel',
+        'Excel export completed.',
+        category: 'export',
+        databasePath: databasePath,
+        sql: tab.lastSql,
+        elapsedNanos: _durationToNanos(stopwatch.elapsed),
+        rowCount: result.rowCount,
+        details: <String, Object?>{
+          'tab_id': tabId,
+          'path': result.path,
+          'include_headers': includeHeaders,
+          ..._queryContractLogDetails(tab.queryContract),
+        },
+      );
+    } catch (error) {
+      _mutateTab(tabId, (current) {
+        final failure = QueryErrorDetails.fromError(
+          error,
+          stage: QueryErrorStage.export,
+        );
+        return current.copyWith(
+          isExporting: false,
+          error: failure,
+          statusMessage: null,
+          messageHistory: _appendMessage(
+            current.messageHistory,
+            QueryMessageLevel.error,
+            '${failure.stageLabel}: ${failure.message}',
+          ),
+        );
+      }, notify: false);
+      _logError(
+        'export_excel',
+        'Excel export failed.',
+        category: 'export',
+        databasePath: databasePath,
+        sql: tab.lastSql,
+        elapsedNanos: _durationToNanos(stopwatch.elapsed),
+        error: error,
+        details: <String, Object?>{'tab_id': tabId, 'path': exportPath},
+      );
+    } finally {
+      _safeNotify();
+    }
+  }
+
   Future<void> updateDefaultPageSize(String rawValue) async {
     final parsed = int.tryParse(rawValue.trim());
     if (parsed == null || parsed <= 0) {
@@ -2028,6 +2346,7 @@ class WorkspaceController extends ChangeNotifier {
       configVersion: AppConfig.currentConfigVersion,
       shellPreferences: next.shellPreferences.normalized(),
     );
+    _trimQueryHistoriesToLimit();
     await _persistConfig(statusMessage ?? 'Updated application preferences.');
     _logger.updateMinimumLevel(config.logging.verbosity);
     if (workspaceError == null) {
@@ -3719,10 +4038,7 @@ class WorkspaceController extends ChangeNotifier {
     final editability = _tableEditabilityFor(tab);
     final tableName = editability.tableName;
     if (!editability.canInsertRows || tableName == null) {
-      return TableEditCommitResult(
-        success: false,
-        message: editability.reason,
-      );
+      return TableEditCommitResult(success: false, message: editability.reason);
     }
 
     final insertedValues = <String, Object?>{};
@@ -3787,17 +4103,15 @@ class WorkspaceController extends ChangeNotifier {
         var canAppendVisibleRow = current.resultColumns.isNotEmpty;
         for (final resultColumn in current.resultColumns) {
           final sourceColumn = _resultSourceColumn(current, resultColumn);
-          if (sourceColumn == null || !insertedValues.containsKey(sourceColumn)) {
+          if (sourceColumn == null ||
+              !insertedValues.containsKey(sourceColumn)) {
             canAppendVisibleRow = false;
             break;
           }
           row[resultColumn] = insertedValues[sourceColumn];
         }
         final rows = canAppendVisibleRow
-            ? <Map<String, Object?>>[
-                ...current.resultRows,
-                row,
-              ]
+            ? <Map<String, Object?>>[...current.resultRows, row]
             : current.resultRows;
         final message = rowsAffected == null
             ? 'Inserted row into $tableName.'
@@ -4010,7 +4324,7 @@ class WorkspaceController extends ChangeNotifier {
         reason: 'Open a DecentDB file before editing rows.',
       );
     }
-    if (tab.resultColumns.isEmpty || tab.resultRows.isEmpty) {
+    if (tab.resultColumns.isEmpty) {
       return TableEditabilityState.noResults;
     }
 
@@ -4126,15 +4440,19 @@ class WorkspaceController extends ChangeNotifier {
       final sourceColumnName = entry.value;
       final sourceColumn = _schemaColumn(resolvedTableName, sourceColumnName);
       final columnContract = tab.resultContractForColumn(resultColumn);
+      final descriptor = sourceColumn == null || columnContract == null
+          ? null
+          : _columnDescriptor(
+              tableName: resolvedTableName,
+              schemaColumn: sourceColumn,
+              contract: columnContract,
+            );
       if (sourceColumn == null ||
           columnContract == null ||
           sourceColumn.primaryKey ||
           sourceColumn.generatedExpr != null ||
-          _columnDescriptor(
-            tableName: resolvedTableName,
-            schemaColumn: sourceColumn,
-            contract: columnContract,
-          ).isSpatial) {
+          descriptor!.isSpatial ||
+          descriptor.family == NativeTypeFamily.binary) {
         readOnlyColumns.add(resultColumn);
         continue;
       }
@@ -4143,18 +4461,14 @@ class WorkspaceController extends ChangeNotifier {
     final insertableColumns = <String, String>{};
     for (final sourceColumn in object.columns) {
       final columnContract = resultContractBySourceColumn[sourceColumn.name];
+      final descriptor = _columnDescriptor(
+        tableName: resolvedTableName,
+        schemaColumn: sourceColumn,
+        contract: columnContract,
+      );
       if (sourceColumn.generatedExpr != null ||
-          _columnDescriptor(
-            tableName: resolvedTableName,
-            schemaColumn: sourceColumn,
-            contract: columnContract,
-          ).isSpatial ||
-          _columnDescriptor(
-                tableName: resolvedTableName,
-                schemaColumn: sourceColumn,
-                contract: columnContract,
-              ).family ==
-              NativeTypeFamily.binary) {
+          descriptor.isSpatial ||
+          descriptor.family == NativeTypeFamily.binary) {
         continue;
       }
       insertableColumns[sourceColumn.name] = sourceColumn.name;
@@ -4163,8 +4477,8 @@ class WorkspaceController extends ChangeNotifier {
     return TableEditabilityState(
       isEditable: true,
       reason: editableColumns.isEmpty
-          ? 'Rows can be deleted by primary key, but no result columns are editable.'
-          : 'Updates and deletes are parameterized by primary key.',
+          ? 'Rows can be inserted or deleted by primary key, but no result columns are editable.'
+          : 'Inserts, updates, and deletes are parameterized by primary key.',
       tableName: resolvedTableName,
       primaryKeyColumn: primaryKeyColumn.name,
       primaryKeyResultColumn: primaryKeyResultColumn,
@@ -4464,10 +4778,11 @@ class WorkspaceController extends ChangeNotifier {
     QueryHistoryEntry entry,
   ) {
     final updated = <QueryHistoryEntry>[...history, entry];
-    if (updated.length <= _maxQueryHistoryEntries) {
+    final maxEntries = config.queryHistoryLimit;
+    if (updated.length <= maxEntries) {
       return updated;
     }
-    return updated.sublist(updated.length - _maxQueryHistoryEntries);
+    return updated.sublist(updated.length - maxEntries);
   }
 
   QueryHistoryEntry _buildQueryHistoryEntry(
@@ -4645,6 +4960,9 @@ class WorkspaceController extends ChangeNotifier {
     }
     if (next.defaultPageSize <= 0) {
       return 'Page size must be a positive integer.';
+    }
+    if (next.queryHistoryLimit <= 0) {
+      return 'Query history depth must be a positive integer.';
     }
     if (next.csvDelimiter.isEmpty) {
       return 'CSV delimiter cannot be empty.';
@@ -4924,6 +5242,7 @@ class WorkspaceController extends ChangeNotifier {
         restoredTabs.any((tab) => tab.id == persistedState.activeTabId)
         ? persistedState.activeTabId
         : restoredTabs.first.id;
+    _trimQueryHistoriesToLimit();
     _recomputeTabCounters();
     if (notify) {
       _safeNotify();
@@ -4956,6 +5275,31 @@ class WorkspaceController extends ChangeNotifier {
   String _newTabId() => 'query-tab-${_nextTabIdCounter++}';
 
   String _newTabTitle() => 'Query ${_nextTabTitleCounter++}';
+
+  void _trimQueryHistoriesToLimit() {
+    final limit = config.queryHistoryLimit;
+    if (limit <= 0) {
+      return;
+    }
+    var changed = false;
+    tabs = <QueryTabState>[
+      for (final tab in tabs)
+        if (tab.queryHistory.length <= limit)
+          tab
+        else
+          () {
+            changed = true;
+            return tab.copyWith(
+              queryHistory: tab.queryHistory.sublist(
+                tab.queryHistory.length - limit,
+              ),
+            );
+          }(),
+    ];
+    if (changed) {
+      _scheduleWorkspaceStateSave();
+    }
+  }
 
   Future<void> _restoreStartupQueryState() async {
     final replay = _latestRestorableQuery();
@@ -5057,6 +5401,41 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
+  Future<void> _loadSavedQueryLibrary(String databasePath) async {
+    try {
+      savedQueryLibrary = await _savedQueryLibraryStore.load(databasePath);
+    } catch (error, stackTrace) {
+      savedQueryLibrary = SavedQueryLibrary.empty;
+      _logWarning(
+        'load_saved_query_library',
+        'Could not load saved query library.',
+        databasePath: databasePath,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  Future<void> _persistSavedQueryLibrary() async {
+    final targetPath = databasePath;
+    if (targetPath == null) {
+      return;
+    }
+    try {
+      await _savedQueryLibraryStore.save(targetPath, savedQueryLibrary);
+    } catch (error, stackTrace) {
+      _logError(
+        'persist_saved_query_library',
+        'Could not save query library.',
+        databasePath: targetPath,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      workspaceError = 'Could not save query library: $error';
+      workspaceMessage = null;
+    }
+  }
+
   PersistedWorkspaceState _serializeWorkspaceState() {
     return PersistedWorkspaceState(
       schemaVersion: PersistedWorkspaceState.currentSchemaVersion,
@@ -5104,6 +5483,10 @@ class WorkspaceController extends ChangeNotifier {
 
   String _quoteIdentifier(String value) {
     return '"${value.replaceAll('"', '""')}"';
+  }
+
+  String _createSavedQueryId() {
+    return 'query-${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}';
   }
 
   void _safeNotify() {

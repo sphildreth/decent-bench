@@ -150,6 +150,22 @@ Key design choices:
   `schema_fingerprint` with the current tooling metadata fingerprint and shows a
   drift warning if they differ.
 
+### Implementation Notes
+
+- Implemented in the v2.0.0 line as a TOML saved-query library beside workspace
+  state, plus `.dbench-project.toml` project manifest parsing/export.
+- Saved queries persist SQL, parameter JSON, folder/tag metadata,
+  query-contract summaries, schema fingerprints, and timestamps.
+- `Tools -> Saved Queries` supports saving the active query, filtering by name,
+  folder, tag, or SQL, opening into the active tab, opening into a new tab, and
+  deleting entries. Schema fingerprint drift is surfaced when loading/listing
+  saved queries.
+- `File -> Open Project` and `File -> Export Project` provide the initial
+  project manifest workflow. Project files persist query-library, auto-open
+  query, import-plan, export-default, and branch-safety preference fields. Active
+  branch-safety preference enforcement remains gated on the public DecentDB Dart
+  branch/snapshot API tracked by ADR-0032.
+
 ### Non-Goals
 
 - Query version history beyond what per-tab history provides. The query library
@@ -183,7 +199,7 @@ Key design choices:
 - ADR-0032 Native Branch, Snapshot, and Safe-Run Workbench
 - `design/PRD.md` section 3.2 (saved queries, workspace projects)
 - `design/SPEC.md` section 4.3 (SQL editor and results tabs)
-- `design/FUTURE_WINS.md` Priority 4
+- `design/FUTURE_WINS.md` Priority 3
 
 ### Alternatives Considered
 

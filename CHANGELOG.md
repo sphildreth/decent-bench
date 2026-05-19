@@ -20,6 +20,18 @@ This file records notable project changes. It follows the
   the raw JSON parameter editor for advanced workflows.
 - Added JSON and NDJSON result export with paged execution, optional metadata,
   schema fingerprints, and stable native-value encodings.
+- Added Excel `.xlsx` result export through a minimal Office Open XML writer
+  built on the existing archive dependency.
+- Added column statistics, database statistics, EXPLAIN visualization, and
+  result charts with PNG export.
+- Added row-local generic import transforms for filters, defaults, computed
+  columns, column ordering, and deduplication.
+- Added import/export profile persistence and `--plan` validation for headless
+  import workflows.
+- Added schema-first SDK-generation prototype with TypeScript declaration
+  output from schema metadata and saved query contracts.
+- Added saved-query library and workspace project manifest support.
+- Added type-aware inline table editing for editable single-table result sets.
 - Added per-tab query history in the results surface, including load, rerun, and
   clear actions.
 - Added safe-run SQL risk prompts for mutating and destructive statements, with
@@ -35,10 +47,13 @@ This file records notable project changes. It follows the
 ### Changed
 
 - Updated roadmap, README, and ADR documentation to treat completed v2.5.1,
-  metadata, and typed JSON/NDJSON export work as shipped foundations rather than
+  metadata, typed exports, diagnostics, visualization, profiles, import
+  transforms, saved queries, and editor work as shipped foundations rather than
   future wins.
 - Revised table-editor, saved-query/project, and branch/snapshot ADRs around
   DecentDB v2.5.x query contracts, native types, and branch safety.
+- Revised charting, Excel/Parquet export, and import-transform ADRs to match
+  the implemented dependency and execution choices.
 - Refactored `DecentDbBridge` worker isolate into a `_BridgeWorkerState` class
   with dedicated handler methods for each operation (openDatabase, loadSchema,
   runQuery, fetchNextPage, cancelQuery, exportCsv).

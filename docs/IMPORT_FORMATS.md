@@ -3,7 +3,8 @@
 This document mirrors the code-level import registry in
 `apps/decent-bench/lib/features/import/infrastructure/import_format_registry.dart`.
 It summarizes what the current build can import now, what is only partially
-supported, and what is recognized but not implemented yet.
+supported, what is only partially supported, and what is recognized but not
+implemented yet.
 
 ## Fully implemented now
 
@@ -17,9 +18,12 @@ supported, and what is recognized but not implemented yet.
 - HTML tables (`.html`, `.htm`)
 - ZIP wrapper routing to recognized inner files
 - GZip wrapper routing to recognized inner files
+- BZip2 wrapper routing to recognized inner files
 - Excel `.xlsx` via the existing workbook wizard
 - SQLite via the existing SQLite wizard
 - SQL dump via the existing MVP-lite SQL dump wizard
+- Row-local generic-import transforms for filters, defaults, computed columns,
+  column ordering, and deduplication
 
 ## Partial support now
 
@@ -38,9 +42,10 @@ supported, and what is recognized but not implemented yet.
 - DuckDB
 - Microsoft Access (`.mdb`, `.accdb`)
 - DBF / FoxPro
+- MS SQL Server backup (`.bak`)
 - broader PostgreSQL plain SQL dump handling
 - Parquet
-- BZip2 / XZ wrapper formats
+- XZ wrapper formats
 - clipboard table capture
 - PDF table extraction
 
@@ -50,8 +55,10 @@ supported, and what is recognized but not implemented yet.
   implementation path.
 - `ImportDetectionService` is used for drag-and-drop, `--import`, and the file
   picker entry flow.
-- Delimited text, structured documents, HTML tables, and wrappers use the new
+- Delimited text, structured documents, HTML tables, and wrappers use the
   generic preview/execution pipeline.
+- Generic imports carry a serializable transform plan for row filters, default
+  values, computed columns, deduplication, and column ordering.
 - Excel, SQLite, and SQL dump still use the existing dedicated wizards and
   background workers, but are now routed through the shared detector.
 

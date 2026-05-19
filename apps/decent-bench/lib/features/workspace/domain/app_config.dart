@@ -179,6 +179,7 @@ class AppearanceSettings {
 class AppConfig {
   static const int currentConfigVersion = 1;
   static const int defaultPageSizeValue = 1000;
+  static const int defaultQueryHistoryLimitValue = 40;
   static const String defaultCsvDelimiter = ',';
   static const bool defaultCsvIncludeHeaders = true;
   static const int maxRecentFiles = 8;
@@ -189,6 +190,7 @@ class AppConfig {
     required this.logging,
     required this.recentFiles,
     required this.defaultPageSize,
+    required this.queryHistoryLimit,
     required this.csvDelimiter,
     required this.csvIncludeHeaders,
     required this.editorSettings,
@@ -202,6 +204,7 @@ class AppConfig {
   final LoggingSettings logging;
   final List<String> recentFiles;
   final int defaultPageSize;
+  final int queryHistoryLimit;
   final String csvDelimiter;
   final bool csvIncludeHeaders;
   final EditorSettings editorSettings;
@@ -216,6 +219,7 @@ class AppConfig {
       logging: LoggingSettings.defaults(),
       recentFiles: const <String>[],
       defaultPageSize: defaultPageSizeValue,
+      queryHistoryLimit: defaultQueryHistoryLimitValue,
       csvDelimiter: defaultCsvDelimiter,
       csvIncludeHeaders: defaultCsvIncludeHeaders,
       editorSettings: EditorSettings.defaults(),
@@ -231,6 +235,7 @@ class AppConfig {
     LoggingSettings? logging,
     List<String>? recentFiles,
     int? defaultPageSize,
+    int? queryHistoryLimit,
     String? csvDelimiter,
     bool? csvIncludeHeaders,
     EditorSettings? editorSettings,
@@ -244,6 +249,7 @@ class AppConfig {
       logging: logging ?? this.logging,
       recentFiles: recentFiles ?? this.recentFiles,
       defaultPageSize: defaultPageSize ?? this.defaultPageSize,
+      queryHistoryLimit: queryHistoryLimit ?? this.queryHistoryLimit,
       csvDelimiter: csvDelimiter ?? this.csvDelimiter,
       csvIncludeHeaders: csvIncludeHeaders ?? this.csvIncludeHeaders,
       editorSettings: editorSettings ?? this.editorSettings,
@@ -285,6 +291,7 @@ class AppConfig {
       ..writeln('# Decent Bench configuration')
       ..writeln('config_version = $configVersion')
       ..writeln('default_page_size = $defaultPageSize')
+      ..writeln('query_history_limit = $queryHistoryLimit')
       ..writeln('csv_delimiter = ${jsonEncode(csvDelimiter)}')
       ..writeln('csv_include_headers = $csvIncludeHeaders')
       ..writeln('recent_files = ${jsonEncode(recentFiles)}')
@@ -454,6 +461,12 @@ class AppConfig {
           final parsed = int.tryParse(value);
           if (parsed != null && parsed > 0) {
             config = config.copyWith(defaultPageSize: parsed);
+          }
+          break;
+        case 'query_history_limit':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed > 0) {
+            config = config.copyWith(queryHistoryLimit: parsed);
           }
           break;
         case 'csv_delimiter':

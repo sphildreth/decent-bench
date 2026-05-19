@@ -31,6 +31,7 @@ WorkspaceController _createController({
     gateway: gateway ?? FakeWorkspaceGateway(),
     configStore: configStore ?? InMemoryConfigStore(),
     workspaceStateStore: workspaceStateStore ?? InMemoryWorkspaceStateStore(),
+    savedQueryLibraryStore: InMemorySavedQueryLibraryStore(),
   );
 }
 
@@ -90,6 +91,7 @@ void main() {
       await tester.tap(find.text('Tools'));
       await tester.pumpAndSettle();
       expect(find.text('Manage Snippets'), findsOneWidget);
+      expect(find.text('Database Statistics'), findsOneWidget);
     });
   });
 
@@ -336,6 +338,212 @@ void main() {
       );
     });
 
+    testWidgets('shows branch, temp, generated, and native type metadata', (
+      tester,
+    ) async {
+      final schema = SchemaSnapshot(
+        objects: const <SchemaObjectSummary>[
+          SchemaObjectSummary(
+            name: 'geo_points',
+            kind: SchemaObjectKind.table,
+            temporary: true,
+            ddl:
+                'CREATE TEMP TABLE geo_points (id INT64 PRIMARY KEY, shape GEOMETRY, status ENUM);',
+            checks: <SchemaCheckConstraint>[
+              SchemaCheckConstraint(
+                name: 'shape_valid',
+                exprSql: 'shape IS NOT NULL',
+              ),
+            ],
+            columns: <SchemaColumn>[
+              SchemaColumn(
+                name: 'id',
+                type: 'INT64',
+                notNull: true,
+                unique: true,
+                primaryKey: true,
+                refTable: null,
+                refColumn: null,
+                refOnDelete: null,
+                refOnUpdate: null,
+              ),
+              SchemaColumn(
+                name: 'shape',
+                type: 'GEOMETRY',
+                notNull: true,
+                unique: false,
+                primaryKey: false,
+                refTable: null,
+                refColumn: null,
+                refOnDelete: null,
+                refOnUpdate: null,
+              ),
+              SchemaColumn(
+                name: 'status',
+                type: "ENUM('open','closed')",
+                notNull: false,
+                unique: false,
+                primaryKey: false,
+                defaultExpr: "'open'",
+                refTable: null,
+                refColumn: null,
+                refOnDelete: null,
+                refOnUpdate: null,
+              ),
+              SchemaColumn(
+                name: 'shape_hash',
+                type: 'TEXT',
+                notNull: false,
+                unique: false,
+                primaryKey: false,
+                generatedExpr: 'lower(hex(shape))',
+                generatedStored: true,
+                refTable: null,
+                refColumn: null,
+                refOnDelete: null,
+                refOnUpdate: null,
+              ),
+            ],
+          ),
+        ],
+        indexes: const <IndexSummary>[
+          IndexSummary(
+            name: 'idx_geo_points_shape',
+            table: 'geo_points',
+            columns: <String>['shape'],
+            unique: false,
+            kind: 'rtree',
+            temporary: true,
+          ),
+        ],
+        triggers: const <TriggerSummary>[
+          TriggerSummary(
+            name: 'geo_points_ai',
+            targetName: 'geo_points',
+            targetKind: 'table',
+            timing: 'after',
+            events: <String>['insert'],
+            eventsMask: 1,
+            forEachRow: true,
+            temporary: true,
+            actionSql: 'SELECT 1',
+            ddl:
+                'CREATE TEMP TRIGGER geo_points_ai AFTER INSERT ON geo_points BEGIN SELECT 1; END;',
+          ),
+        ],
+        loadedAt: DateTime(2026, 5, 19),
+      );
+      final metadata = ToolingMetadata(
+        metadataVersion: 1,
+        engineVersion: '2.5.2',
+        databaseFormatVersion: 8,
+        schemaCookie: 12,
+        tempSchemaCookie: 2,
+        schemaFingerprint:
+            'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
+        schemaFingerprintAlgorithm: 'sha256:decentdb-tooling-schema-v1',
+        columnTypeMetadata: const <ToolingColumnTypeMetadata>[
+          ToolingColumnTypeMetadata(
+            tableName: 'geo_points',
+            columnName: 'shape',
+            columnType: 'GEOMETRY',
+            typeInfo: ToolingTypeInfo(
+              typeName: 'GEOMETRY',
+              valueKind: 'geometry',
+              cValueTag: 9,
+              spatial: ToolingSpatialTypeInfo(
+                subtype: 'POINT',
+                dimensions: 'XY',
+                srid: 4326,
+              ),
+            ),
+          ),
+          ToolingColumnTypeMetadata(
+            tableName: 'geo_points',
+            columnName: 'status',
+            columnType: "ENUM('open','closed')",
+            typeInfo: ToolingTypeInfo(
+              typeName: "ENUM('open','closed')",
+              valueKind: 'enum',
+              cValueTag: 10,
+            ),
+          ),
+        ],
+        capabilities: const ToolingCapabilities(
+          queryContractVersion: 1,
+          queryDescribe: true,
+          deterministicJson: true,
+        ),
+      );
+
+      _configureDesktopViewport(tester);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Material(
+              child: SchemaExplorerPane(
+                schema: schema,
+                databasePath: '/tmp/schema-rich.ddb',
+                toolingMetadata: metadata,
+                branchLabel: 'analysis',
+                selectedNodeId: null,
+                onSelectNode: (_) {},
+                onShowNodeMenu: (_, _) {},
+                onRefresh: () {},
+                isLoading: false,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Engine 2.5.2'), findsOneWidget);
+      expect(find.text('Branch analysis'), findsOneWidget);
+      expect(find.text('Schema abcdef012345'), findsOneWidget);
+      expect(find.text('Temporary'), findsOneWidget);
+      expect(find.textContaining('geo_points  TEMP'), findsOneWidget);
+
+      final indexSection = find.byKey(
+        const PageStorageKey<String>('section:indexes'),
+      );
+      final indexRect = tester.getRect(indexSection);
+      await tester.tapAt(
+        Offset(indexRect.right - 20, indexRect.top + (indexRect.height / 2)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('idx_geo_points_shape'), findsOneWidget);
+
+      final triggerSection = find.byKey(
+        const PageStorageKey<String>('section:triggers'),
+      );
+      final triggerRect = tester.getRect(triggerSection);
+      await tester.tapAt(
+        Offset(
+          triggerRect.right - 20,
+          triggerRect.top + (triggerRect.height / 2),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('geo_points_ai'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('schema.filter')),
+        'srid 4326',
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('geo_points  TEMP'), findsOneWidget);
+      expect(find.textContaining('POINT XY SRID 4326'), findsOneWidget);
+      expect(find.textContaining('labels open, closed'), findsOneWidget);
+      expect(find.textContaining('GENERATED STORED'), findsOneWidget);
+      expect(find.text('No matching indexes'), findsOneWidget);
+    });
+
     testWidgets('double click toggles a branch row', (tester) async {
       final schema = FakeWorkspaceGateway().snapshot;
 
@@ -474,6 +682,7 @@ void main() {
                     onShowCellMenu: (_, _, _) {},
                     onSelectRow: (_) {},
                     onTogglePinnedColumn: (_) {},
+                    onShowColumnStatistics: (_) {},
                     usePlaceholderContent: false,
                     tableEditabilityLabel: 'Read-only results',
                   ),
@@ -486,6 +695,10 @@ void main() {
       await tester.pump();
 
       expect(find.textContaining('SCAN tasks'), findsOneWidget);
+      expect(find.text('SCAN'), findsOneWidget);
+      expect(find.text('table tasks'), findsOneWidget);
+      expect(find.text('index idx_tasks_title'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, 'Copy Raw Plan'), findsOneWidget);
     });
 
     testWidgets('columns resize by dragging the header handle', (tester) async {
@@ -528,6 +741,7 @@ void main() {
                     onShowCellMenu: (_, _, _) {},
                     onSelectRow: (_) {},
                     onTogglePinnedColumn: (_) {},
+                    onShowColumnStatistics: (_) {},
                     usePlaceholderContent: false,
                     tableEditabilityLabel: 'Read-only results',
                   ),
@@ -559,6 +773,65 @@ void main() {
       final shrunkWidth = tester.getSize(headerFinder).width;
       expect(shrunkWidth, lessThan(expandedWidth));
       expect(shrunkWidth, greaterThanOrEqualTo(96));
+    });
+
+    testWidgets('chart tab renders loaded numeric results', (tester) async {
+      final verticalScrollController = ScrollController();
+      final horizontalScrollController = ScrollController();
+      final tab = QueryTabState.initial(id: 'tab-1', title: 'Query 1').copyWith(
+        resultColumns: const <String>['region', 'total'],
+        resultRows: const <Map<String, Object?>>[
+          <String, Object?>{'region': 'North', 'total': 12.5},
+          <String, Object?>{'region': 'South', 'total': 7.5},
+        ],
+      );
+
+      _configureDesktopViewport(tester);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        verticalScrollController.dispose();
+        horizontalScrollController.dispose();
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 1200,
+                height: 600,
+                child: Material(
+                  child: ResultsPane(
+                    activeTab: tab,
+                    activeResultsTab: ResultsPaneTab.chart,
+                    verticalScrollController: verticalScrollController,
+                    horizontalScrollController: horizontalScrollController,
+                    interactionState: const ResultsGridInteractionState(),
+                    onResultsTabChanged: (_) {},
+                    onLoadNextPage: () {},
+                    onSelectCell: (_, _) {},
+                    onShowCellMenu: (_, _, _) {},
+                    onSelectRow: (_) {},
+                    onTogglePinnedColumn: (_) {},
+                    onShowColumnStatistics: (_) {},
+                    usePlaceholderContent: false,
+                    tableEditabilityLabel: 'Read-only results',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Bar'), findsOneWidget);
+      expect(find.text('Line'), findsOneWidget);
+      expect(find.text('X: region'), findsOneWidget);
+      expect(find.text('Y: total'), findsOneWidget);
+      expect(find.text('2 plotted points'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, 'Export PNG'), findsOneWidget);
+      expect(find.byType(CustomPaint), findsWidgets);
     });
 
     testWidgets('empty state avoids overflow in short panels', (tester) async {
@@ -607,6 +880,7 @@ void main() {
                     onShowCellMenu: (_, _, _) {},
                     onSelectRow: (_) {},
                     onTogglePinnedColumn: (_) {},
+                    onShowColumnStatistics: (_) {},
                     usePlaceholderContent: false,
                     tableEditabilityLabel: 'Read-only results',
                   ),

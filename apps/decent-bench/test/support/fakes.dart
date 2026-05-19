@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:decent_bench/app/logging/app_logger.dart';
 import 'package:decent_bench/features/workspace/domain/app_config.dart';
 import 'package:decent_bench/features/workspace/domain/excel_import_models.dart';
+import 'package:decent_bench/features/workspace/domain/saved_query_models.dart';
 import 'package:decent_bench/features/workspace/domain/sql_dump_import_models.dart';
 import 'package:decent_bench/features/workspace/domain/sqlite_import_models.dart';
 import 'package:decent_bench/features/workspace/domain/workspace_models.dart';
@@ -11,6 +12,7 @@ import 'package:decent_bench/features/workspace/domain/workspace_state.dart';
 import 'package:decent_bench/features/workspace/infrastructure/app_config_store.dart';
 import 'package:decent_bench/features/workspace/infrastructure/app_lifecycle_service.dart';
 import 'package:decent_bench/features/workspace/infrastructure/decentdb_bridge.dart';
+import 'package:decent_bench/features/workspace/infrastructure/saved_query_library_store.dart';
 import 'package:decent_bench/features/workspace/infrastructure/workspace_state_store.dart';
 
 class InMemoryConfigStore implements WorkspaceConfigStore {
@@ -48,6 +50,38 @@ class InMemoryWorkspaceStateStore implements WorkspaceStateStore {
   @override
   Future<void> save(String databasePath, PersistedWorkspaceState state) async {
     _states[databasePath] = state;
+  }
+}
+
+class InMemorySavedQueryLibraryStore implements SavedQueryLibraryStore {
+  final Map<String, SavedQueryLibrary> _libraries =
+      <String, SavedQueryLibrary>{};
+  final Map<String, SavedQueryLibrary> _pathLibraries =
+      <String, SavedQueryLibrary>{};
+
+  @override
+  String describeLocation(String databasePath) {
+    return 'memory://$databasePath/queries.toml';
+  }
+
+  @override
+  Future<SavedQueryLibrary> load(String databasePath) async {
+    return _libraries[databasePath] ?? SavedQueryLibrary.empty;
+  }
+
+  @override
+  Future<SavedQueryLibrary> loadFromPath(String path) async {
+    return _pathLibraries[path] ?? SavedQueryLibrary.empty;
+  }
+
+  @override
+  Future<void> save(String databasePath, SavedQueryLibrary library) async {
+    _libraries[databasePath] = library;
+  }
+
+  @override
+  Future<void> saveToPath(String path, SavedQueryLibrary library) async {
+    _pathLibraries[path] = library;
   }
 }
 
@@ -170,6 +204,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
 
   int cancelCount = 0;
   String? lastExportPath;
+  bool? lastExcelIncludeHeaders;
   String? lastRunQuerySql;
   List<Object?>? lastRunQueryParams;
   String? lastBranchQuerySql;
@@ -547,6 +582,19 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   }) async {
     lastExportPath = path;
     return JsonExportResult(rowCount: 2, path: path);
+  }
+
+  @override
+  Future<ExcelExportResult> exportExcel({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    required bool includeHeaders,
+  }) async {
+    lastExportPath = path;
+    lastExcelIncludeHeaders = includeHeaders;
+    return ExcelExportResult(rowCount: 2, path: path);
   }
 
   @override
@@ -941,7 +989,8 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
         elapsed: const Duration(milliseconds: 2),
       );
     }
-    if (sql.toUpperCase().startsWith('UPDATE') ||
+    if (sql.toUpperCase().startsWith('INSERT') ||
+        sql.toUpperCase().startsWith('UPDATE') ||
         sql.toUpperCase().startsWith('DELETE')) {
       return QueryResultPage(
         cursorId: null,

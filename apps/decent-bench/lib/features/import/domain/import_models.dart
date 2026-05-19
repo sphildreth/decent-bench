@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../../workspace/domain/import_target_types.dart';
+import 'import_transforms.dart';
 
 const int genericImportPreviewRowLimit = 8;
 const int genericImportProgressBatchSize = 200;
@@ -264,6 +265,7 @@ class ImportTableDraft {
     required this.previewRows,
     this.description,
     this.warnings = const <String>[],
+    this.transformPlan = const ImportTransformPlan(),
   });
 
   final String sourceId;
@@ -275,6 +277,7 @@ class ImportTableDraft {
   final List<Map<String, Object?>> previewRows;
   final String? description;
   final List<String> warnings;
+  final ImportTransformPlan transformPlan;
 
   ImportTableDraft copyWith({
     String? sourceId,
@@ -286,6 +289,7 @@ class ImportTableDraft {
     List<Map<String, Object?>>? previewRows,
     Object? description = _unset,
     List<String>? warnings,
+    ImportTransformPlan? transformPlan,
   }) {
     return ImportTableDraft(
       sourceId: sourceId ?? this.sourceId,
@@ -299,6 +303,7 @@ class ImportTableDraft {
           ? this.description
           : description as String?,
       warnings: warnings ?? this.warnings,
+      transformPlan: transformPlan ?? this.transformPlan,
     );
   }
 
@@ -315,6 +320,7 @@ class ImportTableDraft {
       'previewRows': previewRows,
       'description': description,
       'warnings': warnings,
+      'transformPlan': transformPlan.toMap(),
     };
   }
 
@@ -340,6 +346,19 @@ class ImportTableDraft {
       description: map['description'] as String?,
       warnings: ((map['warnings'] as List?) ?? const <Object?>[])
           .cast<String>(),
+      transformPlan: map['transformPlan'] is Map<Object?, Object?>
+          ? ImportTransformPlan.fromMap(
+              (map['transformPlan']! as Map<Object?, Object?>).map(
+                (key, value) => MapEntry(key as String, value),
+              ),
+            )
+          : map['transforms'] is Map<Object?, Object?>
+          ? ImportTransformPlan.fromMap(
+              (map['transforms']! as Map<Object?, Object?>).map(
+                (key, value) => MapEntry(key as String, value),
+              ),
+            )
+          : const ImportTransformPlan(),
     );
   }
 }

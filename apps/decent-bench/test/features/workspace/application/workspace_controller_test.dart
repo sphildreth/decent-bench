@@ -15,12 +15,15 @@ WorkspaceController _createController({
   FakeWorkspaceGateway? gateway,
   InMemoryConfigStore? configStore,
   InMemoryWorkspaceStateStore? workspaceStateStore,
+  InMemorySavedQueryLibraryStore? savedQueryLibraryStore,
   RecordingAppLogger? logger,
 }) {
   return WorkspaceController(
     gateway: gateway ?? FakeWorkspaceGateway(),
     configStore: configStore ?? InMemoryConfigStore(),
     workspaceStateStore: workspaceStateStore ?? InMemoryWorkspaceStateStore(),
+    savedQueryLibraryStore:
+        savedQueryLibraryStore ?? InMemorySavedQueryLibraryStore(),
     logger: logger,
   );
 }
@@ -708,6 +711,28 @@ void main() {
   });
 
   group('Query execution', () {
+    test('exports the active query as Excel', () async {
+      final gateway = FakeWorkspaceGateway();
+      final controller = _createController(gateway: gateway);
+      await controller.initialize();
+      await controller.openDatabase(_tempDbPath(), createIfMissing: true);
+      controller.updateActiveSql('SELECT id, title FROM tasks ORDER BY id');
+      await controller.runActiveTab();
+
+      await controller.exportCurrentQueryAsExcel(
+        path: '/tmp/tasks.xlsx',
+        includeHeaders: false,
+      );
+
+      expect(gateway.lastExportPath, '/tmp/tasks.xlsx');
+      expect(gateway.lastExcelIncludeHeaders, isFalse);
+      expect(controller.activeTab.error, isNull);
+      expect(
+        controller.activeTab.statusMessage,
+        'Exported 2 rows to /tmp/tasks.xlsx.',
+      );
+    });
+
     test('runTab stores query contracts before executing SQL', () async {
       final dbPath = _tempDbPath();
       final gateway = FakeWorkspaceGateway();
@@ -808,6 +833,58 @@ void main() {
       expect(result.message, contains('primary key'));
       expect(gateway.lastRunQuerySql, previousSql);
     });
+
+    test('insertResultRow commits parameterized inserts', () async {
+      final dbPath = _tempDbPath();
+      final gateway = FakeWorkspaceGateway();
+      final controller = _createController(gateway: gateway);
+
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+      controller.updateActiveSql('SELECT id, title FROM tasks ORDER BY id');
+      await controller.runActiveTab();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final result = await controller.insertResultRow(
+        values: const <String, Object?>{'id': 2, 'title': 'Ship phase 2'},
+      );
+
+      expect(result.success, isTrue);
+      expect(
+        gateway.lastRunQuerySql,
+        'INSERT INTO "tasks" ("id", "title") VALUES (\$1, \$2)',
+      );
+      expect(gateway.lastRunQueryParams, <Object?>[2, 'Ship phase 2']);
+      expect(controller.activeTab.resultRows, hasLength(2));
+      expect(controller.activeTab.resultRows.last, <String, Object?>{
+        'id': 2,
+        'title': 'Ship phase 2',
+      });
+    });
+
+    test(
+      'insertResultRow validates required values before execution',
+      () async {
+        final dbPath = _tempDbPath();
+        final gateway = FakeWorkspaceGateway();
+        final controller = _createController(gateway: gateway);
+
+        await controller.initialize();
+        await controller.openDatabase(dbPath, createIfMissing: true);
+        controller.updateActiveSql('SELECT id, title FROM tasks ORDER BY id');
+        await controller.runActiveTab();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        final previousSql = gateway.lastRunQuerySql;
+
+        final result = await controller.insertResultRow(
+          values: const <String, Object?>{'id': 2},
+        );
+
+        expect(result.success, isFalse);
+        expect(result.message, 'title is required.');
+        expect(gateway.lastRunQuerySql, previousSql);
+      },
+    );
 
     test(
       'deleteResultRow commits parameterized deletes by primary key',
@@ -1085,6 +1162,90 @@ void main() {
       expect(timingEntry.sql, 'SELECT id, title FROM tasks ORDER BY id');
       expect(timingEntry.rowCount, 1);
       expect(timingEntry.elapsedNanos, greaterThan(0));
+    });
+
+    test('runActiveTab trims per-tab history to configured depth', () async {
+      final dbPath = _tempDbPath();
+      final configStore = InMemoryConfigStore(
+        AppConfig.defaults().copyWith(queryHistoryLimit: 2),
+      );
+      final controller = _createController(configStore: configStore);
+
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+
+      controller.updateActiveSql('CREATE TABLE sample_1 (id INTEGER)');
+      await controller.runActiveTab();
+      controller.updateActiveSql('CREATE TABLE sample_2 (id INTEGER)');
+      await controller.runActiveTab();
+      controller.updateActiveSql('CREATE TABLE sample_3 (id INTEGER)');
+      await controller.runActiveTab();
+
+      expect(controller.activeTab.queryHistory, hasLength(2));
+      expect(controller.activeTab.queryHistory.first.sql, contains('sample_2'));
+      expect(controller.activeTab.queryHistory.last.sql, contains('sample_3'));
+    });
+  });
+
+  group('Saved queries', () {
+    test(
+      'saveActiveQuery persists contract metadata and can load into a tab',
+      () async {
+        final dbPath = _tempDbPath();
+        final store = InMemorySavedQueryLibraryStore();
+        final controller = _createController(savedQueryLibraryStore: store);
+
+        await controller.initialize();
+        await controller.openDatabase(dbPath, createIfMissing: true);
+        controller.updateActiveSql(
+          'SELECT id, title FROM tasks WHERE id = \$1',
+        );
+        controller.updateActiveParameterJson('[1]');
+        await controller.runActiveTab();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        final saved = await controller.saveActiveQuery(
+          name: 'Task lookup',
+          folder: 'ops',
+          tags: const <String>['tasks'],
+        );
+
+        expect(saved, isNotNull);
+        expect(controller.savedQueries.single.name, 'Task lookup');
+        expect(controller.savedQueries.single.queryContract, isNotNull);
+        expect(
+          (await store.load(dbPath)).queries.single.schemaFingerprint,
+          isNotEmpty,
+        );
+
+        controller.createTab();
+        controller.loadSavedQuery(saved!.id);
+
+        expect(
+          controller.activeTab.sql,
+          'SELECT id, title FROM tasks WHERE id = \$1',
+        );
+        expect(controller.activeTab.parameterJson, '[1]');
+        expect(
+          controller.activeTab.queryContract?.parameters.single.name,
+          r'$1',
+        );
+      },
+    );
+
+    test('deleteSavedQuery removes it from the persisted library', () async {
+      final dbPath = _tempDbPath();
+      final store = InMemorySavedQueryLibraryStore();
+      final controller = _createController(savedQueryLibraryStore: store);
+
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+      final saved = await controller.saveActiveQuery(name: 'Ready check');
+
+      await controller.deleteSavedQuery(saved!.id);
+
+      expect(controller.savedQueries, isEmpty);
+      expect((await store.load(dbPath)).queries, isEmpty);
     });
   });
 

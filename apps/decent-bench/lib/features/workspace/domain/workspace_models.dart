@@ -1412,6 +1412,20 @@ class JsonExportResult {
   }
 }
 
+class ExcelExportResult {
+  const ExcelExportResult({required this.rowCount, required this.path});
+
+  final int rowCount;
+  final String path;
+
+  factory ExcelExportResult.fromMap(Map<String, Object?> map) {
+    return ExcelExportResult(
+      rowCount: map['rowCount']! as int,
+      path: map['path']! as String,
+    );
+  }
+}
+
 class QueryMessageEntry {
   const QueryMessageEntry({
     required this.level,

@@ -77,6 +77,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
   };
 
   late final TextEditingController _pageSizeController;
+  late final TextEditingController _queryHistoryLimitController;
   late final TextEditingController _csvDelimiterController;
   late final TextEditingController _autocompleteMaxController;
   late final TextEditingController _indentSpacesController;
@@ -100,6 +101,9 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
     final initial = widget.initialConfig;
     _pageSizeController = TextEditingController(
       text: initial.defaultPageSize.toString(),
+    );
+    _queryHistoryLimitController = TextEditingController(
+      text: initial.queryHistoryLimit.toString(),
     );
     _csvDelimiterController = TextEditingController(text: initial.csvDelimiter);
     _autocompleteMaxController = TextEditingController(
@@ -135,6 +139,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
   @override
   void dispose() {
     _pageSizeController.dispose();
+    _queryHistoryLimitController.dispose();
     _csvDelimiterController.dispose();
     _autocompleteMaxController.dispose();
     _indentSpacesController.dispose();
@@ -486,18 +491,39 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
         children: <Widget>[
           _SettingsCard(
             title: 'Query Paging',
-            child: TextField(
-              key: const ValueKey<String>('preferences.default_page_size'),
-              controller: _pageSizeController,
-              onChanged: (_) => _handleDraftChanged(),
-              inputFormatters: <TextInputFormatter>[
-                FilteringTextInputFormatter.digitsOnly,
+            child: Column(
+              children: <Widget>[
+                TextField(
+                  key: const ValueKey<String>('preferences.default_page_size'),
+                  controller: _pageSizeController,
+                  onChanged: (_) => _handleDraftChanged(),
+                  inputFormatters: <TextInputFormatter>[
+                    FilteringTextInputFormatter.digitsOnly,
+                  ],
+                  decoration: const InputDecoration(
+                    labelText: 'Default page size',
+                    helperText: 'Rows fetched per page when opening a cursor.',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  key: const ValueKey<String>(
+                    'preferences.query_history_limit',
+                  ),
+                  controller: _queryHistoryLimitController,
+                  onChanged: (_) => _handleDraftChanged(),
+                  inputFormatters: <TextInputFormatter>[
+                    FilteringTextInputFormatter.digitsOnly,
+                  ],
+                  decoration: const InputDecoration(
+                    labelText: 'Query history depth',
+                    helperText:
+                        'Maximum completed, failed, or cancelled entries kept per tab.',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
               ],
-              decoration: const InputDecoration(
-                labelText: 'Default page size',
-                helperText: 'Rows fetched per page when opening a cursor.',
-                border: OutlineInputBorder(),
-              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -725,6 +751,10 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
                     DropdownMenuItem(
                       value: ResultsPaneTab.executionPlan,
                       child: Text('Execution Plan'),
+                    ),
+                    DropdownMenuItem(
+                      value: ResultsPaneTab.chart,
+                      child: Text('Chart'),
                     ),
                     DropdownMenuItem(
                       value: ResultsPaneTab.history,
@@ -961,6 +991,15 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
       );
     }
 
+    final queryHistoryLimit = int.tryParse(
+      _queryHistoryLimitController.text.trim(),
+    );
+    if (queryHistoryLimit == null || queryHistoryLimit <= 0) {
+      return const _DraftBuildResult.failure(
+        'Query history depth must be a positive integer.',
+      );
+    }
+
     final csvDelimiter = _csvDelimiterController.text;
     if (csvDelimiter.isEmpty) {
       return const _DraftBuildResult.failure('CSV delimiter cannot be empty.');
@@ -1035,6 +1074,7 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
             .where((path) => path.isNotEmpty)
             .toList(),
         defaultPageSize: pageSize,
+        queryHistoryLimit: queryHistoryLimit,
         csvDelimiter: csvDelimiter,
         csvIncludeHeaders: _csvIncludeHeaders,
         editorSettings: EditorSettings(

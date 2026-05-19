@@ -14,6 +14,7 @@ import 'excel_import_support.dart';
 import 'native_library_resolver.dart';
 import 'sql_dump_import_support.dart';
 import 'sqlite_import_support.dart';
+import 'xlsx_export_support.dart';
 
 abstract class WorkspaceDatabaseGateway {
   String? get resolvedLibraryPath;
@@ -58,6 +59,14 @@ abstract class WorkspaceDatabaseGateway {
     required String format,
     required bool pretty,
     required bool includeMetadata,
+  });
+
+  Future<ExcelExportResult> exportExcel({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    required bool includeHeaders,
   });
 
   Future<SqliteImportInspection> inspectSqliteSource({
@@ -316,6 +325,24 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       'includeMetadata': includeMetadata,
     });
     return JsonExportResult.fromMap(data);
+  }
+
+  @override
+  Future<ExcelExportResult> exportExcel({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    required bool includeHeaders,
+  }) async {
+    final data = await _request('exportExcel', <String, Object?>{
+      'sql': sql,
+      'params': params,
+      'pageSize': pageSize,
+      'path': path,
+      'includeHeaders': includeHeaders,
+    });
+    return ExcelExportResult.fromMap(data);
   }
 
   @override
@@ -869,6 +896,8 @@ class _BridgeWorkerState {
         return _handleExportCsv(payload);
       case 'exportJson':
         return _handleExportJson(payload);
+      case 'exportExcel':
+        return _handleExportExcel(payload);
       case 'shutdown':
         await _closeAll();
         _receivePort.close();
@@ -1317,6 +1346,62 @@ class _BridgeWorkerState {
       stmt.dispose();
     }
   }
+
+  Future<Map<String, Object?>> _handleExportExcel(
+    Map<String, Object?> payload,
+  ) async {
+    final db = _requireDatabase();
+    final sql = payload['sql']! as String;
+    final params = ((payload['params'] as List?) ?? const <Object?>[])
+        .cast<Object?>();
+    final pageSize = payload['pageSize']! as int;
+    final path = payload['path']! as String;
+    final includeHeaders = payload['includeHeaders']! as bool;
+
+    if (!_statementReturnsRows(sql)) {
+      throw const BridgeFailure(
+        'The current statement does not produce rows and cannot be exported.',
+      );
+    }
+
+    final stmt = db.prepare(sql);
+    try {
+      stmt.bindAll(params);
+      final firstPage = stmt.nextPage(pageSize);
+      if (firstPage.columns.isEmpty) {
+        throw const BridgeFailure(
+          'The current statement does not produce rows and cannot be exported.',
+        );
+      }
+      final typeNamesByColumn = _queryResultTypesByColumn(db, sql);
+
+      Stream<List<Object?>> rowStream() async* {
+        var page = firstPage;
+        while (true) {
+          for (final row in page.rows) {
+            yield _xlsxRowValues(row, typeNamesByColumn);
+          }
+          if (page.isLast) {
+            break;
+          }
+          page = stmt.nextPage(pageSize);
+        }
+      }
+
+      final result = await writeRowsToXlsx(
+        path: path,
+        columns: firstPage.columns,
+        rows: rowStream(),
+        includeHeaders: includeHeaders,
+      );
+      return <String, Object?>{
+        'rowCount': result.rowCount,
+        'path': result.path,
+      };
+    } finally {
+      stmt.dispose();
+    }
+  }
 }
 
 Map<String, String> _queryResultTypesByColumn(Database db, String sql) {
@@ -1445,6 +1530,58 @@ Object? _jsonValue(Object? value, {String? typeName}) {
       return formatTypedCellValue(value, typeName: typeName);
     }
     return <String, Object?>{'base64': base64Encode(value)};
+  }
+  return '$value';
+}
+
+List<Object?> _xlsxRowValues(Row row, Map<String, String> typeNamesByColumn) {
+  return <Object?>[
+    for (var index = 0; index < row.values.length; index++)
+      _xlsxValue(
+        row.values[index],
+        typeName: index < row.columns.length
+            ? typeNamesByColumn[row.columns[index]]
+            : null,
+      ),
+  ];
+}
+
+Object? _xlsxValue(Object? value, {String? typeName}) {
+  if (value == null || value is bool || value is String) {
+    return value;
+  }
+  if (value is num && value.isFinite) {
+    return value;
+  }
+  if (value is DecimalValue) {
+    return formatDecimalValue(value.scaled, value.scale);
+  }
+  if (value is DecentDBEnumValue) {
+    return formatTypedCellValue(
+      NativeEnumCellValue(typeId: value.typeId, labelId: value.labelId),
+      typeName: typeName,
+    );
+  }
+  if (value is DecentDBIntervalValue) {
+    return NativeIntervalCellValue(
+      months: value.months,
+      days: value.days,
+      microseconds: value.microseconds,
+    ).displayString();
+  }
+  if (value case (unscaled: final int unscaled, scale: final int scale)) {
+    return formatDecimalValue(unscaled, scale);
+  }
+  if (value is Duration || value is DateTime) {
+    return formatTypedCellValue(value, typeName: typeName);
+  }
+  if (value is Uint8List) {
+    final descriptor = describeNativeType(typeName: typeName);
+    if (descriptor.isSpatial ||
+        descriptor.baseTypeName == 'UUID' && value.length == 16) {
+      return formatTypedCellValue(value, typeName: typeName);
+    }
+    return base64Encode(value);
   }
   return '$value';
 }

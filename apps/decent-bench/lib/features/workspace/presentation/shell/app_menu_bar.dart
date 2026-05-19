@@ -31,6 +31,7 @@ class NativeAppMenuHost extends StatelessWidget {
             members: <PlatformMenuItem>[
               _platformCommandItem('file_new'),
               _platformCommandItem('file_open'),
+              _platformCommandItem('file_open_project'),
               PlatformMenu(
                 label: 'Open Recent',
                 menus: recentFiles.isEmpty
@@ -47,6 +48,7 @@ class NativeAppMenuHost extends StatelessWidget {
               ),
               _platformCommandItem('file_save'),
               _platformCommandItem('file_save_as'),
+              _platformCommandItem('file_export_project'),
             ],
           ),
           PlatformMenuItemGroup(
@@ -148,6 +150,7 @@ class NativeAppMenuHost extends StatelessWidget {
               _platformCommandItem('tools_stop_query'),
               _platformCommandItem('tools_format_sql'),
               _platformCommandItem('tools_new_query_tab'),
+              _platformCommandItem('tools_saved_queries'),
             ],
           ),
           PlatformMenuItemGroup(
@@ -164,6 +167,7 @@ class NativeAppMenuHost extends StatelessWidget {
             members: <PlatformMenuItem>[
               _platformCommandItem('tools_view_log'),
               _platformCommandItem('tools_query_history'),
+              _platformCommandItem('tools_database_statistics'),
               _platformCommandItem('tools_snippets'),
               _platformCommandItem('tools_manage_connections'),
               _platformCommandItem('tools_options'),
@@ -235,6 +239,7 @@ class AppMenuBar extends StatelessWidget {
             menuChildren: <Widget>[
               _commandItem('file_new'),
               _commandItem('file_open'),
+              _commandItem('file_open_project'),
               SubmenuButton(
                 menuChildren: recentFiles.isEmpty
                     ? <Widget>[
@@ -261,6 +266,7 @@ class AppMenuBar extends StatelessWidget {
               ),
               _commandItem('file_save'),
               _commandItem('file_save_as'),
+              _commandItem('file_export_project'),
               const Divider(height: 1),
               _commandItem('file_close'),
               const Divider(height: 1),
@@ -330,6 +336,7 @@ class AppMenuBar extends StatelessWidget {
               _commandItem('tools_stop_query'),
               _commandItem('tools_format_sql'),
               _commandItem('tools_new_query_tab'),
+              _commandItem('tools_saved_queries'),
               const Divider(height: 1),
               _commandItem('tools_branch_workbench'),
               _commandItem('tools_create_snapshot'),
@@ -340,6 +347,7 @@ class AppMenuBar extends StatelessWidget {
               const Divider(height: 1),
               _commandItem('tools_view_log'),
               _commandItem('tools_query_history'),
+              _commandItem('tools_database_statistics'),
               _commandItem('tools_snippets'),
               _commandItem('tools_manage_connections'),
               _commandItem('tools_options'),

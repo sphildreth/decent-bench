@@ -1,142 +1,92 @@
-## Charting Library and Data Visualization Contract
+## Charting Library And Data Visualization Contract
 **Date:** 2026-05-18
-**Status:** Proposed
+**Status:** Accepted
 
 ### Decision
 
-Decent Bench will add data visualization (charts) as an alternative rendering
-target for query results. The initial implementation will use the `fl_chart`
-package (MIT-licensed) for basic chart types: line, bar, pie, and scatter.
-Charts consume the same cursor-based paging pipeline that feeds the results
-grid.
+Decent Bench adds data visualization as an alternative rendering target for
+query results. The v2.0.0 implementation uses an internal `CustomPainter`
+renderer for bar, line, scatter, and pie charts instead of adding a charting
+package dependency.
+
+Charts consume the result columns, loaded rows, and query-contract metadata that
+already feed the results grid. They do not trigger full cursor materialization.
+PNG export is implemented through the rendered chart boundary.
 
 ### Rationale
 
-SQL results grids are the right tool for inspecting individual records. They are
-the wrong tool for understanding patterns, trends, distributions, and
-relationships. A 10,000-row sales table tells you nothing at a glance; a line
-chart of revenue over time tells you everything.
+SQL grids are right for inspecting records, but they are weak for spotting
+patterns, distributions, and relationships. Basic charts keep users inside
+Decent Bench for common query -> visualize -> export workflows.
 
-Users currently export data to CSV, open it in Excel or Google Sheets, and build
-charts there. Every round-trip is friction — and a reason to use a different
-tool. Adding visualization keeps users in Decent Bench for a complete
-query→visualize→export workflow, which competing SQL editors (DBeaver,
-DataGrip) and BI tools (Metabase, Superset) have proven is a core workflow.
+An internal renderer is the right first slice because:
 
-### Library Selection: `fl_chart`
+- it adds no new dependency or license review burden
+- it is enough for the four initial chart types
+- it can stay visually aligned with the app theme
+- it keeps large BI-style interactions out of scope until users ask for them
 
-`fl_chart` was selected over alternatives:
-
-| Criterion | `fl_chart` | `syncfusion_flutter_charts` | Custom Canvas |
-|---|---|---|---|
-| License | MIT (Apache 2.0 compatible) | Community license terms; commercial component | No dependency |
-| Flutter ecosystem adoption | Most popular charting package on pub.dev | Well-known but smaller Flutter-specific adoption | N/A |
-| Chart types supported | Line, bar, pie, scatter, radar | All major types + specialized (financial, etc.) | Unlimited but requires implementation |
-| Customization | Themeable, composable | Highly customizable | Full control |
-| Performance | Good for modest datasets | Optimized for large datasets | Depends on implementation |
-| Maintenance burden | External dependency risk | External dependency + licensing risk | Internal maintenance burden |
-
-`fl_chart` is the pragmatic choice: MIT-licensed (no licensing gates), widely
-adopted in the Flutter ecosystem, and provides the four chart types that cover
-the vast majority of query visualization needs. Custom canvas rendering and
-`syncfusion_flutter_charts` remain available as fallbacks if `fl_chart` proves
-insufficient for performance or customization requirements.
+`fl_chart` remains a reasonable future option, but the first implementation did
+not need it.
 
 ### Chart Data Contract
 
-Charts consume the same data source as the results grid: a `QueryPage` from the
-cursor pipeline. The chart data adapter:
+Charts consume the currently loaded tab data:
 
-1. Receives `QueryPage` objects (column metadata + row batches) as pages arrive.
-2. Maps columns to chart axes based on user configuration (drag-and-drop or
-   dropdown selectors).
-3. For line/bar/scatter charts, X must be a single column (categorical or
-   continuous) and Y must be one or more numeric columns.
-4. For pie charts, one categorical column (labels) and one numeric column
-   (values).
-5. Charts update incrementally as new pages arrive, with a "chart in progress"
-   indicator until the cursor reports completion.
-6. Chart data is held in memory up to a configurable "max chart rows" limit
-   (default: 50,000). Beyond that, chart rendering uses sampling or
-   bucketing.
+1. Result columns and rows come from the same `QueryTabState` used by the grid.
+2. Query-contract result metadata helps identify numeric and semantic columns.
+3. Users choose chart type and X/Y columns from bounded controls.
+4. Line, bar, and scatter charts require numeric Y values.
+5. Pie charts require one label column and one numeric value column.
+6. Additional pages update the chart when they are loaded into the tab.
 
-Key constraint: charts never trigger full materialization of the result set.
-They operate on pages as they arrive and discard raw page data after
-aggregation for the chart data model.
+The chart layer must not fetch the entire cursor independently. Large datasets
+should be summarized by SQL or by a future sampling/aggregation chart adapter.
 
-### Chart Types and Scope
+### Initial Scope
 
-**Initial chart types (Future Wins Priority 11 scope):**
-- **Line chart**: X = continuous or categorical, Y = one or more numeric series.
-- **Bar chart**: X = categorical, Y = one or more numeric series. Grouped or
-  stacked.
-- **Pie chart**: One label column (categorical), one value column (numeric).
-- **Scatter plot**: X = numeric, Y = numeric, optional color/group-by column.
-
-**Chart interactions:**
-- Tooltips on hover showing exact values.
-- Legend toggles to show/hide individual series.
-- Zoom by drag-select on scatter plots (resets on double-click).
-- Export chart as PNG via `dart:ui` canvas snapshot.
-
-**Chart layout:**
-- Split view: chart on one side, results grid on the other (resizable divider).
-- Full-width toggle: expand chart to fill the results pane.
-- Chart title (configurable, defaults to truncated query text).
-- Axis labels auto-generated from column names.
+- Bar chart
+- Line chart
+- Scatter plot
+- Pie chart
+- X/Y column assignment
+- Empty/unsupported state handling
+- Theme-aware rendering
+- PNG export
 
 ### Non-Goals
 
-- Dashboard canvas with multiple independent chart tiles composited on a single
-  surface.
-- Chart filter interactions that modify the underlying SQL query (bidirectional
-  brushing/linking).
-- Animated or streaming real-time charts.
-- Custom chart themes beyond the app's light/dark theme system (ADR-0023).
-- Geospatial/map visualizations. DecentDB spatial type support is a separate,
-  later consideration.
-- Chart type auto-detection from column data types and cardinality (e.g.,
-  "this looks like a time series, suggest line chart").
-- `syncfusion_flutter_charts` or custom canvas as alternative backends in the
-  initial implementation.
+- Dashboard canvas.
+- Real-time streaming charts.
+- Full GIS/map workbench.
+- Drill-down, brushing, or linked grid filters.
+- External chart package dependency in the first implementation.
 
 ### Trade-offs
 
-- **`fl_chart` vs. full BI tool capability**: `fl_chart` provides basic charts
-  but lacks dashboard composition, drill-down, and advanced interactions. This
-  is intentional — Decent Bench is a workbench, not a BI platform. Users who
-  need dashboards should use Metabase or Superset and consume DecentDB exports.
-- **In-memory chart data cap**: Limiting chart data to 50,000 rows before
-  sampling means very large result sets get approximate charts. This is
-  acceptable because charts are for pattern recognition, not precision — users
-  who need exact values from large datasets should use the results grid or
-  aggregated queries.
-- **No bidirectional linking**: Chart selections do not filter the results grid,
-  and grid selections do not highlight chart points. This keeps the interaction
-  model simple. Bidirectional linking can be added if user feedback demands it.
+- **Internal renderer vs. package capability**: The internal renderer is smaller
+  and safer to ship, but it lacks advanced legends, tooltips, zoom, and BI
+  interactions.
+- **Loaded rows only**: Charts reflect the visible/loaded row window. Users who
+  need exact visualizations over large data should use aggregate SQL or exports
+  until a sampling layer is designed.
+- **No dependency risk**: Avoiding `fl_chart` or Syncfusion keeps Apache 2.0
+  distribution straightforward.
 
 ### References
 
 - ADR-0002 Results Paging and Streaming Contract
 - ADR-0023 External TOML Theme System
-- `design/SPEC.md` section 6 (Query Execution and Paging Contract)
-- `design/FUTURE_WINS.md` Priority 11
-- `fl_chart` package: https://pub.dev/packages/fl_chart (MIT license)
+- `apps/decent-bench/lib/features/workspace/domain/result_visualization.dart`
+- `apps/decent-bench/lib/features/workspace/presentation/shell/results_pane.dart`
 
 ### Alternatives Considered
 
+**`fl_chart`**: Deferred. MIT licensing is compatible, but the first workbench
+slice did not need a dependency for basic charting.
+
 **`syncfusion_flutter_charts`**: Rejected for the initial implementation due to
-licensing complexity. While the community license permits free use in many
-scenarios, the commercial component and unclear Apache 2.0 compatibility create
-unnecessary licensing risk. Can be reconsidered if `fl_chart` proves
-insufficient.
+licensing complexity around community/commercial terms.
 
-**Custom canvas rendering with `dart:ui`**: Rejected because it would require
-building chart primitives (axes, legends, tooltips, zoom) from scratch —
-significant effort for no user-visible benefit over using an established
-library. Custom rendering is a fallback if all charting libraries prove
-unsuitable, not a first choice.
-
-**No visualization — rely on CSV export for external charting**: Rejected
-because it preserves the very friction this feature aims to eliminate. The
-"export to Excel to chart" workflow is what drives users away from the tool.
+**No visualization**: Rejected because forcing users to export to a spreadsheet
+for every chart preserves unnecessary workflow friction.
