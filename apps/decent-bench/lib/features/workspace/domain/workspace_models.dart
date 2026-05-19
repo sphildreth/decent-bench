@@ -22,6 +22,145 @@ enum QueryHistoryOutcome { completed, failed, cancelled }
 
 enum SchemaObjectKind { table, view }
 
+enum NativeTypeFamily {
+  numeric,
+  boolean,
+  text,
+  binary,
+  uuid,
+  enumValue,
+  temporal,
+  network,
+  macAddress,
+  spatial,
+  unknown,
+}
+
+class NativeTypeDescriptor {
+  const NativeTypeDescriptor({
+    required this.typeName,
+    required this.baseTypeName,
+    required this.family,
+    this.valueKind,
+    this.spatial,
+    this.enumLabels = const <String>[],
+  });
+
+  final String typeName;
+  final String baseTypeName;
+  final NativeTypeFamily family;
+  final String? valueKind;
+  final ToolingSpatialTypeInfo? spatial;
+  final List<String> enumLabels;
+
+  bool get isNativeV25Type {
+    return switch (family) {
+      NativeTypeFamily.enumValue ||
+      NativeTypeFamily.temporal ||
+      NativeTypeFamily.network ||
+      NativeTypeFamily.macAddress ||
+      NativeTypeFamily.spatial => true,
+      _ => false,
+    };
+  }
+
+  bool get isSpatial => family == NativeTypeFamily.spatial;
+
+  String get familyLabel {
+    return switch (family) {
+      NativeTypeFamily.numeric => 'Numeric',
+      NativeTypeFamily.boolean => 'Boolean',
+      NativeTypeFamily.text => 'Text',
+      NativeTypeFamily.binary => 'Binary',
+      NativeTypeFamily.uuid => 'UUID',
+      NativeTypeFamily.enumValue => 'Enum',
+      NativeTypeFamily.temporal => 'Temporal',
+      NativeTypeFamily.network => 'Network',
+      NativeTypeFamily.macAddress => 'MAC address',
+      NativeTypeFamily.spatial => 'Spatial',
+      NativeTypeFamily.unknown => 'Unknown',
+    };
+  }
+
+  String get summaryLabel {
+    final base = baseTypeName.isEmpty ? 'UNKNOWN' : baseTypeName;
+    final parts = <String>['$base $familyLabel'];
+    if (valueKind != null && valueKind!.trim().isNotEmpty) {
+      parts.add('value kind ${valueKind!.trim()}');
+    }
+    final spatialInfo = spatial;
+    if (spatialInfo != null) {
+      parts.add(spatialInfo.summaryLabel);
+    }
+    if (enumLabels.isNotEmpty) {
+      parts.add('labels ${enumLabels.join(", ")}');
+    }
+    return parts.join(' | ');
+  }
+
+  String? enumLabelForId(int labelId) {
+    final index = labelId - 1;
+    if (index < 0 || index >= enumLabels.length) {
+      return null;
+    }
+    return enumLabels[index];
+  }
+}
+
+class NativeEnumCellValue {
+  const NativeEnumCellValue({required this.typeId, required this.labelId});
+
+  final int typeId;
+  final int labelId;
+
+  String displayString({NativeTypeDescriptor? descriptor}) {
+    final label = descriptor?.enumLabelForId(labelId);
+    final identity = 'type $typeId, label $labelId';
+    return label == null ? 'ENUM($identity)' : '$label ($identity)';
+  }
+}
+
+class NativeIntervalCellValue {
+  const NativeIntervalCellValue({
+    required this.months,
+    required this.days,
+    required this.microseconds,
+  });
+
+  final int months;
+  final int days;
+  final int microseconds;
+
+  String displayString() {
+    final parts = <String>[
+      if (months != 0) '${months}mo',
+      if (days != 0) '${days}d',
+      if (microseconds != 0) _formatTimeMicros(microseconds),
+    ];
+    return parts.isEmpty ? '0us' : parts.join(' ');
+  }
+}
+
+NativeTypeDescriptor describeNativeType({
+  String? typeName,
+  String? valueKind,
+  ToolingSpatialTypeInfo? spatial,
+}) {
+  final rawType = typeName?.trim() ?? '';
+  final baseType = _baseTypeName(rawType);
+  final family = _nativeTypeFamily(baseType, valueKind: valueKind);
+  return NativeTypeDescriptor(
+    typeName: rawType,
+    baseTypeName: baseType,
+    family: family,
+    valueKind: valueKind,
+    spatial: spatial,
+    enumLabels: family == NativeTypeFamily.enumValue
+        ? _parseEnumLabels(rawType)
+        : const <String>[],
+  );
+}
+
 class BridgeFailure implements Exception {
   final String message;
   final String? code;
@@ -457,6 +596,443 @@ class SchemaSnapshot {
   }
 }
 
+class ToolingCapabilities {
+  const ToolingCapabilities({
+    required this.queryContractVersion,
+    required this.queryDescribe,
+    required this.deterministicJson,
+  });
+
+  final int queryContractVersion;
+  final bool queryDescribe;
+  final bool deterministicJson;
+
+  factory ToolingCapabilities.fromMap(Map<String, Object?> map) {
+    return ToolingCapabilities(
+      queryContractVersion: _asInt(map['query_contract_version']) ?? 0,
+      queryDescribe: map['query_describe'] as bool? ?? false,
+      deterministicJson: map['deterministic_json'] as bool? ?? false,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'query_contract_version': queryContractVersion,
+      'query_describe': queryDescribe,
+      'deterministic_json': deterministicJson,
+    };
+  }
+}
+
+class ToolingSpatialTypeInfo {
+  const ToolingSpatialTypeInfo({
+    required this.subtype,
+    required this.dimensions,
+    required this.srid,
+  });
+
+  final String subtype;
+  final String dimensions;
+  final int srid;
+
+  String get summaryLabel {
+    final parts = <String>[
+      if (subtype.trim().isNotEmpty) subtype.trim(),
+      if (dimensions.trim().isNotEmpty) dimensions.trim(),
+      if (srid != 0) 'SRID $srid',
+    ];
+    return parts.isEmpty ? 'spatial metadata unavailable' : parts.join(' ');
+  }
+
+  factory ToolingSpatialTypeInfo.fromMap(Map<String, Object?> map) {
+    return ToolingSpatialTypeInfo(
+      subtype: map['subtype'] as String? ?? '',
+      dimensions: map['dimensions'] as String? ?? '',
+      srid: _asInt(map['srid']) ?? 0,
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'subtype': subtype,
+      'dimensions': dimensions,
+      'srid': srid,
+    };
+  }
+}
+
+class ToolingTypeInfo {
+  const ToolingTypeInfo({
+    required this.typeName,
+    required this.valueKind,
+    required this.cValueTag,
+    this.spatial,
+  });
+
+  final String typeName;
+  final String valueKind;
+  final int cValueTag;
+  final ToolingSpatialTypeInfo? spatial;
+
+  NativeTypeDescriptor get nativeTypeDescriptor => describeNativeType(
+    typeName: typeName,
+    valueKind: valueKind,
+    spatial: spatial,
+  );
+
+  factory ToolingTypeInfo.fromMap(Map<String, Object?> map) {
+    final spatialMap = _asStringMap(map['spatial']);
+    return ToolingTypeInfo(
+      typeName: map['type_name'] as String? ?? '',
+      valueKind: map['value_kind'] as String? ?? '',
+      cValueTag: _asInt(map['c_value_tag']) ?? 0,
+      spatial: spatialMap == null
+          ? null
+          : ToolingSpatialTypeInfo.fromMap(spatialMap),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'type_name': typeName,
+      'value_kind': valueKind,
+      'c_value_tag': cValueTag,
+      'spatial': spatial?.toJson(),
+    };
+  }
+}
+
+class ToolingColumnTypeMetadata {
+  const ToolingColumnTypeMetadata({
+    required this.tableName,
+    required this.columnName,
+    required this.columnType,
+    required this.typeInfo,
+  });
+
+  final String tableName;
+  final String columnName;
+  final String columnType;
+  final ToolingTypeInfo typeInfo;
+
+  NativeTypeDescriptor get nativeTypeDescriptor {
+    final type = columnType.trim().isNotEmpty ? columnType : typeInfo.typeName;
+    return describeNativeType(
+      typeName: type,
+      valueKind: typeInfo.valueKind,
+      spatial: typeInfo.spatial,
+    );
+  }
+
+  factory ToolingColumnTypeMetadata.fromMap(Map<String, Object?> map) {
+    return ToolingColumnTypeMetadata(
+      tableName: map['table_name'] as String? ?? '',
+      columnName: map['column_name'] as String? ?? '',
+      columnType: map['column_type'] as String? ?? '',
+      typeInfo: ToolingTypeInfo.fromMap(
+        _asStringMap(map['type_info']) ?? const <String, Object?>{},
+      ),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'table_name': tableName,
+      'column_name': columnName,
+      'column_type': columnType,
+      'type_info': typeInfo.toJson(),
+    };
+  }
+}
+
+class ToolingMetadata {
+  const ToolingMetadata({
+    required this.metadataVersion,
+    required this.engineVersion,
+    required this.databaseFormatVersion,
+    required this.schemaCookie,
+    required this.tempSchemaCookie,
+    required this.schemaFingerprint,
+    required this.schemaFingerprintAlgorithm,
+    required this.columnTypeMetadata,
+    required this.capabilities,
+  });
+
+  final int metadataVersion;
+  final String engineVersion;
+  final int databaseFormatVersion;
+  final int schemaCookie;
+  final int tempSchemaCookie;
+  final String schemaFingerprint;
+  final String schemaFingerprintAlgorithm;
+  final List<ToolingColumnTypeMetadata> columnTypeMetadata;
+  final ToolingCapabilities capabilities;
+
+  factory ToolingMetadata.fromMap(Map<String, Object?> map) {
+    final columns =
+        _asMapList(
+          map['column_type_metadata'],
+        ).map(ToolingColumnTypeMetadata.fromMap).toList()..sort((left, right) {
+          final byTable = left.tableName.compareTo(right.tableName);
+          return byTable != 0
+              ? byTable
+              : left.columnName.compareTo(right.columnName);
+        });
+    return ToolingMetadata(
+      metadataVersion: _asInt(map['metadata_version']) ?? 0,
+      engineVersion: map['engine_version'] as String? ?? '',
+      databaseFormatVersion: _asInt(map['database_format_version']) ?? 0,
+      schemaCookie: _asInt(map['schema_cookie']) ?? 0,
+      tempSchemaCookie: _asInt(map['temp_schema_cookie']) ?? 0,
+      schemaFingerprint: map['schema_fingerprint'] as String? ?? '',
+      schemaFingerprintAlgorithm:
+          map['schema_fingerprint_algorithm'] as String? ?? '',
+      columnTypeMetadata: columns,
+      capabilities: ToolingCapabilities.fromMap(
+        _asStringMap(map['capabilities']) ?? const <String, Object?>{},
+      ),
+    );
+  }
+
+  ToolingColumnTypeMetadata? columnTypeFor({
+    required String tableName,
+    required String columnName,
+  }) {
+    for (final column in columnTypeMetadata) {
+      if (column.tableName == tableName && column.columnName == columnName) {
+        return column;
+      }
+    }
+    return null;
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'metadata_version': metadataVersion,
+      'engine_version': engineVersion,
+      'database_format_version': databaseFormatVersion,
+      'schema_cookie': schemaCookie,
+      'temp_schema_cookie': tempSchemaCookie,
+      'schema_fingerprint': schemaFingerprint,
+      'schema_fingerprint_algorithm': schemaFingerprintAlgorithm,
+      'column_type_metadata': <Map<String, Object?>>[
+        for (final column in columnTypeMetadata) column.toJson(),
+      ],
+      'capabilities': capabilities.toJson(),
+    };
+  }
+}
+
+class QueryParameterContract {
+  const QueryParameterContract({
+    required this.position,
+    required this.name,
+    this.typeName,
+    this.nullable,
+    required this.source,
+    this.sourceTable,
+    this.sourceColumn,
+    required this.diagnostics,
+  });
+
+  final int position;
+  final String name;
+  final String? typeName;
+  final bool? nullable;
+  final String source;
+  final String? sourceTable;
+  final String? sourceColumn;
+  final List<String> diagnostics;
+
+  factory QueryParameterContract.fromMap(Map<String, Object?> map) {
+    return QueryParameterContract(
+      position: _asInt(map['position']) ?? 0,
+      name: map['name'] as String? ?? '',
+      typeName: map['type_name'] as String?,
+      nullable: map['nullable'] as bool?,
+      source: map['source'] as String? ?? 'unknown',
+      sourceTable: map['source_table'] as String?,
+      sourceColumn: map['source_column'] as String?,
+      diagnostics: _asStringList(map['diagnostics']),
+    );
+  }
+
+  String get displayType =>
+      typeName?.trim().isNotEmpty == true ? typeName!.trim() : 'UNKNOWN';
+
+  NativeTypeDescriptor get nativeTypeDescriptor =>
+      describeNativeType(typeName: typeName);
+
+  String get sourceLabel {
+    if (sourceTable != null && sourceColumn != null) {
+      return '$sourceTable.$sourceColumn';
+    }
+    if (sourceColumn != null) {
+      return sourceColumn!;
+    }
+    return source;
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'position': position,
+      'name': name,
+      'type_name': typeName,
+      'nullable': nullable,
+      'source': source,
+      'source_table': sourceTable,
+      'source_column': sourceColumn,
+      'diagnostics': diagnostics,
+    };
+  }
+}
+
+class QueryResultColumnContract {
+  const QueryResultColumnContract({
+    required this.ordinal,
+    required this.name,
+    this.typeName,
+    this.nullable,
+    required this.source,
+    this.sourceTable,
+    this.sourceColumn,
+    this.expressionSql,
+    required this.diagnostics,
+  });
+
+  final int ordinal;
+  final String name;
+  final String? typeName;
+  final bool? nullable;
+  final String source;
+  final String? sourceTable;
+  final String? sourceColumn;
+  final String? expressionSql;
+  final List<String> diagnostics;
+
+  factory QueryResultColumnContract.fromMap(Map<String, Object?> map) {
+    return QueryResultColumnContract(
+      ordinal: _asInt(map['ordinal']) ?? 0,
+      name: map['name'] as String? ?? '',
+      typeName: map['type_name'] as String?,
+      nullable: map['nullable'] as bool?,
+      source: map['source'] as String? ?? 'unknown',
+      sourceTable: map['source_table'] as String?,
+      sourceColumn: map['source_column'] as String?,
+      expressionSql: map['expression_sql'] as String?,
+      diagnostics: _asStringList(map['diagnostics']),
+    );
+  }
+
+  String get displayType =>
+      typeName?.trim().isNotEmpty == true ? typeName!.trim() : 'UNKNOWN';
+
+  NativeTypeDescriptor get nativeTypeDescriptor =>
+      describeNativeType(typeName: typeName);
+
+  String get nullabilityLabel {
+    return switch (nullable) {
+      true => 'nullable',
+      false => 'not null',
+      null => 'nullability unknown',
+    };
+  }
+
+  String get sourceLabel {
+    if (sourceTable != null && sourceColumn != null) {
+      return '$sourceTable.$sourceColumn';
+    }
+    if (sourceColumn != null) {
+      return sourceColumn!;
+    }
+    return source;
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'ordinal': ordinal,
+      'name': name,
+      'type_name': typeName,
+      'nullable': nullable,
+      'source': source,
+      'source_table': sourceTable,
+      'source_column': sourceColumn,
+      'expression_sql': expressionSql,
+      'diagnostics': diagnostics,
+    };
+  }
+}
+
+class QueryContract {
+  const QueryContract({
+    required this.contractVersion,
+    required this.sql,
+    required this.statementKind,
+    required this.readOnly,
+    required this.schemaCookie,
+    required this.tempSchemaCookie,
+    required this.schemaFingerprint,
+    required this.parameters,
+    required this.resultColumns,
+    required this.diagnostics,
+  });
+
+  final int contractVersion;
+  final String sql;
+  final String statementKind;
+  final bool readOnly;
+  final int schemaCookie;
+  final int tempSchemaCookie;
+  final String schemaFingerprint;
+  final List<QueryParameterContract> parameters;
+  final List<QueryResultColumnContract> resultColumns;
+  final List<String> diagnostics;
+
+  factory QueryContract.fromMap(Map<String, Object?> map) {
+    final parameters =
+        _asMapList(
+            map['parameters'],
+          ).map(QueryParameterContract.fromMap).toList()
+          ..sort((left, right) => left.position.compareTo(right.position));
+    final resultColumns =
+        _asMapList(
+            map['result_columns'],
+          ).map(QueryResultColumnContract.fromMap).toList()
+          ..sort((left, right) => left.ordinal.compareTo(right.ordinal));
+    return QueryContract(
+      contractVersion: _asInt(map['contract_version']) ?? 0,
+      sql: map['sql'] as String? ?? '',
+      statementKind: map['statement_kind'] as String? ?? 'unknown',
+      readOnly: map['read_only'] as bool? ?? false,
+      schemaCookie: _asInt(map['schema_cookie']) ?? 0,
+      tempSchemaCookie: _asInt(map['temp_schema_cookie']) ?? 0,
+      schemaFingerprint: map['schema_fingerprint'] as String? ?? '',
+      parameters: parameters,
+      resultColumns: resultColumns,
+      diagnostics: _asStringList(map['diagnostics']),
+    );
+  }
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'contract_version': contractVersion,
+      'sql': sql,
+      'statement_kind': statementKind,
+      'read_only': readOnly,
+      'schema_cookie': schemaCookie,
+      'temp_schema_cookie': tempSchemaCookie,
+      'schema_fingerprint': schemaFingerprint,
+      'parameters': <Map<String, Object?>>[
+        for (final parameter in parameters) parameter.toJson(),
+      ],
+      'result_columns': <Map<String, Object?>>[
+        for (final column in resultColumns) column.toJson(),
+      ],
+      'diagnostics': diagnostics,
+    };
+  }
+}
+
 class QueryResultPage {
   const QueryResultPage({
     required this.cursorId,
@@ -498,6 +1074,22 @@ class QueryResultPage {
       final scale = value['scale'] as int;
       return formatDecimalValue(unscaled, scale);
     }
+    if (value is Map && value['kind'] == 'native_enum') {
+      return NativeEnumCellValue(
+        typeId: _asInt(value['typeId']) ?? 0,
+        labelId: _asInt(value['labelId']) ?? 0,
+      );
+    }
+    if (value is Map && value['kind'] == 'native_interval') {
+      return NativeIntervalCellValue(
+        months: _asInt(value['months']) ?? 0,
+        days: _asInt(value['days']) ?? 0,
+        microseconds: _asInt(value['microseconds']) ?? 0,
+      );
+    }
+    if (value is Map && value['kind'] == 'duration') {
+      return Duration(microseconds: _asInt(value['microseconds']) ?? 0);
+    }
     if (value is Map && value['kind'] == 'blob') {
       return base64Decode(value['base64']! as String);
     }
@@ -516,6 +1108,20 @@ class CsvExportResult {
 
   factory CsvExportResult.fromMap(Map<String, Object?> map) {
     return CsvExportResult(
+      rowCount: map['rowCount']! as int,
+      path: map['path']! as String,
+    );
+  }
+}
+
+class JsonExportResult {
+  const JsonExportResult({required this.rowCount, required this.path});
+
+  final int rowCount;
+  final String path;
+
+  factory JsonExportResult.fromMap(Map<String, Object?> map) {
+    return JsonExportResult(
       rowCount: map['rowCount']! as int,
       path: map['path']! as String,
     );
@@ -677,6 +1283,7 @@ class QueryTabState {
     required this.isResultPartial,
     required this.executionGeneration,
     required this.executionPlan,
+    required this.queryContract,
     required this.messageHistory,
     required this.queryHistory,
   });
@@ -705,6 +1312,7 @@ class QueryTabState {
   final bool isResultPartial;
   final int executionGeneration;
   final QueryExecutionPlanState executionPlan;
+  final QueryContract? queryContract;
   final List<QueryMessageEntry> messageHistory;
   final List<QueryHistoryEntry> queryHistory;
 
@@ -738,6 +1346,7 @@ class QueryTabState {
       isResultPartial: false,
       executionGeneration: 0,
       executionPlan: const QueryExecutionPlanState.idle(),
+      queryContract: null,
       messageHistory: const <QueryMessageEntry>[],
       queryHistory: const <QueryHistoryEntry>[],
     );
@@ -753,6 +1362,30 @@ class QueryTabState {
       lastSql != null && resultColumns.isNotEmpty && !isExporting;
 
   bool get hasResultData => resultColumns.isNotEmpty || rowsAffected != null;
+
+  List<QueryParameterContract> get parameterContracts =>
+      queryContract?.parameters ?? const <QueryParameterContract>[];
+
+  List<QueryResultColumnContract> get resultColumnContracts =>
+      queryContract?.resultColumns ?? const <QueryResultColumnContract>[];
+
+  QueryResultColumnContract? resultContractForColumn(String columnName) {
+    for (final column in resultColumnContracts) {
+      if (column.name == columnName) {
+        return column;
+      }
+    }
+    final ordinal = resultColumns.indexOf(columnName);
+    if (ordinal < 0) {
+      return null;
+    }
+    for (final column in resultColumnContracts) {
+      if (column.ordinal == ordinal) {
+        return column;
+      }
+    }
+    return null;
+  }
 
   QueryTabState copyWith({
     String? id,
@@ -777,6 +1410,7 @@ class QueryTabState {
     bool? isResultPartial,
     int? executionGeneration,
     QueryExecutionPlanState? executionPlan,
+    Object? queryContract = _unset,
     List<QueryMessageEntry>? messageHistory,
     List<QueryHistoryEntry>? queryHistory,
   }) {
@@ -811,6 +1445,9 @@ class QueryTabState {
       isResultPartial: isResultPartial ?? this.isResultPartial,
       executionGeneration: executionGeneration ?? this.executionGeneration,
       executionPlan: executionPlan ?? this.executionPlan,
+      queryContract: queryContract == _unset
+          ? this.queryContract
+          : queryContract as QueryContract?,
       messageHistory: messageHistory ?? this.messageHistory,
       queryHistory: queryHistory ?? this.queryHistory,
     );
@@ -818,16 +1455,51 @@ class QueryTabState {
 }
 
 String formatCellValue(Object? value) {
+  return formatTypedCellValue(value);
+}
+
+String formatTypedCellValue(Object? value, {String? typeName}) {
   if (value == null) {
     return 'NULL';
   }
+  final descriptor = describeNativeType(typeName: typeName);
+  if (value is NativeEnumCellValue) {
+    return value.displayString(descriptor: descriptor);
+  }
+  if (value is NativeIntervalCellValue) {
+    return value.displayString();
+  }
+  if (value is Duration) {
+    return descriptor.baseTypeName == 'TIME'
+        ? _formatTimeMicros(value.inMicroseconds)
+        : '${value.inMicroseconds}us';
+  }
   if (value is DateTime) {
+    if (descriptor.baseTypeName == 'DATE') {
+      final utc = value.toUtc();
+      return '${utc.year.toString().padLeft(4, "0")}-'
+          '${utc.month.toString().padLeft(2, "0")}-'
+          '${utc.day.toString().padLeft(2, "0")}';
+    }
     return value.toIso8601String();
   }
   if (value is Uint8List) {
+    if (descriptor.isSpatial) {
+      final type = descriptor.baseTypeName.isEmpty
+          ? 'SPATIAL'
+          : descriptor.baseTypeName;
+      return '$type EWKB (${value.length} bytes)';
+    }
+    if (descriptor.baseTypeName == 'UUID' && value.length == 16) {
+      return _formatUuidBytes(value);
+    }
     return base64Encode(value);
   }
   return '$value';
+}
+
+String formatSpatialWkbBase64(Object? value) {
+  return value is Uint8List ? base64Encode(value) : formatCellValue(value);
 }
 
 String formatDecimalValue(int unscaled, int scale) {
@@ -841,4 +1513,163 @@ String formatDecimalValue(int unscaled, int scale) {
   final whole = digits.substring(0, split);
   final fraction = digits.substring(split);
   return '${negative ? "-" : ""}$whole.$fraction';
+}
+
+String _baseTypeName(String typeName) {
+  final trimmed = typeName.trim().toUpperCase();
+  if (trimmed.isEmpty) {
+    return '';
+  }
+  final match = RegExp(r'^[A-Z][A-Z0-9_]*').firstMatch(trimmed);
+  return match?.group(0) ?? trimmed;
+}
+
+NativeTypeFamily _nativeTypeFamily(String baseType, {String? valueKind}) {
+  final kind = valueKind?.trim().toLowerCase() ?? '';
+  if (kind.contains('geometry') || kind.contains('geography')) {
+    return NativeTypeFamily.spatial;
+  }
+  return switch (baseType) {
+    'INT' ||
+    'INTEGER' ||
+    'INT64' ||
+    'BIGINT' ||
+    'FLOAT' ||
+    'FLOAT64' ||
+    'DOUBLE' ||
+    'REAL' ||
+    'DECIMAL' => NativeTypeFamily.numeric,
+    'BOOL' || 'BOOLEAN' => NativeTypeFamily.boolean,
+    'TEXT' || 'VARCHAR' || 'CHAR' || 'STRING' => NativeTypeFamily.text,
+    'BLOB' || 'BYTES' => NativeTypeFamily.binary,
+    'UUID' => NativeTypeFamily.uuid,
+    'ENUM' => NativeTypeFamily.enumValue,
+    'DATE' ||
+    'TIME' ||
+    'TIMESTAMP' ||
+    'TIMESTAMPTZ' ||
+    'INTERVAL' => NativeTypeFamily.temporal,
+    'IPADDR' || 'INET' || 'CIDR' => NativeTypeFamily.network,
+    'MACADDR' || 'MACADDR8' => NativeTypeFamily.macAddress,
+    'GEOMETRY' || 'GEOGRAPHY' => NativeTypeFamily.spatial,
+    _ => NativeTypeFamily.unknown,
+  };
+}
+
+List<String> _parseEnumLabels(String typeName) {
+  final open = typeName.indexOf('(');
+  final close = typeName.lastIndexOf(')');
+  if (open < 0 || close <= open) {
+    return const <String>[];
+  }
+  final labels = <String>[];
+  final text = typeName.substring(open + 1, close);
+  var index = 0;
+  while (index < text.length) {
+    while (index < text.length &&
+        (text[index].trim().isEmpty || text[index] == ',')) {
+      index++;
+    }
+    if (index >= text.length || text[index] != "'") {
+      break;
+    }
+    index++;
+    final label = StringBuffer();
+    while (index < text.length) {
+      final char = text[index];
+      if (char == "'") {
+        if (index + 1 < text.length && text[index + 1] == "'") {
+          label.write("'");
+          index += 2;
+          continue;
+        }
+        index++;
+        break;
+      }
+      label.write(char);
+      index++;
+    }
+    labels.add(label.toString());
+    while (index < text.length && text[index] != ',') {
+      index++;
+    }
+  }
+  return labels;
+}
+
+String _formatTimeMicros(int microseconds) {
+  final negative = microseconds < 0;
+  final absolute = microseconds.abs();
+  final hours = absolute ~/ Duration.microsecondsPerHour;
+  final minutes =
+      (absolute % Duration.microsecondsPerHour) ~/
+      Duration.microsecondsPerMinute;
+  final seconds =
+      (absolute % Duration.microsecondsPerMinute) ~/
+      Duration.microsecondsPerSecond;
+  final micros = absolute % Duration.microsecondsPerSecond;
+  final base =
+      '${hours.toString().padLeft(2, "0")}:'
+      '${minutes.toString().padLeft(2, "0")}:'
+      '${seconds.toString().padLeft(2, "0")}';
+  final suffix = micros == 0 ? '' : '.${micros.toString().padLeft(6, "0")}';
+  return '${negative ? "-" : ""}$base$suffix';
+}
+
+String _formatUuidBytes(Uint8List bytes) {
+  final hex = <String>[
+    for (final byte in bytes) byte.toRadixString(16).padLeft(2, '0'),
+  ].join();
+  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+      '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+      '${hex.substring(20)}';
+}
+
+int? _asInt(Object? value) {
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    return value.toInt();
+  }
+  return null;
+}
+
+Map<String, Object?>? _asStringMap(Object? value) {
+  if (value is Map<String, Object?>) {
+    return value;
+  }
+  if (value is Map<Object?, Object?>) {
+    return value.map((key, value) => MapEntry(key as String, value));
+  }
+  if (value is Map) {
+    return <String, Object?>{
+      for (final entry in value.entries) '${entry.key}': entry.value,
+    };
+  }
+  return null;
+}
+
+List<Map<String, Object?>> _asMapList(Object? value) {
+  if (value is! List) {
+    return const <Map<String, Object?>>[];
+  }
+  final maps = <Map<String, Object?>>[];
+  for (final item in value) {
+    final map = _asStringMap(item);
+    if (map != null) {
+      maps.add(map);
+    }
+  }
+  return maps;
+}
+
+List<String> _asStringList(Object? value) {
+  if (value is! List) {
+    return const <String>[];
+  }
+  return <String>[
+    for (final item in value)
+      if (item != null) '$item',
+  ];
 }

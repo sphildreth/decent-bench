@@ -737,6 +737,32 @@ class AppConfig {
             'FROM your_table\n'
             'WHERE id = \$1;',
       ),
+      SqlSnippet(
+        id: 'native_types',
+        name: 'Native Types Table',
+        trigger: 'native',
+        description: 'Create a table with DecentDB native semantic types.',
+        body:
+            'CREATE TABLE native_sample (\n'
+            '  id INT64 PRIMARY KEY,\n'
+            "  status ENUM('draft', 'published') NOT NULL,\n"
+            '  seen_at TIMESTAMPTZ,\n'
+            '  service_ip IPADDR,\n'
+            '  service_net CIDR,\n'
+            '  device_mac MACADDR\n'
+            ');',
+      ),
+      SqlSnippet(
+        id: 'spatial_nearby',
+        name: 'Spatial Nearby Query',
+        trigger: 'spatial',
+        description: 'Filter geography points by distance in meters.',
+        body:
+            'SELECT id, name, ST_AsText(geog) AS wkt\n'
+            'FROM places\n'
+            'WHERE ST_DWithin(geog, ST_GeogPoint(\$1, \$2), \$3)\n'
+            'ORDER BY geog <-> ST_GeogPoint(\$1, \$2);',
+      ),
     ];
   }
 

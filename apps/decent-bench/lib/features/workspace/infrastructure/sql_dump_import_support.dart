@@ -1187,6 +1187,19 @@ String mapMySqlDeclaredTypeToDecentDb(String declaredType) {
       normalized.contains('CHAR(36)')) {
     return 'UUID';
   }
+  if (normalized.startsWith('ENUM') ||
+      normalized == 'INET' ||
+      normalized == 'IPADDR' ||
+      normalized == 'CIDR' ||
+      normalized == 'TIME' ||
+      normalized.startsWith('TIME(') ||
+      normalized.startsWith('INTERVAL') ||
+      normalized == 'MACADDR' ||
+      normalized == 'MACADDR8' ||
+      normalized == 'GEOMETRY' ||
+      normalized == 'GEOGRAPHY') {
+    return 'TEXT';
+  }
   if (normalized.contains('BIGINT') ||
       normalized.contains('SMALLINT') ||
       normalized.contains('TINYINT') ||

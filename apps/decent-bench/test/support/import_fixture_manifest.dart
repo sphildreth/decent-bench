@@ -586,6 +586,10 @@ const List<SqlDumpImportFixtureEntry> sqlDumpImportRoundTripFixtures =
         relativePath: 'test-data/sql_related/schema_seed.sql',
       ),
       SqlDumpImportFixtureEntry(
+        relativePath: 'test-data/sql_related/decentdb-v2_5_native_fixture.sql',
+        encoding: 'utf8',
+      ),
+      SqlDumpImportFixtureEntry(
         relativePath: 'test-data/sql_related/mysql_export.sql',
       ),
       SqlDumpImportFixtureEntry(

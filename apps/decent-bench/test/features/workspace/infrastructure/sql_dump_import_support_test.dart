@@ -192,6 +192,19 @@ INSERT INTO items VALUES (1, 'caf\xe9');
     test('maps DECIMAL without precision to DECIMAL(18,6)', () {
       expect(mapMySqlDeclaredTypeToDecentDb('DECIMAL'), 'DECIMAL(18,6)');
     });
+
+    test('maps DecentDB v2.5 semantic dump types conservatively', () {
+      expect(mapMySqlDeclaredTypeToDecentDb("ENUM('draft','paid')"), 'TEXT');
+      expect(mapMySqlDeclaredTypeToDecentDb('INET'), 'TEXT');
+      expect(mapMySqlDeclaredTypeToDecentDb('IPADDR'), 'TEXT');
+      expect(mapMySqlDeclaredTypeToDecentDb('CIDR'), 'TEXT');
+      expect(mapMySqlDeclaredTypeToDecentDb('TIME'), 'TEXT');
+      expect(mapMySqlDeclaredTypeToDecentDb('INTERVAL DAY TO SECOND'), 'TEXT');
+      expect(mapMySqlDeclaredTypeToDecentDb('MACADDR'), 'TEXT');
+      expect(mapMySqlDeclaredTypeToDecentDb('MACADDR8'), 'TEXT');
+      expect(mapMySqlDeclaredTypeToDecentDb('GEOMETRY'), 'TEXT');
+      expect(mapMySqlDeclaredTypeToDecentDb('GEOGRAPHY'), 'TEXT');
+    });
   });
 
   group('materializeSqlDumpSourceFile', () {

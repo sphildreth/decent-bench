@@ -121,10 +121,7 @@ void main() {
           controller.activeTab.sql,
           'SELECT id, title FROM tasks ORDER BY id',
         );
-        expect(
-          controller.activeTab.resultRows.single['title'],
-          'Ship phase 1',
-        );
+        expect(controller.activeTab.resultRows.single['title'], 'Ship phase 1');
         expect(controller.activeTab.phase, QueryPhase.completed);
       },
     );
@@ -145,10 +142,7 @@ void main() {
         expect(controller.databasePath, file.path);
         expect(controller.activeTab.sql, startsWith('SELECT *'));
         expect(controller.activeTab.sql, contains('FROM "tasks"'));
-        expect(
-          controller.activeTab.resultRows.single['title'],
-          'Ship phase 1',
-        );
+        expect(controller.activeTab.resultRows.single['title'], 'Ship phase 1');
         expect(controller.activeTab.executionPlan.isLoading, isFalse);
         expect(
           controller.activeTab.executionPlan.rows.single['query_plan'],
@@ -203,10 +197,7 @@ void main() {
         expect(controller.activeTab.sql, startsWith('SELECT *'));
         expect(controller.activeTab.sql, contains('FROM "tasks"'));
         expect(controller.activeTab.phase, QueryPhase.completed);
-        expect(
-          controller.activeTab.resultRows.single['title'],
-          'Ship phase 1',
-        );
+        expect(controller.activeTab.resultRows.single['title'], 'Ship phase 1');
       },
     );
 
@@ -269,10 +260,7 @@ void main() {
           isNot('SELECT id, title FROM tasks ORDER BY id'),
         );
         expect(controller.activeTab.phase, QueryPhase.completed);
-        expect(
-          controller.activeTab.resultRows.single['title'],
-          'Ship phase 1',
-        );
+        expect(controller.activeTab.resultRows.single['title'], 'Ship phase 1');
       },
     );
 
@@ -335,6 +323,27 @@ void main() {
         );
       },
     );
+
+    test('clearActiveTabHistory removes only the active tab history', () async {
+      final dbPath = _tempDbPath();
+      final controller = _createController();
+
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+      controller.updateActiveSql('SELECT id, title FROM tasks ORDER BY id');
+      await controller.runActiveTab();
+      await controller.fetchNextPage();
+      controller.createTab(sql: 'SELECT id, name FROM projects ORDER BY id');
+      await controller.runActiveTab();
+      await controller.fetchNextPage();
+
+      expect(controller.queryHistory, hasLength(2));
+      controller.clearActiveTabHistory();
+
+      expect(controller.activeTab.queryHistory, isEmpty);
+      controller.previousTab();
+      expect(controller.activeTab.queryHistory, hasLength(1));
+    });
   });
 
   group('Database operations', () {
@@ -353,83 +362,85 @@ void main() {
       expect((await store.load()).recentFiles, contains(dbPath));
     });
 
-    test('openLogDatabase opens the configured application log database',
-        () async {
-      final logPath =
-          '${Directory.systemTemp.path}/decent-bench-log-${DateTime.now().microsecondsSinceEpoch}.ddb';
-      final file = File(logPath);
-      await file.parent.create(recursive: true);
-      await file.writeAsString('');
+    test(
+      'openLogDatabase opens the configured application log database',
+      () async {
+        final logPath =
+            '${Directory.systemTemp.path}/decent-bench-log-${DateTime.now().microsecondsSinceEpoch}.ddb';
+        final file = File(logPath);
+        await file.parent.create(recursive: true);
+        await file.writeAsString('');
 
-      addTearDown(() async {
-        if (await file.exists()) {
-          await file.delete();
-        }
-      });
+        addTearDown(() async {
+          if (await file.exists()) {
+            await file.delete();
+          }
+        });
 
-      final controller = _createController(
-        logger: _FixedPathLogger(logPath),
-      );
-      await controller.initialize();
+        final controller = _createController(logger: _FixedPathLogger(logPath));
+        await controller.initialize();
 
-      await controller.openLogDatabase();
+        await controller.openLogDatabase();
 
-      expect(controller.databasePath, logPath);
-      expect(controller.engineVersion, '1.6.1');
-      expect(controller.workspaceError, isNull);
-    });
+        expect(controller.databasePath, logPath);
+        expect(controller.engineVersion, '1.6.1');
+        expect(controller.workspaceError, isNull);
+      },
+    );
   });
 
   group('Configuration', () {
-    test('applyAppConfig persists and reloads TOML-backed preferences',
-        () async {
-      final store = InMemoryConfigStore();
-      final controller = _createController(configStore: store);
-      await controller.initialize();
+    test(
+      'applyAppConfig persists and reloads TOML-backed preferences',
+      () async {
+        final store = InMemoryConfigStore();
+        final controller = _createController(configStore: store);
+        await controller.initialize();
 
-      final updatedConfig = controller.config.copyWith(
-        defaultPageSize: 250,
-        csvDelimiter: ';',
-        csvIncludeHeaders: false,
-        editorSettings: const EditorSettings(
-          autocompleteEnabled: false,
-          autocompleteMaxSuggestions: 18,
-          formatUppercaseKeywords: false,
-          indentSpaces: 4,
-          showLineNumbers: true,
-        ),
-        shortcutBindings: <String, String>{
-          ...controller.config.shortcutBindings,
-          'tools_run_query': 'Ctrl+Shift+Enter',
-        },
-        snippets: const <SqlSnippet>[
-          SqlSnippet(
-            id: 'custom',
-            name: 'Custom',
-            trigger: 'custom',
-            description: 'Custom snippet',
-            body: 'SELECT * FROM custom_table;',
+        final updatedConfig = controller.config.copyWith(
+          defaultPageSize: 250,
+          csvDelimiter: ';',
+          csvIncludeHeaders: false,
+          editorSettings: const EditorSettings(
+            autocompleteEnabled: false,
+            autocompleteMaxSuggestions: 18,
+            formatUppercaseKeywords: false,
+            indentSpaces: 4,
+            showLineNumbers: true,
           ),
-        ],
-      );
+          shortcutBindings: <String, String>{
+            ...controller.config.shortcutBindings,
+            'tools_run_query': 'Ctrl+Shift+Enter',
+          },
+          snippets: const <SqlSnippet>[
+            SqlSnippet(
+              id: 'custom',
+              name: 'Custom',
+              trigger: 'custom',
+              description: 'Custom snippet',
+              body: 'SELECT * FROM custom_table;',
+            ),
+          ],
+        );
 
-      final saved = await controller.applyAppConfig(updatedConfig);
+        final saved = await controller.applyAppConfig(updatedConfig);
 
-      expect(saved, isTrue);
-      expect((await store.load()).defaultPageSize, 250);
-      expect((await store.load()).csvDelimiter, ';');
+        expect(saved, isTrue);
+        expect((await store.load()).defaultPageSize, 250);
+        expect((await store.load()).csvDelimiter, ';');
 
-      controller.config = AppConfig.defaults();
-      await controller.reloadConfig();
+        controller.config = AppConfig.defaults();
+        await controller.reloadConfig();
 
-      expect(controller.config.defaultPageSize, 250);
-      expect(controller.config.csvIncludeHeaders, isFalse);
-      expect(
-        controller.config.shortcutBindings['tools_run_query'],
-        'Ctrl+Shift+Enter',
-      );
-      expect(controller.config.snippets.single.trigger, 'custom');
-    });
+        expect(controller.config.defaultPageSize, 250);
+        expect(controller.config.csvIncludeHeaders, isFalse);
+        expect(
+          controller.config.shortcutBindings['tools_run_query'],
+          'Ctrl+Shift+Enter',
+        );
+        expect(controller.config.snippets.single.trigger, 'custom');
+      },
+    );
   });
 
   group('Multi-tab behavior', () {
@@ -555,6 +566,55 @@ void main() {
   });
 
   group('Query execution', () {
+    test('runTab stores query contracts before executing SQL', () async {
+      final dbPath = _tempDbPath();
+      final gateway = FakeWorkspaceGateway();
+      final controller = _createController(gateway: gateway);
+
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+      controller.updateActiveSql('SELECT id, title FROM tasks WHERE id = \$1');
+      controller.updateActiveParameterJson('[1]');
+      await controller.runActiveTab();
+
+      expect(gateway.lastDescribedQuerySql, contains(r'$1'));
+      expect(gateway.lastRunQuerySql, contains(r'$1'));
+      expect(controller.activeTab.queryContract, isNotNull);
+      expect(controller.activeTab.parameterContracts.single.name, r'$1');
+      expect(
+        controller.activeTab.resultContractForColumn('title')?.typeName,
+        'TEXT',
+      );
+      expect(
+        controller.activeTab.queryContract?.schemaFingerprint,
+        gateway.toolingMetadata.schemaFingerprint,
+      );
+    });
+
+    test(
+      'runTab stops before execution when query contract decoding fails',
+      () async {
+        final dbPath = _tempDbPath();
+        final gateway = FakeWorkspaceGateway()
+          ..queryContractError = const BridgeFailure(
+            'syntax error near BROKEN',
+            code: 'ERR_SQL',
+          );
+        final controller = _createController(gateway: gateway);
+
+        await controller.initialize();
+        await controller.openDatabase(dbPath, createIfMissing: true);
+        controller.updateActiveSql('SELECT BROKEN');
+        await controller.runActiveTab();
+
+        expect(gateway.lastDescribedQuerySql, 'SELECT BROKEN');
+        expect(gateway.lastRunQuerySql, isNull);
+        expect(controller.activeTab.phase, QueryPhase.failed);
+        expect(controller.activeTab.error?.message, contains('BROKEN'));
+        expect(controller.activeTab.queryContract, isNull);
+      },
+    );
+
     test('runTab captures execution plan rows from EXPLAIN output', () async {
       final dbPath = _tempDbPath();
       final controller = _createController();
@@ -566,10 +626,9 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
       expect(controller.activeTab.executionPlan.isLoading, isFalse);
-      expect(
-        controller.activeTab.executionPlan.columns,
-        <String>['query_plan'],
-      );
+      expect(controller.activeTab.executionPlan.columns, <String>[
+        'query_plan',
+      ]);
       expect(
         controller.activeTab.executionPlan.rows.single['query_plan'],
         contains('SCAN tasks'),
@@ -732,9 +791,7 @@ void main() {
           '/tmp/imports/source.ddb',
         );
 
-        controller.beginSqliteImport(
-          sourcePath: '/tmp/imports/source.sqlite',
-        );
+        controller.beginSqliteImport(sourcePath: '/tmp/imports/source.sqlite');
         expect(
           controller.sqliteImportSession?.targetPath,
           '/tmp/imports/source.ddb',
@@ -829,10 +886,7 @@ void main() {
 
       await controller.runExcelImport();
       await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(
-        controller.excelImportSession?.phase,
-        ExcelImportJobPhase.running,
-      );
+      expect(controller.excelImportSession?.phase, ExcelImportJobPhase.running);
 
       final jobId = controller.excelImportSession?.jobId;
       await controller.cancelExcelImport();

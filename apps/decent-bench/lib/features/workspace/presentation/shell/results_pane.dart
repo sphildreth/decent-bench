@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 
+import '../../../../app/theme_system/decent_bench_theme.dart';
 import '../../../../app/theme_system/decent_bench_theme_extension.dart';
 import '../../domain/workspace_models.dart';
 import '../../domain/workspace_shell_preferences.dart';
@@ -155,6 +156,9 @@ class ResultsPane extends StatelessWidget {
     required this.onSelectRow,
     required this.onTogglePinnedColumn,
     required this.usePlaceholderContent,
+    this.onLoadHistoryEntry,
+    this.onRunHistoryEntry,
+    this.onClearHistory,
   });
 
   final QueryTabState activeTab;
@@ -170,6 +174,9 @@ class ResultsPane extends StatelessWidget {
   final ValueChanged<int> onSelectRow;
   final ValueChanged<String> onTogglePinnedColumn;
   final bool usePlaceholderContent;
+  final ValueChanged<QueryHistoryEntry>? onLoadHistoryEntry;
+  final Future<void> Function(QueryHistoryEntry entry)? onRunHistoryEntry;
+  final VoidCallback? onClearHistory;
 
   @override
   Widget build(BuildContext context) {
@@ -206,6 +213,12 @@ class ResultsPane extends StatelessWidget {
               ResultsPaneTab.messages => _MessagesPanel(tab: activeTab),
               ResultsPaneTab.executionPlan => _ExecutionPlanPanel(
                 tab: activeTab,
+              ),
+              ResultsPaneTab.history => _HistoryPanel(
+                tab: activeTab,
+                onLoad: onLoadHistoryEntry,
+                onRun: onRunHistoryEntry,
+                onClear: onClearHistory,
               ),
             },
           ),
@@ -296,6 +309,11 @@ class _ResultsSubtabs extends StatelessWidget {
             label: 'Execution Plan',
             selected: selectedTab == ResultsPaneTab.executionPlan,
             onTap: () => onSelected(ResultsPaneTab.executionPlan),
+          ),
+          _ResultTabButton(
+            label: 'History',
+            selected: selectedTab == ResultsPaneTab.history,
+            onTap: () => onSelected(ResultsPaneTab.history),
           ),
         ],
       ),
@@ -485,6 +503,7 @@ class _ResultsGridState extends State<_ResultsGrid> {
                                     'results.header.$column',
                                   ),
                                   text: column,
+                                  tooltip: _headerTooltipFor(column),
                                   isHeader: true,
                                   width: _widthFor(column),
                                   pinned: true,
@@ -519,7 +538,8 @@ class _ResultsGridState extends State<_ResultsGrid> {
                                   ),
                                   for (final column in pinnedColumns)
                                     _GridCell(
-                                      text: formatCellValue(
+                                      text: _formatCellValue(
+                                        column,
                                         resolveResultsCellValue(
                                           widget.tab,
                                           widget.interactionState,
@@ -572,6 +592,7 @@ class _ResultsGridState extends State<_ResultsGrid> {
                                           'results.header.$column',
                                         ),
                                         text: column,
+                                        tooltip: _headerTooltipFor(column),
                                         isHeader: true,
                                         width: _widthFor(column),
                                         pinned: false,
@@ -600,7 +621,8 @@ class _ResultsGridState extends State<_ResultsGrid> {
                                       children: <Widget>[
                                         for (final column in remainingColumns)
                                           _GridCell(
-                                            text: formatCellValue(
+                                            text: _formatCellValue(
+                                              column,
                                               resolveResultsCellValue(
                                                 widget.tab,
                                                 widget.interactionState,
@@ -692,6 +714,28 @@ class _ResultsGridState extends State<_ResultsGrid> {
     });
   }
 
+  String? _headerTooltipFor(String columnName) {
+    final contract = widget.tab.resultContractForColumn(columnName);
+    if (contract == null) {
+      return null;
+    }
+    final descriptor = contract.nativeTypeDescriptor;
+    final parts = <String>[
+      '$columnName: ${contract.displayType}',
+      'Family: ${descriptor.familyLabel}',
+      if (descriptor.isNativeV25Type) descriptor.summaryLabel,
+      contract.nullabilityLabel,
+      'Source: ${contract.sourceLabel}',
+      if (contract.diagnostics.isNotEmpty) contract.diagnostics.first,
+    ];
+    return parts.join('\n');
+  }
+
+  String _formatCellValue(String columnName, Object? value) {
+    final contract = widget.tab.resultContractForColumn(columnName);
+    return formatTypedCellValue(value, typeName: contract?.typeName);
+  }
+
   void _pruneColumnWidths() {
     final columns = resolveResultsColumns(
       widget.tab,
@@ -743,6 +787,7 @@ class _GridCell extends StatelessWidget {
     this.rowSelected = false,
     this.edited = false,
     this.pinned = false,
+    this.tooltip,
     this.onTap,
     this.onSecondaryTapDown,
     this.onPinToggle,
@@ -757,6 +802,7 @@ class _GridCell extends StatelessWidget {
   final bool rowSelected;
   final bool edited;
   final bool pinned;
+  final String? tooltip;
   final VoidCallback? onTap;
   final ValueChanged<Offset>? onSecondaryTapDown;
   final VoidCallback? onPinToggle;
@@ -854,15 +900,19 @@ class _GridCell extends StatelessWidget {
             ),
     );
 
+    final wrappedChild = tooltip == null || tooltip!.trim().isEmpty
+        ? child
+        : Tooltip(message: tooltip!, child: child);
+
     if (isHeader || onTap == null) {
-      return child;
+      return wrappedChild;
     }
     return InkWell(
       onTap: onTap,
       onSecondaryTapDown: onSecondaryTapDown == null
           ? null
           : (details) => onSecondaryTapDown!(details.globalPosition),
-      child: child,
+      child: wrappedChild,
     );
   }
 }
@@ -1052,6 +1102,170 @@ class _MessagesPanel extends StatelessWidget {
     final minute = local.minute.toString().padLeft(2, '0');
     final second = local.second.toString().padLeft(2, '0');
     return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} $hour:$minute:$second';
+  }
+}
+
+class _HistoryPanel extends StatelessWidget {
+  const _HistoryPanel({
+    required this.tab,
+    required this.onLoad,
+    required this.onRun,
+    required this.onClear,
+  });
+
+  final QueryTabState tab;
+  final ValueChanged<QueryHistoryEntry>? onLoad;
+  final Future<void> Function(QueryHistoryEntry entry)? onRun;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.decentBenchTheme;
+    final entries = tab.queryHistory.reversed.toList();
+    if (entries.isEmpty) {
+      return const _ExecutionPlanEmptyState(
+        icon: Icons.history_outlined,
+        label: 'Run SQL in this tab to populate history.',
+      );
+    }
+    return Column(
+      children: <Widget>[
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: tokens.colors.panelBg,
+            border: Border(
+              bottom: BorderSide(color: tokens.resultsGrid.gridLine),
+            ),
+          ),
+          child: Row(
+            children: <Widget>[
+              Text(
+                '${entries.length} entries',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: tokens.colors.textMuted,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: onClear,
+                icon: const Icon(Icons.delete_sweep_outlined, size: 16),
+                label: const Text('Clear'),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: entries.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final entry = entries[index];
+              return Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: tokens.colors.panelAltBg,
+                  border: Border.all(color: tokens.resultsGrid.gridLine),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Icon(
+                      _historyIcon(entry.outcome),
+                      size: 18,
+                      color: _historyColor(tokens, entry.outcome),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            _firstSqlLine(entry.sql),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  fontFamily: tokens.fonts.editorFamily,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _historySubtitle(entry),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: tokens.colors.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: onLoad == null ? null : () => onLoad!(entry),
+                      child: const Text('Load'),
+                    ),
+                    TextButton(
+                      onPressed: onRun == null ? null : () => onRun!(entry),
+                      child: const Text('Run'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _firstSqlLine(String sql) {
+    for (final line in sql.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isNotEmpty) {
+        return trimmed;
+      }
+    }
+    return '(empty SQL)';
+  }
+
+  String _historySubtitle(QueryHistoryEntry entry) {
+    final parts = <String>[
+      _formatTimestamp(entry.ranAt),
+      entry.outcome.name,
+      '${entry.elapsed.inMilliseconds} ms',
+      if (entry.rowsLoaded != null) 'rows ${entry.rowsLoaded}',
+      if (entry.rowsAffected != null) 'affected ${entry.rowsAffected}',
+      if (entry.errorMessage != null) entry.errorMessage!,
+    ];
+    return parts.join(' | ');
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final local = timestamp.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    final second = local.second.toString().padLeft(2, '0');
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} $hour:$minute:$second';
+  }
+
+  IconData _historyIcon(QueryHistoryOutcome outcome) {
+    return switch (outcome) {
+      QueryHistoryOutcome.completed => Icons.check_circle_outline,
+      QueryHistoryOutcome.failed => Icons.error_outline,
+      QueryHistoryOutcome.cancelled => Icons.cancel_outlined,
+    };
+  }
+
+  Color _historyColor(DecentBenchTheme tokens, QueryHistoryOutcome outcome) {
+    return switch (outcome) {
+      QueryHistoryOutcome.completed => tokens.colors.success,
+      QueryHistoryOutcome.failed => tokens.colors.error,
+      QueryHistoryOutcome.cancelled => tokens.colors.warning,
+    };
   }
 }
 

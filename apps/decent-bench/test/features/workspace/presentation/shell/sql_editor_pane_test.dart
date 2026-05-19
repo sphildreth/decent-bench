@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:decent_bench/app/theme.dart';
 import 'package:decent_bench/app/theme_system/theme_presets.dart';
 import 'package:decent_bench/features/workspace/domain/app_config.dart';
@@ -138,5 +140,135 @@ void main() {
       find.byKey(const ValueKey<String>('sql_editor.autocomplete_popup')),
       findsNothing,
     );
+  });
+
+  testWidgets('query contract parameters update JSON values', (tester) async {
+    final sqlController = SqlHighlightingTextEditingController(
+      text: 'SELECT * FROM tasks WHERE id = \$1',
+    );
+    final paramsController = TextEditingController(text: '[1]');
+    final findController = TextEditingController();
+    final editorScrollController = ScrollController();
+    final focusNode = FocusNode();
+    final paramsFocusNode = FocusNode();
+    final findFocusNode = FocusNode();
+    final undoController = UndoHistoryController();
+    final paramsUndoController = UndoHistoryController();
+    var latestParams = '[1]';
+    final tab =
+        QueryTabState.initial(
+          id: 'query-1',
+          title: 'Query 1',
+          sql: 'SELECT * FROM tasks WHERE id = \$1',
+          parameterJson: '[1]',
+        ).copyWith(
+          queryContract: QueryContract(
+            contractVersion: 1,
+            sql: 'SELECT * FROM tasks WHERE id = \$1',
+            statementKind: 'query',
+            readOnly: true,
+            schemaCookie: 1,
+            tempSchemaCookie: 0,
+            schemaFingerprint: 'fingerprint',
+            parameters: const <QueryParameterContract>[
+              QueryParameterContract(
+                position: 1,
+                name: r'$1',
+                typeName: 'INT64',
+                nullable: false,
+                source: 'catalog_column',
+                sourceTable: 'tasks',
+                sourceColumn: 'id',
+                diagnostics: <String>[],
+              ),
+            ],
+            resultColumns: const <QueryResultColumnContract>[],
+            diagnostics: const <String>[],
+          ),
+        );
+
+    addTearDown(() {
+      paramsUndoController.dispose();
+      undoController.dispose();
+      findFocusNode.dispose();
+      paramsFocusNode.dispose();
+      focusNode.dispose();
+      editorScrollController.dispose();
+      findController.dispose();
+      paramsController.dispose();
+      sqlController.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildDecentBenchTheme(buildEmergencyTheme()),
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 600,
+            child: SqlEditorPane(
+              tabs: <QueryTabState>[tab],
+              activeTab: tab,
+              sqlController: sqlController,
+              paramsController: paramsController,
+              editorScrollController: editorScrollController,
+              focusNode: focusNode,
+              paramsFocusNode: paramsFocusNode,
+              undoController: undoController,
+              paramsUndoController: paramsUndoController,
+              autocompleteResult: const AutocompleteResult(
+                replaceStart: 0,
+                replaceEnd: 0,
+                suggestions: <AutocompleteSuggestion>[],
+              ),
+              snippets: const <SqlSnippet>[],
+              zoomFactor: 1,
+              indentSpaces: 2,
+              showLineNumbers: true,
+              showFindBar: false,
+              findController: findController,
+              findFocusNode: findFocusNode,
+              findStatusLabel: '0/0',
+              onSqlChanged: (_) {},
+              onParamsChanged: (value) {
+                latestParams = value;
+              },
+              onSelectTab: (_) {},
+              onCloseTab: (_) async {},
+              onNewTab: () {},
+              onRunQuery: () {},
+              onRunBuffer: () {},
+              onStopQuery: () {},
+              onFormatSql: () {},
+              onInsertSnippet: (_) {},
+              onApplyAutocomplete: (_) {},
+              selectedAutocompleteIndex: 0,
+              onAutocompleteNext: () {},
+              onAutocompletePrevious: () {},
+              onAcceptAutocomplete: () {},
+              onDismissAutocomplete: () {},
+              canRun: true,
+              canStop: false,
+              onFindChanged: (_) {},
+              onFindNext: () {},
+              onFindPrevious: () {},
+              onCloseFind: () {},
+              runLabel: 'Run',
+              formatLabel: 'Format',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>(r'sql_editor.parameter.query-1.$1')),
+      '42',
+    );
+    await tester.pump();
+
+    expect(jsonDecode(latestParams), <Object?>[42]);
+    expect(jsonDecode(paramsController.text), <Object?>[42]);
   });
 }

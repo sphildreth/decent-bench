@@ -25,12 +25,14 @@ import '../domain/sql_autocomplete.dart';
 import '../domain/sql_execution_target.dart';
 import '../domain/sql_editor_selection.dart';
 import '../domain/sql_formatter.dart';
+import '../domain/sql_risk_assessment.dart';
 import '../domain/workspace_file_entry.dart';
 import '../domain/workspace_models.dart';
 import '../infrastructure/app_lifecycle_service.dart';
 import '../infrastructure/shortcut_config_service.dart';
 import 'excel_import_dialog.dart';
 import 'export_results_csv_dialog.dart';
+import 'export_results_json_dialog.dart';
 import 'ms_sql_bak_import_dialog.dart';
 import 'preferences_dialog.dart';
 import 'shell/app_menu_bar.dart';
@@ -73,6 +75,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   static const _csvTypeGroup = XTypeGroup(
     label: 'CSV',
     extensions: <String>['csv'],
+  );
+  static const _jsonTypeGroup = XTypeGroup(
+    label: 'JSON',
+    extensions: <String>['json', 'jsonl', 'ndjson'],
   );
 
   late final SqlHighlightingTextEditingController _sqlController =
@@ -415,6 +421,19 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                       onShowCellMenu: _showResultsCellMenu,
                                       onSelectRow: _selectResultsRow,
                                       onTogglePinnedColumn: _togglePinnedColumn,
+                                      onLoadHistoryEntry: (entry) {
+                                        controller
+                                            .loadHistoryEntryIntoActiveTab(
+                                              entry,
+                                            );
+                                      },
+                                      onRunHistoryEntry: (entry) {
+                                        return controller.rerunHistoryEntry(
+                                          entry,
+                                        );
+                                      },
+                                      onClearHistory:
+                                          controller.clearActiveTabHistory,
                                       usePlaceholderContent:
                                           usePlaceholderContent,
                                     ),
@@ -682,6 +701,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         }
         for (final column in object.columns) {
           if (column.name == parts[2]) {
+            final typeMetadata = controller.toolingMetadata?.columnTypeFor(
+              tableName: object.name,
+              columnName: column.name,
+            );
+            final nativeType =
+                typeMetadata?.nativeTypeDescriptor ??
+                describeNativeType(typeName: column.type);
+            final spatialInfo = nativeType.spatial;
             return SchemaSelectionDetails(
               nodeId: nodeId,
               kind: SchemaSelectionKind.column,
@@ -691,6 +718,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               summaryRows: <MapEntry<String, String>>[
                 MapEntry('Object', object.name),
                 MapEntry('Type', column.type),
+                MapEntry('Type family', nativeType.familyLabel),
+                if (typeMetadata?.typeInfo.valueKind.trim().isNotEmpty == true)
+                  MapEntry('Value kind', typeMetadata!.typeInfo.valueKind),
+                if (spatialInfo != null)
+                  MapEntry('Spatial', spatialInfo.summaryLabel),
+                if (nativeType.enumLabels.isNotEmpty)
+                  MapEntry('Enum labels', nativeType.enumLabels.join(', ')),
                 MapEntry('Primary key', column.primaryKey ? 'Yes' : 'No'),
                 MapEntry('Nullable', column.notNull ? 'No' : 'Yes'),
                 MapEntry('Unique', column.unique ? 'Yes' : 'No'),
@@ -708,9 +742,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                     '${column.refTable}(${column.refColumn})',
                   ),
               ],
-              notes: column.constraintSummaries.isEmpty
-                  ? const <String>['No explicit constraints exposed.']
-                  : column.constraintSummaries,
+              notes: <String>[
+                if (nativeType.isNativeV25Type)
+                  'Native DecentDB type: ${nativeType.summaryLabel}.',
+                if (column.constraintSummaries.isEmpty)
+                  'No explicit constraints exposed.'
+                else
+                  ...column.constraintSummaries,
+              ],
             );
           }
         }
@@ -1118,6 +1157,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       rowIndex: rowIndex,
       columnName: columnName,
     );
+    final canCopySpatialWkb = _isSelectedResultsCellSpatial(
+      rowIndex: rowIndex,
+      columnName: columnName,
+    );
     if (!mounted) {
       return;
     }
@@ -1135,6 +1178,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           value: _ResultsCellMenuAction.copy,
           icon: Icons.copy_outlined,
           label: 'Copy',
+        ),
+        _popupMenuItem(
+          value: _ResultsCellMenuAction.copySpatialWkb,
+          icon: Icons.public_outlined,
+          label: 'Copy EWKB Base64',
+          enabled: canCopySpatialWkb,
         ),
         _popupMenuItem(
           value: _ResultsCellMenuAction.paste,
@@ -1157,6 +1206,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     switch (action) {
       case _ResultsCellMenuAction.copy:
         await _copyResultsSelection();
+        break;
+      case _ResultsCellMenuAction.copySpatialWkb:
+        await _copySelectedSpatialWkb(
+          rowIndex: rowIndex,
+          columnName: columnName,
+        );
         break;
       case _ResultsCellMenuAction.paste:
         if (clipboardText != null && clipboardText.isNotEmpty) {
@@ -1455,7 +1510,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       final cell = state.selectedCell!;
       await Clipboard.setData(
         ClipboardData(
-          text: formatCellValue(
+          text: _formatResultCellValueForCopy(
+            tab,
+            cell.columnName,
             resolveResultsCellValue(
               tab,
               state,
@@ -1477,7 +1534,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       buffer.writeln(
         columns
             .map(
-              (column) => formatCellValue(
+              (column) => _formatResultCellValueForCopy(
+                tab,
+                column,
                 resolveResultsCellValue(
                   tab,
                   state,
@@ -1491,6 +1550,31 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       );
     }
     await Clipboard.setData(ClipboardData(text: buffer.toString().trimRight()));
+  }
+
+  String _formatResultCellValueForCopy(
+    QueryTabState tab,
+    String columnName,
+    Object? value,
+  ) {
+    final contract = tab.resultContractForColumn(columnName);
+    return formatTypedCellValue(value, typeName: contract?.typeName);
+  }
+
+  Future<void> _copySelectedSpatialWkb({
+    required int rowIndex,
+    required String columnName,
+  }) async {
+    final tab = widget.controller.activeTab;
+    final state = _resultsStateFor(tab.id);
+    final value = resolveResultsCellValue(
+      tab,
+      state,
+      rowIndex,
+      columnName,
+      usePlaceholderContent: _usePlaceholderContent(widget.controller),
+    );
+    await Clipboard.setData(ClipboardData(text: formatSpatialWkbBase64(value)));
   }
 
   void _updateSelectedResultsCellValue({
@@ -1536,6 +1620,25 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       }
     }
     return false;
+  }
+
+  bool _isSelectedResultsCellSpatial({
+    required int rowIndex,
+    required String columnName,
+  }) {
+    final tab = widget.controller.activeTab;
+    final contract = tab.resultContractForColumn(columnName);
+    if (contract?.nativeTypeDescriptor.isSpatial != true) {
+      return false;
+    }
+    final value = resolveResultsCellValue(
+      tab,
+      _resultsStateFor(tab.id),
+      rowIndex,
+      columnName,
+      usePlaceholderContent: _usePlaceholderContent(widget.controller),
+    );
+    return value is Uint8List;
   }
 
   String? _firstObjectNameInFromClause(String sql) {
@@ -1779,10 +1882,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           id: 'export_results_json',
           label: 'Export Results as JSON...',
           icon: Icons.data_object_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Export JSON',
-            'JSON export is planned but not implemented yet.',
-          ),
+          onInvoke: _showJsonExportDialog,
+          enabled: controller.activeTab.canExport,
         ),
         command(
           id: 'export_results_parquet',
@@ -2241,6 +2342,51 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     await controller.exportCurrentQuery();
   }
 
+  Future<void> _showJsonExportDialog() async {
+    final controller = widget.controller;
+    final activeTab = controller.activeTab;
+    final result = await showDialog<JsonExportDialogResult>(
+      context: context,
+      builder: (context) {
+        final currentPath = activeTab.exportPath.trim();
+        final suggestedPath = currentPath.isEmpty
+            ? controller.suggestExportPath().replaceAll(
+                RegExp(r'\.csv$', caseSensitive: false),
+                '.json',
+              )
+            : currentPath.replaceAll(
+                RegExp(r'\.(csv|jsonl|ndjson)$', caseSensitive: false),
+                '.json',
+              );
+        return JsonExportDialog(
+          queryTitle: activeTab.title,
+          initialPath: suggestedPath,
+          onBrowse: (currentPath) async {
+            final initialName = currentPath.trim().isEmpty
+                ? p.basename(suggestedPath)
+                : p.basename(currentPath.trim());
+            final location = await getSaveLocation(
+              suggestedName: initialName,
+              acceptedTypeGroups: const <XTypeGroup>[_jsonTypeGroup],
+            );
+            return location?.path;
+          },
+        );
+      },
+    );
+    if (result == null) {
+      return;
+    }
+
+    controller.updateActiveExportPath(result.path);
+    await controller.exportCurrentQueryAsJson(
+      path: result.path,
+      format: result.format,
+      pretty: result.pretty,
+      includeMetadata: result.includeMetadata,
+    );
+  }
+
   Future<void> _handleIncomingFiles(Iterable<String> rawPaths) async {
     final decision = decideWorkspaceIncomingFiles(rawPaths);
     final path = decision.primaryPath;
@@ -2615,6 +2761,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   Future<void> _runPrimarySqlTarget() async {
     final executionTarget = _sqlExecutionTarget();
     if (!executionTarget.isBufferTarget) {
+      if (!await _confirmRiskySqlIfNeeded(executionTarget.sql)) {
+        return;
+      }
       await widget.controller.runActiveSql(
         executionTarget.sql,
         bufferStartOffset: executionTarget.startOffset,
@@ -2626,11 +2775,58 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       );
       return;
     }
+    if (!await _confirmRiskySqlIfNeeded(widget.controller.activeTab.sql)) {
+      return;
+    }
     await widget.controller.runActiveTab();
   }
 
   Future<void> _runEntireSqlBuffer() async {
+    if (!await _confirmRiskySqlIfNeeded(widget.controller.activeTab.sql)) {
+      return;
+    }
     await widget.controller.runActiveTab();
+  }
+
+  Future<bool> _confirmRiskySqlIfNeeded(String sql) async {
+    final assessment = assessSqlRisk(sql);
+    if (!assessment.requiresConfirmation) {
+      return true;
+    }
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(
+            assessment.isDestructive
+                ? 'Confirm Destructive SQL'
+                : 'Confirm Mutating SQL',
+          ),
+          content: Text(
+            '${assessment.reason}\n\n'
+            'Native DecentDB branch execution is not available through the '
+            'current Dart binding, so this can only run against the open '
+            'database right now.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            OutlinedButton.icon(
+              onPressed: null,
+              icon: const Icon(Icons.account_tree_outlined),
+              label: const Text('Run on New Branch'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Run on Current Database'),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
   }
 
   void _insertSnippet(SqlSnippet snippet) {
@@ -2970,7 +3166,7 @@ class _EditableFieldBinding {
   final ValueChanged<String> onChanged;
 }
 
-enum _ResultsCellMenuAction { copy, paste, setNull }
+enum _ResultsCellMenuAction { copy, copySpatialWkb, paste, setNull }
 
 enum _SchemaNodeMenuAction {
   scriptDdl,

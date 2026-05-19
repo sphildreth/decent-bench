@@ -24,6 +24,10 @@ abstract class WorkspaceDatabaseGateway {
 
   Future<SchemaSnapshot> loadSchema();
 
+  Future<ToolingMetadata> getToolingMetadata();
+
+  Future<QueryContract> describeQueryContract(String sql);
+
   Future<QueryResultPage> runQuery({
     required String sql,
     required List<Object?> params,
@@ -44,6 +48,16 @@ abstract class WorkspaceDatabaseGateway {
     required String path,
     required String delimiter,
     required bool includeHeaders,
+  });
+
+  Future<JsonExportResult> exportJson({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    required String format,
+    required bool pretty,
+    required bool includeMetadata,
   });
 
   Future<SqliteImportInspection> inspectSqliteSource({
@@ -179,6 +193,20 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   }
 
   @override
+  Future<ToolingMetadata> getToolingMetadata() async {
+    final data = await _request('getToolingMetadata');
+    return ToolingMetadata.fromMap(data);
+  }
+
+  @override
+  Future<QueryContract> describeQueryContract(String sql) async {
+    final data = await _request('describeQueryContract', <String, Object?>{
+      'sql': sql,
+    });
+    return QueryContract.fromMap(data);
+  }
+
+  @override
   Future<QueryResultPage> runQuery({
     required String sql,
     required List<Object?> params,
@@ -227,6 +255,28 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       'includeHeaders': includeHeaders,
     });
     return CsvExportResult.fromMap(data);
+  }
+
+  @override
+  Future<JsonExportResult> exportJson({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    required String format,
+    required bool pretty,
+    required bool includeMetadata,
+  }) async {
+    final data = await _request('exportJson', <String, Object?>{
+      'sql': sql,
+      'params': params,
+      'pageSize': pageSize,
+      'path': path,
+      'format': format,
+      'pretty': pretty,
+      'includeMetadata': includeMetadata,
+    });
+    return JsonExportResult.fromMap(data);
   }
 
   @override
@@ -640,8 +690,9 @@ class _BridgeWorkerState {
       final replyPort = message['replyPort']! as SendPort;
       final action = message['action']! as String;
       final payload =
-          ((message['payload'] as Map?) ?? const <Object?, Object?>{})
-              .map((key, value) => MapEntry(key as String, value));
+          ((message['payload'] as Map?) ?? const <Object?, Object?>{}).map(
+            (key, value) => MapEntry(key as String, value),
+          );
 
       try {
         final data = await _handle(action, payload);
@@ -688,6 +739,10 @@ class _BridgeWorkerState {
         return _handleOpenDatabase(payload);
       case 'loadSchema':
         return _handleLoadSchema();
+      case 'getToolingMetadata':
+        return _handleGetToolingMetadata();
+      case 'describeQueryContract':
+        return _handleDescribeQueryContract(payload);
       case 'runQuery':
         return _handleRunQuery(payload);
       case 'fetchNextPage':
@@ -696,6 +751,8 @@ class _BridgeWorkerState {
         return _handleCancelQuery(payload);
       case 'exportCsv':
         return _handleExportCsv(payload);
+      case 'exportJson':
+        return _handleExportJson(payload);
       case 'shutdown':
         await _closeAll();
         _receivePort.close();
@@ -811,13 +868,26 @@ class _BridgeWorkerState {
     };
   }
 
+  Future<Map<String, Object?>> _handleGetToolingMetadata() async {
+    final db = _requireDatabase();
+    return _normalizeJsonMap(db.schema.getToolingMetadata());
+  }
+
+  Future<Map<String, Object?>> _handleDescribeQueryContract(
+    Map<String, Object?> payload,
+  ) async {
+    final db = _requireDatabase();
+    final sql = payload['sql']! as String;
+    return _normalizeJsonMap(db.schema.describeQueryContract(sql));
+  }
+
   Future<Map<String, Object?>> _handleRunQuery(
     Map<String, Object?> payload,
   ) async {
     final db = _requireDatabase();
     final sql = payload['sql']! as String;
-    final params =
-        ((payload['params'] as List?) ?? const <Object?>[]).cast<Object?>();
+    final params = ((payload['params'] as List?) ?? const <Object?>[])
+        .cast<Object?>();
     final pageSize = payload['pageSize']! as int;
     final stopwatch = Stopwatch()..start();
     final returnsRows = _statementReturnsRows(sql);
@@ -938,8 +1008,8 @@ class _BridgeWorkerState {
   ) async {
     final db = _requireDatabase();
     final sql = payload['sql']! as String;
-    final params =
-        ((payload['params'] as List?) ?? const <Object?>[]).cast<Object?>();
+    final params = ((payload['params'] as List?) ?? const <Object?>[])
+        .cast<Object?>();
     final pageSize = payload['pageSize']! as int;
     final path = payload['path']! as String;
     final delimiter = payload['delimiter']! as String;
@@ -962,6 +1032,7 @@ class _BridgeWorkerState {
           'The current statement does not produce rows and cannot be exported.',
         );
       }
+      final typeNamesByColumn = _queryResultTypesByColumn(db, sql);
 
       final sink = file.openWrite();
       var rowCount = 0;
@@ -974,9 +1045,10 @@ class _BridgeWorkerState {
       }
       for (final row in firstPage.rows) {
         sink.writeln(
-          row.values
-              .map((value) => _escapeCsv(_csvValue(value), delimiter))
-              .join(delimiter),
+          _csvRowValues(
+            row,
+            typeNamesByColumn,
+          ).map((value) => _escapeCsv(value, delimiter)).join(delimiter),
         );
         rowCount++;
       }
@@ -986,9 +1058,10 @@ class _BridgeWorkerState {
         page = stmt.nextPage(pageSize);
         for (final row in page.rows) {
           sink.writeln(
-            row.values
-                .map((value) => _escapeCsv(_csvValue(value), delimiter))
-                .join(delimiter),
+            _csvRowValues(
+              row,
+              typeNamesByColumn,
+            ).map((value) => _escapeCsv(value, delimiter)).join(delimiter),
           );
           rowCount++;
         }
@@ -1000,6 +1073,281 @@ class _BridgeWorkerState {
       stmt.dispose();
     }
   }
+
+  Future<Map<String, Object?>> _handleExportJson(
+    Map<String, Object?> payload,
+  ) async {
+    final db = _requireDatabase();
+    final sql = payload['sql']! as String;
+    final params = ((payload['params'] as List?) ?? const <Object?>[])
+        .cast<Object?>();
+    final pageSize = payload['pageSize']! as int;
+    final path = payload['path']! as String;
+    final format = payload['format']! as String;
+    final pretty = payload['pretty']! as bool;
+    final includeMetadata = payload['includeMetadata']! as bool;
+    final ndjson = format == 'ndjson';
+
+    if (format != 'json' && format != 'ndjson') {
+      throw const BridgeFailure('JSON export format must be json or ndjson.');
+    }
+    if (!_statementReturnsRows(sql)) {
+      throw const BridgeFailure(
+        'The current statement does not produce rows and cannot be exported.',
+      );
+    }
+
+    final file = File(path);
+    await file.parent.create(recursive: true);
+    final stmt = db.prepare(sql);
+    try {
+      stmt.bindAll(params);
+      final firstPage = stmt.nextPage(pageSize);
+      if (firstPage.columns.isEmpty) {
+        throw const BridgeFailure(
+          'The current statement does not produce rows and cannot be exported.',
+        );
+      }
+
+      final typeNamesByColumn = _queryResultTypesByColumn(db, sql);
+      final metadata = includeMetadata
+          ? _jsonExportMetadata(db, sql, firstPage.columns, typeNamesByColumn)
+          : const <String, Object?>{};
+      final compactEncoder = const JsonEncoder();
+      final prettyEncoder = const JsonEncoder.withIndent('  ');
+      final rowEncoder = pretty && !ndjson ? prettyEncoder : compactEncoder;
+      final sink = file.openWrite();
+      var rowCount = 0;
+      var firstRow = true;
+
+      void writeJsonRow(Row row) {
+        final object = _jsonRowObject(row, typeNamesByColumn);
+        if (ndjson) {
+          sink.writeln(compactEncoder.convert(object));
+          rowCount++;
+          return;
+        }
+        if (!firstRow) {
+          sink.writeln(',');
+        }
+        final rowJson = rowEncoder.convert(object);
+        sink.write(_indentJson(rowJson, includeMetadata ? 4 : 2));
+        firstRow = false;
+        rowCount++;
+      }
+
+      if (ndjson) {
+        if (includeMetadata) {
+          sink.writeln(
+            compactEncoder.convert(<String, Object?>{'metadata': metadata}),
+          );
+        }
+      } else if (includeMetadata) {
+        if (pretty) {
+          sink.writeln('{');
+          sink.write('  "metadata": ');
+          sink.write(
+            _indentJsonContinuation(prettyEncoder.convert(metadata), 2),
+          );
+          sink.writeln(',');
+          sink.writeln('  "rows": [');
+        } else {
+          sink.write(
+            '{"metadata":${compactEncoder.convert(metadata)},"rows":[',
+          );
+        }
+      } else {
+        sink.write(pretty ? '[\n' : '[');
+      }
+
+      for (final row in firstPage.rows) {
+        writeJsonRow(row);
+      }
+      var page = firstPage;
+      while (!page.isLast) {
+        page = stmt.nextPage(pageSize);
+        for (final row in page.rows) {
+          writeJsonRow(row);
+        }
+      }
+
+      if (!ndjson) {
+        if (includeMetadata) {
+          if (pretty) {
+            if (!firstRow) {
+              sink.writeln();
+            }
+            sink.writeln('  ]');
+            sink.writeln('}');
+          } else {
+            sink.write(']}');
+          }
+        } else {
+          if (pretty) {
+            if (!firstRow) {
+              sink.writeln();
+            }
+            sink.writeln(']');
+          } else {
+            sink.write(']');
+          }
+        }
+      }
+
+      await sink.flush();
+      await sink.close();
+      return <String, Object?>{'rowCount': rowCount, 'path': path};
+    } finally {
+      stmt.dispose();
+    }
+  }
+}
+
+Map<String, String> _queryResultTypesByColumn(Database db, String sql) {
+  try {
+    final contract = db.schema.describeQueryContract(sql);
+    final resultColumns =
+        (contract['result_columns'] as List?) ?? const <Object?>[];
+    return <String, String>{
+      for (final raw in resultColumns)
+        if (raw is Map &&
+            raw['name'] is String &&
+            raw['type_name'] is String &&
+            (raw['type_name'] as String).trim().isNotEmpty)
+          raw['name'] as String: raw['type_name'] as String,
+    };
+  } catch (_) {
+    return const <String, String>{};
+  }
+}
+
+List<String> _csvRowValues(Row row, Map<String, String> typeNamesByColumn) {
+  return <String>[
+    for (var index = 0; index < row.values.length; index++)
+      _csvValue(
+        row.values[index],
+        typeName: index < row.columns.length
+            ? typeNamesByColumn[row.columns[index]]
+            : null,
+      ),
+  ];
+}
+
+Map<String, Object?> _jsonExportMetadata(
+  Database db,
+  String sql,
+  List<String> columns,
+  Map<String, String> typeNamesByColumn,
+) {
+  var schemaFingerprint = '';
+  var schemaFingerprintAlgorithm = '';
+  try {
+    final tooling = db.schema.getToolingMetadata();
+    schemaFingerprint = tooling['schema_fingerprint'] as String? ?? '';
+    schemaFingerprintAlgorithm =
+        tooling['schema_fingerprint_algorithm'] as String? ?? '';
+  } catch (_) {
+    // Metadata is optional for export; rows should still stream.
+  }
+  return <String, Object?>{
+    'format_version': 1,
+    'schema_fingerprint': schemaFingerprint,
+    'schema_fingerprint_algorithm': schemaFingerprintAlgorithm,
+    'columns': <Map<String, Object?>>[
+      for (final column in columns)
+        <String, Object?>{
+          'name': column,
+          'type_name': typeNamesByColumn[column],
+        },
+    ],
+    'sql': sql,
+  };
+}
+
+Map<String, Object?> _jsonRowObject(
+  Row row,
+  Map<String, String> typeNamesByColumn,
+) {
+  return <String, Object?>{
+    for (var index = 0; index < row.values.length; index++)
+      row.columns[index]: _jsonValue(
+        row.values[index],
+        typeName: typeNamesByColumn[row.columns[index]],
+      ),
+  };
+}
+
+Object? _jsonValue(Object? value, {String? typeName}) {
+  if (value == null || value is num || value is bool || value is String) {
+    return value;
+  }
+  if (value is DecimalValue) {
+    return formatDecimalValue(value.scaled, value.scale);
+  }
+  if (value is DecentDBEnumValue) {
+    final cell = NativeEnumCellValue(
+      typeId: value.typeId,
+      labelId: value.labelId,
+    );
+    return <String, Object?>{
+      'display': formatTypedCellValue(cell, typeName: typeName),
+      'enum_type_id': value.typeId,
+      'enum_label_id': value.labelId,
+    };
+  }
+  if (value is DecentDBIntervalValue) {
+    final cell = NativeIntervalCellValue(
+      months: value.months,
+      days: value.days,
+      microseconds: value.microseconds,
+    );
+    return <String, Object?>{
+      'display': cell.displayString(),
+      'months': value.months,
+      'days': value.days,
+      'microseconds': value.microseconds,
+    };
+  }
+  if (value case (unscaled: final int unscaled, scale: final int scale)) {
+    return formatDecimalValue(unscaled, scale);
+  }
+  if (value is Duration) {
+    return formatTypedCellValue(value, typeName: typeName);
+  }
+  if (value is DateTime) {
+    return formatTypedCellValue(value, typeName: typeName);
+  }
+  if (value is Uint8List) {
+    final descriptor = describeNativeType(typeName: typeName);
+    if (descriptor.isSpatial) {
+      return <String, Object?>{
+        'display': formatTypedCellValue(value, typeName: typeName),
+        'ewkb_base64': base64Encode(value),
+      };
+    }
+    if (descriptor.baseTypeName == 'UUID' && value.length == 16) {
+      return formatTypedCellValue(value, typeName: typeName);
+    }
+    return <String, Object?>{'base64': base64Encode(value)};
+  }
+  return '$value';
+}
+
+String _indentJson(String json, int spaces) {
+  final prefix = ' ' * spaces;
+  return json.split('\n').map((line) => '$prefix$line').join('\n');
+}
+
+String _indentJsonContinuation(String json, int spaces) {
+  final lines = json.split('\n');
+  if (lines.length <= 1) {
+    return json;
+  }
+  final prefix = ' ' * spaces;
+  return <String>[
+    lines.first,
+    for (final line in lines.skip(1)) '$prefix$line',
+  ].join('\n');
 }
 
 bool _statementReturnsRows(String sql) {
@@ -1041,6 +1389,26 @@ bool _isJsonTvfResultColumns(List<String> columns) {
   return columns.contains('key') &&
       columns.contains('value') &&
       columns.contains('type');
+}
+
+Map<String, Object?> _normalizeJsonMap(Map<Object?, Object?> map) {
+  return map.map((key, value) => MapEntry('$key', _normalizeJsonValue(value)));
+}
+
+Object? _normalizeJsonValue(Object? value) {
+  if (value is Map<Object?, Object?>) {
+    return _normalizeJsonMap(value);
+  }
+  if (value is Map) {
+    return <String, Object?>{
+      for (final entry in value.entries)
+        '${entry.key}': _normalizeJsonValue(entry.value),
+    };
+  }
+  if (value is List) {
+    return <Object?>[for (final item in value) _normalizeJsonValue(item)];
+  }
+  return value;
 }
 
 Map<String, Object?> _normalizeResultRow(
@@ -1181,6 +1549,27 @@ Object? _encodeCell(Object? value) {
       'scale': value.scale,
     };
   }
+  if (value is DecentDBEnumValue) {
+    return <String, Object?>{
+      'kind': 'native_enum',
+      'typeId': value.typeId,
+      'labelId': value.labelId,
+    };
+  }
+  if (value is DecentDBIntervalValue) {
+    return <String, Object?>{
+      'kind': 'native_interval',
+      'months': value.months,
+      'days': value.days,
+      'microseconds': value.microseconds,
+    };
+  }
+  if (value is Duration) {
+    return <String, Object?>{
+      'kind': 'duration',
+      'microseconds': value.inMicroseconds,
+    };
+  }
   if (value case (unscaled: final int unscaled, scale: final int scale)) {
     return <String, Object?>{
       'kind': 'decimal',
@@ -1200,20 +1589,43 @@ Object? _encodeCell(Object? value) {
   return value;
 }
 
-String _csvValue(Object? value) {
+String _csvValue(Object? value, {String? typeName}) {
   if (value == null) {
     return '';
   }
   if (value is DecimalValue) {
     return formatDecimalValue(value.scaled, value.scale);
   }
+  if (value is DecentDBEnumValue) {
+    return formatTypedCellValue(
+      NativeEnumCellValue(typeId: value.typeId, labelId: value.labelId),
+      typeName: typeName,
+    );
+  }
+  if (value is DecentDBIntervalValue) {
+    return formatTypedCellValue(
+      NativeIntervalCellValue(
+        months: value.months,
+        days: value.days,
+        microseconds: value.microseconds,
+      ),
+      typeName: typeName,
+    );
+  }
   if (value case (unscaled: final int unscaled, scale: final int scale)) {
     return formatDecimalValue(unscaled, scale);
   }
+  if (value is Duration) {
+    return formatTypedCellValue(value, typeName: typeName);
+  }
   if (value is DateTime) {
-    return value.toIso8601String();
+    return formatTypedCellValue(value, typeName: typeName);
   }
   if (value is Uint8List) {
+    final descriptor = describeNativeType(typeName: typeName);
+    if (descriptor.isSpatial || descriptor.baseTypeName == 'UUID') {
+      return formatTypedCellValue(value, typeName: typeName);
+    }
     return base64Encode(value);
   }
   return '$value';

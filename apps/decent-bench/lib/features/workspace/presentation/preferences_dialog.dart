@@ -726,6 +726,10 @@ class _PreferencesDialogState extends State<PreferencesDialog> {
                       value: ResultsPaneTab.executionPlan,
                       child: Text('Execution Plan'),
                     ),
+                    DropdownMenuItem(
+                      value: ResultsPaneTab.history,
+                      child: Text('History'),
+                    ),
                   ],
                   onChanged: (value) {
                     if (value == null) {

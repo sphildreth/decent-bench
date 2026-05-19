@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:decent_bench/features/import/domain/import_models.dart';
 import 'package:decent_bench/features/import/infrastructure/import_execution_service.dart';
@@ -444,6 +445,32 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
       );
     }
 
+    String resolveSqlFixturePath(String filename) {
+      final candidates = <String>[
+        p.normalize(
+          p.join(
+            Directory.current.path,
+            '..',
+            '..',
+            'test-data',
+            'sql_related',
+            filename,
+          ),
+        ),
+        p.normalize(
+          p.join(Directory.current.path, 'test-data', 'sql_related', filename),
+        ),
+      ];
+      for (final candidate in candidates) {
+        if (File(candidate).existsSync()) {
+          return candidate;
+        }
+      }
+      throw StateError(
+        'Could not locate test-data/sql_related/$filename from ${Directory.current.path}',
+      );
+    }
+
     setUp(() async {
       final lib = nativeLib;
       if (lib == null) {
@@ -486,6 +513,125 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
         allOf(contains('id,name'), contains('Ada'), contains('Grace')),
       );
     });
+
+    test(
+      'surfaces native v2.5 values and exports typed CSV display values',
+      skip: skipReason,
+      () async {
+        await exec(
+          'CREATE TABLE native_values ('
+          'id INT64 PRIMARY KEY, '
+          "status ENUM('draft','published') NOT NULL, "
+          'seen_date DATE, '
+          'seen_time TIME, '
+          'seen_at TIMESTAMPTZ, '
+          'span INTERVAL, '
+          'ip IPADDR, '
+          'net CIDR, '
+          'mac MACADDR, '
+          'geom GEOMETRY, '
+          'geog GEOGRAPHY)',
+        );
+        await exec(
+          'INSERT INTO native_values VALUES ('
+          "1, 'published', '2026-05-01', '09:30:01', "
+          "'2026-05-19T12:34:56Z', '1 day', "
+          "'192.168.1.15', '10.0.0.0/24', '08:00:27:13:69:77', "
+          "ST_GeomFromText('POINT(1 2)'), ST_GeogPoint(-90.0, 38.0))",
+        );
+
+        final rows = await queryAllRows(
+          'SELECT status, seen_date, seen_time, seen_at, span, ip, net, mac, '
+          'geom, geog FROM native_values',
+        );
+        final row = rows.single;
+
+        expect(row['status'], isA<NativeEnumCellValue>());
+        expect(row['seen_date'], isA<DateTime>());
+        expect(row['seen_time'], isA<Duration>());
+        expect(row['seen_at'], isA<DateTime>());
+        expect(row['span'], isA<NativeIntervalCellValue>());
+        expect(row['ip'], '192.168.1.15');
+        expect(row['net'], '10.0.0.0/24');
+        expect(row['mac'], '08:00:27:13:69:77');
+        expect(row['geom'], isA<Uint8List>());
+        expect(row['geog'], isA<Uint8List>());
+        expect(
+          formatTypedCellValue(row['geom'], typeName: 'GEOMETRY'),
+          startsWith('GEOMETRY EWKB'),
+        );
+
+        final exportPath = p.join(tempDir.path, 'native-values.csv');
+        final export = await bridge.exportCsv(
+          sql:
+              'SELECT status, seen_date, seen_time, seen_at, span, ip, net, mac, '
+              'geom, geog FROM native_values',
+          params: const <Object?>[],
+          pageSize: 8,
+          path: exportPath,
+          delimiter: ',',
+          includeHeaders: true,
+        );
+        final csv = await File(exportPath).readAsString();
+
+        expect(export.rowCount, 1);
+        expect(csv, contains('status,seen_date,seen_time,seen_at,span'));
+        expect(csv, isNot(contains('DecentDBEnumValue')));
+        expect(csv, isNot(contains('DecentDBIntervalValue')));
+        expect(csv, contains('192.168.1.15'));
+        expect(csv, contains('GEOMETRY EWKB'));
+        expect(csv, contains('GEOGRAPHY EWKB'));
+
+        final jsonPath = p.join(tempDir.path, 'native-values.json');
+        final jsonExport = await bridge.exportJson(
+          sql:
+              'SELECT status, seen_date, seen_time, seen_at, span, ip, net, mac, '
+              'geom, geog FROM native_values',
+          params: const <Object?>[],
+          pageSize: 8,
+          path: jsonPath,
+          format: 'json',
+          pretty: false,
+          includeMetadata: true,
+        );
+        final jsonPayload =
+            jsonDecode(await File(jsonPath).readAsString())
+                as Map<String, Object?>;
+        final jsonRows = jsonPayload['rows']! as List<Object?>;
+        final jsonRow = jsonRows.single! as Map<String, Object?>;
+        final jsonMetadata = jsonPayload['metadata']! as Map<String, Object?>;
+
+        expect(jsonExport.rowCount, 1);
+        expect(jsonMetadata['columns'], isA<List<Object?>>());
+        expect(jsonRow['status'], isA<Map<String, Object?>>());
+        expect(jsonRow['span'], isA<Map<String, Object?>>());
+        expect(jsonRow['geom'], isA<Map<String, Object?>>());
+        expect(jsonRow['geog'], isA<Map<String, Object?>>());
+        expect(jsonRow['ip'], '192.168.1.15');
+
+        final ndjsonPath = p.join(tempDir.path, 'native-values.ndjson');
+        final ndjsonExport = await bridge.exportJson(
+          sql: 'SELECT ip, net, mac FROM native_values',
+          params: const <Object?>[],
+          pageSize: 1,
+          path: ndjsonPath,
+          format: 'ndjson',
+          pretty: false,
+          includeMetadata: false,
+        );
+        final ndjsonLines = (await File(
+          ndjsonPath,
+        ).readAsLines()).where((line) => line.trim().isNotEmpty).toList();
+
+        expect(ndjsonExport.rowCount, 1);
+        expect(ndjsonLines, hasLength(1));
+        expect(jsonDecode(ndjsonLines.single), <String, Object?>{
+          'ip': '192.168.1.15',
+          'net': '10.0.0.0/24',
+          'mac': '08:00:27:13:69:77',
+        });
+      },
+    );
 
     test('supports parameters and paged cursors', skip: skipReason, () async {
       await exec('CREATE TABLE nums (id INTEGER PRIMARY KEY, label TEXT)');
@@ -600,6 +746,41 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
       expect(userNameIndex.temporary, isFalse);
       expect(userNameIndex.predicateSql, anyOf(isNull, isEmpty));
     });
+
+    test(
+      'exposes tooling metadata and query contracts',
+      skip: skipReason,
+      () async {
+        await exec(
+          'CREATE TABLE contract_users (id INT64 PRIMARY KEY, email TEXT NOT NULL)',
+        );
+
+        final metadata = await bridge.getToolingMetadata();
+        final contract = await bridge.describeQueryContract(
+          r'SELECT id, email FROM contract_users WHERE id = $1',
+        );
+
+        expect(metadata.metadataVersion, 1);
+        expect(
+          metadata.schemaFingerprintAlgorithm,
+          'sha256:decentdb-tooling-schema-v1',
+        );
+        expect(metadata.schemaFingerprint, hasLength(64));
+        expect(metadata.capabilities.queryDescribe, isTrue);
+        expect(contract.contractVersion, 1);
+        expect(contract.statementKind, 'query');
+        expect(contract.readOnly, isTrue);
+        expect(contract.schemaFingerprint, metadata.schemaFingerprint);
+        expect(contract.parameters.single.name, r'$1');
+        expect(contract.parameters.single.typeName, 'INT64');
+        expect(contract.parameters.single.sourceColumn, 'id');
+        expect(contract.resultColumns.map((column) => column.name), <String>[
+          'id',
+          'email',
+        ]);
+        expect(contract.resultColumns.last.typeName, 'TEXT');
+      },
+    );
 
     test(
       'supports recursive CTEs and cursor cancellation',
@@ -1845,6 +2026,124 @@ ORDER BY o.order_id, i.sku
         expect(peopleRows.last['active'], false);
         expect(metricRows, hasLength(2));
         expect(metricRows.first['quarter'], 'Q1');
+      },
+    );
+
+    test(
+      'imports a v2.5.x native-type SQL dump fixture and runs open/query/export smoke checks',
+      skip: skipReason,
+      () async {
+        final sourcePath = resolveSqlFixturePath(
+          'decentdb-v2_5_native_fixture.sql',
+        );
+
+        final inspection = await bridge.inspectSqlDumpSource(
+          sourcePath: sourcePath,
+          encoding: 'utf8',
+        );
+        expect(
+          inspection.tables.map((table) => table.sourceName),
+          orderedEquals(<String>['v25_native_features']),
+        );
+        final table = inspection.tables.first;
+        final expectedInferredTypes = <String, String>{
+          'status_enum': 'TEXT',
+          'temporal_timestamptz': 'TIMESTAMP',
+          'temporal_date': 'TIMESTAMP',
+          'temporal_time': 'TEXT',
+          'interval_span': 'TEXT',
+          'ip_address': 'TEXT',
+          'ip_network': 'TEXT',
+          'mac_address': 'TEXT',
+          'geometry_hex': 'TEXT',
+          'branch_token': 'UUID',
+          'branch_name': 'TEXT',
+          'revenue': 'DECIMAL(10,2)',
+        };
+        for (final entry in expectedInferredTypes.entries) {
+          final column = table.columns.firstWhere(
+            (column) => column.sourceName == entry.key,
+            orElse: () =>
+                throw StateError('Missing expected column ${entry.key}'),
+          );
+          expect(column.targetType, entry.value);
+        }
+
+        final request = SqlDumpImportRequest(
+          jobId: 'v25-native-smoke',
+          sourcePath: sourcePath,
+          targetPath: p.join(tempDir.path, 'phase6-native.ddb'),
+          importIntoExistingTarget: false,
+          replaceExistingTarget: true,
+          encoding: 'utf8',
+          tables: [
+            table.copyWith(
+              targetName: 'imported_v25_native_features',
+              selected: true,
+            ),
+          ],
+        );
+
+        final updates = await bridge.importSqlDump(request: request).toList();
+        final terminal = updates.last;
+        expect(terminal.kind, SqlDumpImportUpdateKind.completed);
+        expect(
+          terminal.summary?.importedTables,
+          orderedEquals(<String>['imported_v25_native_features']),
+        );
+
+        await bridge.openDatabase(request.targetPath);
+        final rows = await queryAllRows(
+          'SELECT '
+          'status_enum, temporal_timestamptz, temporal_date, temporal_time, interval_span, '
+          'ip_address, ip_network, mac_address, geometry_hex, '
+          'branch_token, branch_name, revenue '
+          'FROM imported_v25_native_features '
+          'ORDER BY id',
+        );
+
+        expect(rows, hasLength(1));
+        final row = rows.single;
+        expect(row['status_enum'], 'published');
+        expect(row['temporal_timestamptz'], isA<DateTime>());
+        expect(
+          (row['temporal_timestamptz'] as DateTime).toUtc().toIso8601String(),
+          '2026-05-19T12:34:56.000Z',
+        );
+        expect(row['temporal_date'], isA<DateTime>());
+        final temporalDate = row['temporal_date']! as DateTime;
+        expect(temporalDate.toLocal().year, 2026);
+        expect(temporalDate.toLocal().month, 5);
+        expect(temporalDate.toLocal().day, 1);
+        expect(row['temporal_time'], '09:30:00');
+        expect(row['interval_span'], '1 day');
+        expect(row['ip_address'], '192.168.1.15');
+        expect(row['ip_network'], '10.0.0.0/24');
+        expect(row['mac_address'], '08:00:27:13:69:77');
+        expect(
+          row['geometry_hex'],
+          anyOf(isA<String>(), isA<Map<Object?, Object?>>()),
+        );
+        expect(row['branch_name'], 'release');
+        expect(row['branch_token'], isNotNull);
+
+        final exportPath = p.join(tempDir.path, 'v25-native-export.csv');
+        final export = await bridge.exportCsv(
+          sql:
+              'SELECT status_enum, temporal_timestamptz, ip_address, revenue '
+              'FROM imported_v25_native_features',
+          params: const <Object?>[],
+          pageSize: 64,
+          path: exportPath,
+          delimiter: ',',
+          includeHeaders: true,
+        );
+
+        expect(export.rowCount, 1);
+        expect(
+          await File(exportPath).readAsString(),
+          contains('status_enum,temporal_timestamptz,ip_address,revenue'),
+        );
       },
     );
   });

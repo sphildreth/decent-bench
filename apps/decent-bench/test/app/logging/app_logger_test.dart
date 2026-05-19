@@ -161,23 +161,26 @@ void main() {
     expect(gateway.inserts, hasLength(1));
   });
 
-  test('logger stops retrying after a non-recoverable initialization failure', () async {
-    final gateway = _FakeLogGateway()
-      ..openError = const BridgeFailure('permission denied', code: 'io')
-      ..failOpenForever = true;
-    final logger = DecentBenchLogger(
-      gatewayFactory: () => gateway,
-      logDatabasePath: '/tmp/decent-bench-log-test.ddb',
-    );
-    addTearDown(logger.dispose);
+  test(
+    'logger stops retrying after a non-recoverable initialization failure',
+    () async {
+      final gateway = _FakeLogGateway()
+        ..openError = const BridgeFailure('permission denied', code: 'io')
+        ..failOpenForever = true;
+      final logger = DecentBenchLogger(
+        gatewayFactory: () => gateway,
+        logDatabasePath: '/tmp/decent-bench-log-test.ddb',
+      );
+      addTearDown(logger.dispose);
 
-    logger.error(category: 'workspace', operation: 'init', message: 'first');
-    logger.error(category: 'workspace', operation: 'init', message: 'second');
-    await logger.dispose();
+      logger.error(category: 'workspace', operation: 'init', message: 'first');
+      logger.error(category: 'workspace', operation: 'init', message: 'second');
+      await logger.dispose();
 
-    expect(gateway.openCalls, 1);
-    expect(gateway.inserts, isEmpty);
-  });
+      expect(gateway.openCalls, 1);
+      expect(gateway.inserts, isEmpty);
+    },
+  );
 }
 
 class _FakeLogGateway implements WorkspaceDatabaseGateway {
@@ -215,11 +218,63 @@ class _FakeLogGateway implements WorkspaceDatabaseGateway {
   }
 
   @override
+  Future<JsonExportResult> exportJson({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    required String format,
+    required bool pretty,
+    required bool includeMetadata,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<QueryResultPage> fetchNextPage({
     required String cursorId,
     required int pageSize,
   }) async {
     throw UnimplementedError();
+  }
+
+  @override
+  Future<ToolingMetadata> getToolingMetadata() async {
+    return const ToolingMetadata(
+      metadataVersion: 1,
+      engineVersion: '2.5.1',
+      databaseFormatVersion: 8,
+      schemaCookie: 1,
+      tempSchemaCookie: 0,
+      schemaFingerprint:
+          '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      schemaFingerprintAlgorithm: 'sha256:decentdb-tooling-schema-v1',
+      columnTypeMetadata: <ToolingColumnTypeMetadata>[],
+      capabilities: ToolingCapabilities(
+        queryContractVersion: 1,
+        queryDescribe: true,
+        deterministicJson: true,
+      ),
+    );
+  }
+
+  @override
+  Future<QueryContract> describeQueryContract(String sql) async {
+    return QueryContract(
+      contractVersion: 1,
+      sql: sql,
+      statementKind: sql.trimLeft().toUpperCase().startsWith('SELECT')
+          ? 'query'
+          : 'insert',
+      readOnly: sql.trimLeft().toUpperCase().startsWith('SELECT'),
+      schemaCookie: 1,
+      tempSchemaCookie: 0,
+      schemaFingerprint:
+          '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      parameters: const <QueryParameterContract>[],
+      resultColumns: const <QueryResultColumnContract>[],
+      diagnostics: const <String>[],
+    );
   }
 
   @override

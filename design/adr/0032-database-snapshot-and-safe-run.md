@@ -1,183 +1,127 @@
-## Database Snapshot and Safe-Run Operations
-**Date:** 2026-05-18
+# Native Branch, Snapshot, and Safe-Run Workbench
+
+**Date:** 2026-05-19
 **Status:** Proposed
 
-### Decision
+## Context
 
-Decent Bench will provide a one-click database snapshot mechanism: create a
-timestamped copy of the current `.ddb` file, optionally checkpointing the WAL
-before the copy. The feature will also support an opt-in auto-snapshot mode
-that automatically snapshots the database before executing any statement
-containing `DROP`, `DELETE FROM`, `ALTER`, or `INSERT INTO` (configurable
-destroy-operation set).
+ADR-0032 originally treated snapshots as file copies. That was the safest
+available model before DecentDB v2.5.x, but it is no longer the primary design.
+DecentDB v2.5.x exposes native named snapshots, branches, branch-local
+execution, branch diffs, guarded restore, constrained merge, and a C ABI JSON
+bridge for branch operations.
 
-### Rationale
+Decent Bench should build its safety workflow on those native database
+primitives. File-copy snapshots remain useful as an exportable fallback, but
+they should not define the main workbench model.
 
-Decent Bench users perform irreversible database operations regularly: dropping
-tables, deleting rows, importing data that may overwrite existing tables, or
-experimenting with schema changes whose consequences aren't fully understood.
-In every other tool domain dealing with mutable content — photo editors, CAD,
-IDEs with refactoring — "save a copy" or "snapshot" is a one-click action.
-Database tools have been slow to adopt this pattern.
+As of DecentDB `v2.5.1`, the Dart binding exposes `Database.saveAs()` for
+file-level copies and the C ABI exposes `ddb_db_branch_execute_json`, but the
+Dart package does not yet expose a public branch/snapshot API. Decent Bench must
+not hard-wire a private binding detail. The first implementation slice should
+therefore add the app-facing model and keep native branch execution behind a
+gateway boundary that can be wired once the Dart API is public.
 
-A one-click snapshot changes the user's relationship with the tool. Instead of
-hesitating before a risky query, users snapshot first and proceed with
-confidence. If the result is bad, they restore the snapshot. This removes fear
-from the workflow and encourages experimentation — the defining value of a
-workbench.
+## Decision
 
-### Implementation Strategy
+Decent Bench will model database safety around native DecentDB branches and
+snapshots:
 
-DecentDB is an embedded, single-file database. Taking a snapshot is a file-level
-operation:
+- Named snapshots are retained engine snapshots, not ordinary `.ddb` copies.
+- Branches are isolated workspaces for risky SQL, imports, and edits.
+- Destructive SQL and large imports should offer "Run on New Branch" before
+  mutating the main branch.
+- Branch diffs are the review surface before restore or merge.
+- Restore is guarded by an automatic pre-restore snapshot and a dry-run result.
+- Merge is constrained to the engine-supported branch merge semantics.
 
-1. **Optional WAL checkpoint**: If WAL mode is active, issue `PRAGMA
-   wal_checkpoint(TRUNCATE)` to flush the WAL into the main database file before
-   copying. Without this step, the snapshot would miss recent committed writes
-   still in the WAL.
-2. **File copy**: Copy the `.ddb` file using `dart:io` `File.copy()` to a
-   timestamped path.
-3. **Report**: Show the snapshot path and file size to the user.
+The bridge contract will expose branch/snapshot operations through
+`WorkspaceDatabaseGateway` rather than through UI code directly. Until the Dart
+binding exposes native branch operations, Decent Bench may expose read-only
+status and design-owned placeholders, but must not pretend branch execution is
+available.
 
-No SQL-level export, no format conversion, no data transformation. The snapshot
-is a valid DecentDB file openable directly in Decent Bench.
+## App-Facing Operations
 
-### Snapshot Naming Convention
+The eventual gateway surface should cover:
 
-```
-<dbname>-<ISO8601-UTC>.snapshot.ddb
-```
+- `listSnapshots()`
+- `createSnapshot(name)`
+- `deleteSnapshot(name)`
+- `listBranches()`
+- `createBranch(name, fromRef)`
+- `deleteBranch(name)`
+- `runQueryOnBranch(sql, branchName, params, pageSize)`
+- `branchDiff(leftRef, rightRef)`
+- `restoreBranch(branchName, targetRef, dryRun)`
+- `mergeBranch(sourceBranch, targetBranch, dryRun)`
 
-Example: `sales-2026-05-18T14-30-00Z.snapshot.ddb`
+These operations map to DecentDB's native branch JSON operations where
+available:
 
-Key decisions:
-- **ISO 8601 UTC** timestamps to avoid timezone ambiguity and locale-dependent
-  formatting.
-- **Colons replaced with hyphens** in the time portion. ISO 8601 uses `:`
-  separators (`T14:30:00`) but colons are invalid in Windows filenames and
-  problematic in some Linux contexts. Hyphens are universally safe.
-- **`.snapshot.ddb` suffix** so snapshot files are distinguishable from live
-  databases in file listings and can be associated with Decent Bench for
-  double-click opening.
+- `snapshot_create`
+- `snapshot_list`
+- `snapshot_delete`
+- `branch_create`
+- `branch_list`
+- `branch_delete`
+- `branch_diff`
+- `branch_restore`
+- `branch_merge`
 
-### Snapshot Storage
+## UI Model
 
-- Default directory: alongside the original `.ddb` file (same parent directory).
-- Configurable snapshot directory in preferences (relative or absolute path).
-- Snapshot list: recent snapshots shown in the workspace with timestamp and file
-  size. Read from the snapshot directory by matching the `<dbname>-*.snapshot.ddb`
-  pattern.
+The first user-facing workbench should include:
 
-### Restore Workflow
+- A branch/snapshot pane showing current branch context, named snapshots, and
+  branch list.
+- "Create Snapshot" and "Create Branch" commands.
+- A destructive-statement prompt with "Run on New Branch" when the query
+  contract reports a non-read-only statement or the SQL keyword is known risky.
+- A branch diff viewer grouped by table and primary-key row change.
+- A guarded restore flow that always offers a pre-restore snapshot and requires
+  dry-run review before applying.
+- A constrained merge flow that requires diff review before merge.
 
-"Restore Snapshot" opens the selected snapshot as the active database:
-1. Warns about discarding current changes since the snapshot was taken.
-2. Offers to snapshot the current state first ("Take one last snapshot before
-   restoring?").
-3. Opens the snapshot file as the new active database (equivalent to File → Open).
-4. Optionally, after confirming the restore was correct, the user can manually
-   delete or archive the old database file.
+## File-Copy Fallback
 
-Restore is not an "overwrite in place" operation. It opens a new file. This is
-safer: if the restore was a mistake, the original file is still intact.
+`Database.saveAs()` remains valuable, but only as "Export Database Copy" or as a
+fallback safety option when native branches are unavailable. It is not the
+primary rollback model.
 
-### Auto-Snapshot Before Destructive Operations
+## Non-Goals
 
-**Opt-in** preference (off by default):
+- Multi-user branch collaboration.
+- Remote branch storage.
+- Conflict-resolution UI beyond the constrained merge surface exposed by
+  DecentDB.
+- Reimplementing branch storage in Decent Bench.
+- Calling private Dart binding internals to reach the C ABI.
 
-```toml
-[snapshots]
-auto_snapshot_enabled = true
-auto_snapshot_triggers = ["DROP", "DELETE FROM", "ALTER", "INSERT INTO"]
-auto_snapshot_max_count = 20
-```
+## Consequences
 
-When enabled, before executing any SQL statement containing a trigger keyword,
-the app:
-1. Checkpoints the WAL.
-2. Creates a snapshot.
-3. Proceeds with execution.
-4. If the snapshot fails (disk full, permission error), execution is blocked
-   with a clear error — never silently skipped.
+- Decent Bench can present a safer mental model for risky operations once the
+  Dart binding exposes branch operations.
+- Table editing, import safety, saved queries, and schema drift workflows can
+  all share the same branch/snapshot safety state.
+- The initial UI may need to show "native branch operations unavailable in this
+  binding" until the public Dart API is available.
+- File-copy snapshots remain available without blocking native branch design.
 
-### Cleanup Policy
+## Validation
 
-- Configurable maximum snapshot count (default: 20 per database).
-- Configurable maximum snapshot age (default: none — keep forever).
-- On snapshot creation, if the configured limits are exceeded, the oldest
-  snapshots are deleted.
-- Deletion requires confirmation unless the user enables "auto-cleanup without
-  confirmation."
-- Snapshots are never deleted automatically for databases in an error or
-  recovery state. Only healthy databases with successful snapshots older than
-  the limit are eligible.
+- Unit tests should cover SQL risk classification and branch/snapshot model
+  decoding without requiring a native branch binding.
+- Bridge smoke tests should be added once the Dart binding exposes public
+  branch operations.
+- Full branch diff, restore, and merge tests should use small primary-key
+  fixtures and verify dry-run behavior before destructive apply paths.
 
-### Non-Goals
+## References
 
-- Incremental or differential snapshots (only full file copies). DecentDB is
-  single-file; incremental snapshots add complexity with no proportional benefit.
-- Snapshot encryption or compression.
-- Cloud/remote snapshot storage.
-- Point-in-time recovery chains (sequence of snapshots + WAL replay).
-- Snapshotting databases that are not local files (future external connector
-  scenario). When live database connectors are implemented, this feature will
-  have a natural scope boundary: snapshots only for local `.ddb` files.
-
-### Trade-offs
-
-- **File copy size**: For large databases (GB+), the file copy can be
-  time-consuming on slow disks. This is acceptable because snapshots are
-  on-demand and user-initiated. The tool shows copy progress. For very large
-  databases, users can use OS-level backup tools instead.
-- **WAL checkpoint before snapshot**: Flushing the WAL syncs recent writes to
-  disk, which is a minor performance hit but ensures the snapshot is complete.
-  Without it, a snapshot of a database with a large WAL would be missing
-  committed data, making it unreliable as a restore target. The checkpoint is
-  required.
-- **Auto-snapshot false positives**: A query containing `DELETE` as a keyword
-  but not as a destructive operation (e.g., a comment `-- note: DROP is not
-  safe here`) would trigger auto-snapshot. This is a minor annoyance, not a
-  correctness issue — better to snapshot unnecessarily than to miss a
-  destructive operation. A more sophisticated parser could be added later.
-- **No restore-in-place**: Opening a snapshot as a new file rather than
-  overwriting the original means the old file path is still occupied. Users who
-  want the original path back must rename files. This is safer behavior but
-  slightly less convenient. A "Replace with Snapshot" action can be added if
-  user feedback demands it.
-
-### References
-
-- ADR-0002 Results Paging and Streaming Contract
-- `design/PRD.md` section 9.2 (reliability)
-- `design/PRD.md` section 9.4 (local-first, privacy-first)
-- `design/FUTURE_WINS.md` Priority 6
-
-### Alternatives Considered
-
-**SQL-level export as snapshot**: Instead of copying the file, export the entire
-database as SQL (`.sql` dump) and use that as the snapshot format. Rejected
-because:
-- SQL export is slow for large databases (must read every table and serialize as
-  text).
-- SQL re-import for restore is orders of magnitude slower than opening a `.ddb`
-  file.
-- File copy is instantaneous for small-to-medium databases and preserves exact
-  engine state including indexes, WAL, and internal structures that SQL export
-  cannot represent.
-
-**Transaction-based rollback instead of snapshots**: Run all destructive queries
-in a transaction, show results, and rollback if the user doesn't confirm.
-Rejected because:
-- Not all DDL can be rolled back in all engine modes.
-- Imports that modify the database file outside explicit transactions cannot be
-  rolled back.
-- Snapshots work at the file level and are universally applicable regardless of
-  engine transaction support.
-
-**Git-based versioning of `.ddb` files**: Encourage users to use git to version
-their `.ddb` files. Rejected because:
-- Binary database files in git produce large diffs and bloat repository size.
-- This assumes git knowledge that many target users (power users / data
-  wranglers, not all of whom are developers) may not have.
-- Snapshots are a one-click in-app feature; git is an external tool with a
-  learning curve.
+- `design/FUTURE_WINS.md` priority 4
+- `design/adr/0002-results-paging-and-streaming-contract.md`
+- `design/PRD.md` section 9.2
+- `design/PRD.md` section 9.4
+- DecentDB `v2.5.1` C ABI branch JSON entry point:
+  `ddb_db_branch_execute_json`

@@ -19,8 +19,8 @@ Bench `1.1.0`, which builds on the project's shipped `1.0.0` MVP release.
   ZIP/GZip wrapper routing now use the generic import preview/execution path
 - desktop runner folders (`linux/`, `macos/`, `windows/`) are checked in
 - the DecentDB Dart package is pinned from the upstream Git tag
-  (`https://github.com/sphildreth/decentdb`), and desktop packaging stages the
-  matching `decentdb-dart-native-<tag>-...` release asset
+  (`https://github.com/sphildreth/decentdb`), currently `v2.5.1`, and desktop
+  packaging stages the matching `decentdb-dart-native-<tag>-...` release asset
 - Excel import currently supports `.xlsx`; legacy `.xls` files route through
   the existing conversion/normalization path and remain explicitly partial
 - SQL dump import currently targets the MVP-lite parser scope documented in
@@ -36,6 +36,13 @@ Bench `1.1.0`, which builds on the project's shipped `1.0.0` MVP release.
 - schema browsing is backed by DecentDB's rich schema snapshot surface
   (`Schema.getSchemaSnapshot()`), including canonical DDL, checks, foreign keys,
   generated-column metadata, triggers, and temp-object metadata
+- DecentDB v2.5.x tooling metadata and query contracts flow through the bridge
+  for schema fingerprints, parameter contracts, and result-column contracts
+- DecentDB v2.5.x native semantic/spatial types have first-class display
+  helpers for schema details, result cells, autocomplete/snippets, import type
+  overrides, WKB copy, and CSV export formatting
+- JSON and NDJSON result export reuse the paged query pipeline and can include
+  column type metadata plus schema fingerprints
 
 ## Validation
 
@@ -52,7 +59,7 @@ dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle
 dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle --verify-only
 ```
 
-The app expects a compatible DecentDB v2.x native library to be available via:
+The app expects a compatible DecentDB v2.5.1 native library to be available via:
 
 1. System library paths (`/usr/local/lib/`, `~/.local/lib/`)
 2. Bundled with the app

@@ -1,5 +1,5 @@
 ## Workspace Project File and Query Library
-**Date:** 2026-05-18
+**Date:** 2026-05-19
 **Status:** Proposed
 
 ### Decision
@@ -16,6 +16,10 @@ Decent Bench will introduce two layered persistence features:
 Both use TOML — consistent with the existing configuration format and the
 project's `TOML-first` convention established in the PRD.
 
+With DecentDB v2.5.x, saved queries also store query-contract summaries and the
+schema fingerprint observed when the query was saved. These fields let Decent
+Bench warn about schema drift before rerunning or exporting a saved query.
+
 ### Rationale
 
 The persistence infrastructure is already built. `WorkspaceState` stores
@@ -26,9 +30,9 @@ make them recallable across sessions without relying on "keep this tab open
 forever."
 
 Saved queries also create compounding value with other roadmap items:
-parameterized queries (ADR-003?) become far more useful when the SQL is saved
-and the user only needs to fill in parameter values. SDK generation (BACKLOG)
-needs named query contracts as input. Export profiles need queries to export.
+parameterized queries become far more useful when the SQL is saved and the user
+only needs to fill in parameter values. SDK generation needs named query
+contracts as input. Export profiles need queries to export.
 
 ### Query Library Format
 
@@ -53,6 +57,23 @@ folder = "reports"          # optional, empty string = root
 tags = ["sales", "monthly"] # optional
 created_at = "2026-05-18T14:30:00Z"
 updated_at = "2026-05-18T14:30:00Z"
+schema_fingerprint = "..."
+schema_fingerprint_algorithm = "sha256:decentdb-tooling-schema-v1"
+
+[queries.contract]
+contract_version = 1
+statement_kind = "query"
+read_only = true
+
+[[queries.contract.parameters]]
+position = 1
+name = "$1"
+type_name = "DATE"
+
+[[queries.contract.result_columns]]
+ordinal = 0
+name = "region"
+type_name = "TEXT"
 ```
 
 Key design choices:
@@ -64,6 +85,9 @@ Key design choices:
   This keeps the format simple while supporting basic organization. A full tree
   with nested folders can be added later if needed.
 - **Tags** are free-form strings for cross-cutting organization.
+- **Contract summaries** intentionally persist only the fields Decent Bench
+  needs for drift warnings, parameter forms, typed exports, and SDK generation.
+  The engine remains the source of truth and queries are re-described on load.
 
 ### Workspace Project File Format
 
@@ -91,6 +115,10 @@ format = "csv"
 delimiter = ","
 include_headers = true
 output_dir = "exports/"            # relative to project file
+
+[branch_safety]
+preferred_branch = "main"
+run_risky_queries_on_branch = true
 ```
 
 Key design choices:
@@ -105,6 +133,8 @@ Key design choices:
   library by path — it does not embed database contents or query SQL inline by
   default. This keeps project files small and version-control-friendly.
 - **Config version** for forward compatibility and migration.
+- **Branch safety preferences** reference DecentDB branch names but do not embed
+  branch data. Native branch state remains inside the database.
 
 ### Auto-Save and Recovery
 
@@ -116,11 +146,14 @@ Key design choices:
 - The workspace state file (`workspace-state.json`) continues to store per-tab
   ephemeral state (open tabs, cursor position, execution status). The query
   library (`queries.toml`) stores only explicitly saved queries.
+- When opening a saved query, Decent Bench compares the saved
+  `schema_fingerprint` with the current tooling metadata fingerprint and shows a
+  drift warning if they differ.
 
 ### Non-Goals
 
-- Query version history beyond what per-tab history provides (see `FUTURE_WINS.md`
-  Priority 4). The query library stores the current version; history is tab-scoped.
+- Query version history beyond what per-tab history provides. The query library
+  stores the current version; history is tab-scoped.
 - Shared/collaborative query libraries requiring a server or sync infrastructure.
 - Query scheduling or automation triggers (cron-style execution).
 - Cloud-based project sharing.
@@ -147,9 +180,10 @@ Key design choices:
 
 - ADR-0004 Workspace State Persistence
 - ADR-0022 Headless CLI Import Mode and Plan File
+- ADR-0032 Native Branch, Snapshot, and Safe-Run Workbench
 - `design/PRD.md` section 3.2 (saved queries, workspace projects)
 - `design/SPEC.md` section 4.3 (SQL editor and results tabs)
-- `design/FUTURE_WINS.md` Priority 3
+- `design/FUTURE_WINS.md` Priority 7
 
 ### Alternatives Considered
 

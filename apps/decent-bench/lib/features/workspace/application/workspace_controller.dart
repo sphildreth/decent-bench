@@ -47,6 +47,7 @@ class WorkspaceController extends ChangeNotifier {
 
   AppConfig config = AppConfig.defaults();
   SchemaSnapshot schema = SchemaSnapshot.empty();
+  ToolingMetadata? toolingMetadata;
   List<QueryTabState> tabs = const <QueryTabState>[];
   ExcelImportSession? excelImportSession;
   SqlDumpImportSession? sqlDumpImportSession;
@@ -214,6 +215,27 @@ class WorkspaceController extends ChangeNotifier {
 
   int _durationToNanos(Duration duration) => duration.inMicroseconds * 1000;
 
+  Map<String, Object?> _queryContractLogDetails(QueryContract? contract) {
+    if (contract == null) {
+      return const <String, Object?>{};
+    }
+    return <String, Object?>{
+      'schema_fingerprint': contract.schemaFingerprint,
+      'statement_kind': contract.statementKind,
+      'read_only': contract.readOnly,
+      'parameter_count': contract.parameters.length,
+      'result_column_contracts': <Map<String, Object?>>[
+        for (final column in contract.resultColumns)
+          <String, Object?>{
+            'name': column.name,
+            'type_name': column.typeName,
+            'nullable': column.nullable,
+            'source': column.sourceLabel,
+          },
+      ],
+    };
+  }
+
   QueryTabState? tabById(String tabId) {
     for (final tab in tabs) {
       if (tab.id == tabId) {
@@ -318,6 +340,7 @@ class WorkspaceController extends ChangeNotifier {
     isOpeningDatabase = true;
     isSchemaLoading = true;
     schema = SchemaSnapshot.empty();
+    toolingMetadata = null;
     workspaceError = null;
     workspaceMessage = createIfMissing
         ? 'Creating database...'
@@ -360,12 +383,15 @@ class WorkspaceController extends ChangeNotifier {
           'tab_count': tabs.length,
           'schema_tables': schema.tables.length,
           'schema_views': schema.views.length,
+          if (toolingMetadata?.schemaFingerprint.isNotEmpty == true)
+            'schema_fingerprint': toolingMetadata!.schemaFingerprint,
         },
       );
     } catch (error) {
       databasePath = null;
       engineVersion = null;
       schema = SchemaSnapshot.empty();
+      toolingMetadata = null;
       _setWorkspaceError(error.toString());
       _resetTabs(notify: false, resetCounters: true);
       _logError(
@@ -402,10 +428,14 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     try {
-      schema = await _gateway.loadSchema();
+      final loadedSchema = await _gateway.loadSchema();
+      final metadata = await _gateway.getToolingMetadata();
+      schema = loadedSchema;
+      toolingMetadata = metadata;
       workspaceMessage =
           'Loaded ${schema.tables.length} tables and ${schema.views.length} views.';
       workspaceError = null;
+      _scheduleWorkspaceStateSave();
       _logInfo(
         'refresh_schema',
         'Loaded schema snapshot.',
@@ -415,9 +445,13 @@ class WorkspaceController extends ChangeNotifier {
           'table_count': schema.tables.length,
           'view_count': schema.views.length,
           'index_count': schema.indexes.length,
+          'schema_fingerprint': metadata.schemaFingerprint,
+          'metadata_version': metadata.metadataVersion,
+          'query_contract_version': metadata.capabilities.queryContractVersion,
         },
       );
     } catch (error) {
+      toolingMetadata = null;
       _setWorkspaceError(error.toString());
       _logError(
         'refresh_schema',
@@ -573,6 +607,18 @@ class WorkspaceController extends ChangeNotifier {
     await runActiveTab();
   }
 
+  void clearActiveTabHistory() {
+    clearTabHistory(activeTabId);
+  }
+
+  void clearTabHistory(String tabId) {
+    _mutateTab(
+      tabId,
+      (tab) => tab.copyWith(queryHistory: const <QueryHistoryEntry>[]),
+      persist: true,
+    );
+  }
+
   void createTab({String? sql}) {
     final title = _newTabTitle();
     final tab = QueryTabState.initial(
@@ -699,6 +745,7 @@ class WorkspaceController extends ChangeNotifier {
         isResultPartial: false,
         executionGeneration: generation,
         executionPlan: const QueryExecutionPlanState.loading(),
+        queryContract: null,
         messageHistory: _appendMessage(
           current.messageHistory,
           QueryMessageLevel.info,
@@ -731,6 +778,10 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     try {
+      final queryContract = await _gateway.describeQueryContract(trimmedSql);
+      if (!_isCurrentGeneration(tabId, generation)) {
+        return;
+      }
       final page = await _gateway.runQuery(
         sql: trimmedSql,
         params: params,
@@ -755,6 +806,7 @@ class WorkspaceController extends ChangeNotifier {
         final updated = _applyFirstPage(
           current,
           page,
+          queryContract: queryContract,
           statusMessage: statusMessage,
         );
         final withPlan = explainsCurrentSql
@@ -1178,6 +1230,19 @@ class WorkspaceController extends ChangeNotifier {
 
   Future<void> exportCurrentQuery() => exportTabQuery(activeTabId);
 
+  Future<void> exportCurrentQueryAsJson({
+    required String path,
+    required String format,
+    required bool pretty,
+    required bool includeMetadata,
+  }) => exportTabQueryAsJson(
+    activeTabId,
+    path: path,
+    format: format,
+    pretty: pretty,
+    includeMetadata: includeMetadata,
+  );
+
   Future<void> exportTabQuery(String tabId) async {
     final tab = tabById(tabId);
     if (tab == null) {
@@ -1231,7 +1296,11 @@ class WorkspaceController extends ChangeNotifier {
       category: 'export',
       databasePath: databasePath,
       sql: tab.lastSql,
-      details: <String, Object?>{'tab_id': tabId, 'path': exportPath},
+      details: <String, Object?>{
+        'tab_id': tabId,
+        'path': exportPath,
+        ..._queryContractLogDetails(tab.queryContract),
+      },
     );
 
     try {
@@ -1264,7 +1333,11 @@ class WorkspaceController extends ChangeNotifier {
         sql: tab.lastSql,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         rowCount: result.rowCount,
-        details: <String, Object?>{'tab_id': tabId, 'path': result.path},
+        details: <String, Object?>{
+          'tab_id': tabId,
+          'path': result.path,
+          ..._queryContractLogDetails(tab.queryContract),
+        },
       );
     } catch (error) {
       _mutateTab(tabId, (current) {
@@ -1292,6 +1365,146 @@ class WorkspaceController extends ChangeNotifier {
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         error: error,
         details: <String, Object?>{'tab_id': tabId, 'path': exportPath},
+      );
+    } finally {
+      _safeNotify();
+    }
+  }
+
+  Future<void> exportTabQueryAsJson(
+    String tabId, {
+    required String path,
+    required String format,
+    required bool pretty,
+    required bool includeMetadata,
+  }) async {
+    final tab = tabById(tabId);
+    if (tab == null) {
+      return;
+    }
+    final exportPath = path.trim();
+    final stopwatch = Stopwatch()..start();
+    if (!tab.canExport) {
+      _setTabError(
+        tabId,
+        QueryErrorDetails(
+          stage: QueryErrorStage.export,
+          message: 'Run a row-producing query before exporting JSON.',
+        ),
+      );
+      return;
+    }
+    if (exportPath.isEmpty) {
+      _setTabError(
+        tabId,
+        QueryErrorDetails(
+          stage: QueryErrorStage.export,
+          message: 'Enter a JSON destination path first.',
+        ),
+      );
+      return;
+    }
+
+    _mutateTab(
+      tabId,
+      (current) => current.copyWith(
+        isExporting: true,
+        error: null,
+        statusMessage: 'Exporting ${format.toUpperCase()}...',
+        messageHistory: _appendMessage(
+          current.messageHistory,
+          QueryMessageLevel.info,
+          'Exporting ${format.toUpperCase()}...',
+        ),
+      ),
+      notify: false,
+    );
+    _safeNotify();
+    _logInfo(
+      'export_json',
+      'Exporting query results to JSON.',
+      category: 'export',
+      databasePath: databasePath,
+      sql: tab.lastSql,
+      details: <String, Object?>{
+        'tab_id': tabId,
+        'path': exportPath,
+        'format': format,
+        'pretty': pretty,
+        'include_metadata': includeMetadata,
+        ..._queryContractLogDetails(tab.queryContract),
+      },
+    );
+
+    try {
+      final result = await _gateway.exportJson(
+        sql: tab.lastSql!,
+        params: tab.lastParams,
+        pageSize: config.defaultPageSize,
+        path: exportPath,
+        format: format,
+        pretty: pretty,
+        includeMetadata: includeMetadata,
+      );
+      _mutateTab(tabId, (current) {
+        final statusMessage =
+            'Exported ${result.rowCount} rows to ${result.path}.';
+        return current.copyWith(
+          isExporting: false,
+          statusMessage: statusMessage,
+          messageHistory: _appendMessage(
+            current.messageHistory,
+            QueryMessageLevel.info,
+            statusMessage,
+          ),
+        );
+      }, notify: false);
+      _logInfo(
+        'export_json',
+        'JSON export completed.',
+        category: 'export',
+        databasePath: databasePath,
+        sql: tab.lastSql,
+        elapsedNanos: _durationToNanos(stopwatch.elapsed),
+        rowCount: result.rowCount,
+        details: <String, Object?>{
+          'tab_id': tabId,
+          'path': result.path,
+          'format': format,
+          'include_metadata': includeMetadata,
+          ..._queryContractLogDetails(tab.queryContract),
+        },
+      );
+    } catch (error) {
+      _mutateTab(tabId, (current) {
+        final failure = QueryErrorDetails.fromError(
+          error,
+          stage: QueryErrorStage.export,
+        );
+        return current.copyWith(
+          isExporting: false,
+          error: failure,
+          statusMessage: null,
+          messageHistory: _appendMessage(
+            current.messageHistory,
+            QueryMessageLevel.error,
+            '${failure.stageLabel}: ${failure.message}',
+          ),
+        );
+      }, notify: false);
+      _logError(
+        'export_json',
+        'JSON export failed.',
+        category: 'export',
+        databasePath: databasePath,
+        sql: tab.lastSql,
+        elapsedNanos: _durationToNanos(stopwatch.elapsed),
+        error: error,
+        details: <String, Object?>{
+          'tab_id': tabId,
+          'path': exportPath,
+          'format': format,
+        },
       );
     } finally {
       _safeNotify();
@@ -3044,6 +3257,7 @@ class WorkspaceController extends ChangeNotifier {
   QueryTabState _applyFirstPage(
     QueryTabState tab,
     QueryResultPage page, {
+    QueryContract? queryContract,
     required String statusMessage,
   }) {
     return tab.copyWith(
@@ -3055,6 +3269,7 @@ class WorkspaceController extends ChangeNotifier {
       hasMoreRows: !page.done,
       phase: QueryPhase.completed,
       statusMessage: statusMessage,
+      queryContract: queryContract,
     );
   }
 
@@ -3565,6 +3780,7 @@ class WorkspaceController extends ChangeNotifier {
               ? _suggestExportPathForTitle(draft.title)
               : draft.exportPath,
         ).copyWith(
+          queryContract: draft.queryContract,
           messageHistory: draft.messageHistory,
           queryHistory: draft.queryHistory,
         ),
@@ -3711,6 +3927,8 @@ class WorkspaceController extends ChangeNotifier {
     return PersistedWorkspaceState(
       schemaVersion: PersistedWorkspaceState.currentSchemaVersion,
       activeTabId: _activeTabId,
+      schemaFingerprint: toolingMetadata?.schemaFingerprint,
+      schemaFingerprintAlgorithm: toolingMetadata?.schemaFingerprintAlgorithm,
       tabs: <WorkspaceTabDraft>[
         for (final tab in tabs)
           WorkspaceTabDraft(
@@ -3721,6 +3939,7 @@ class WorkspaceController extends ChangeNotifier {
             exportPath: tab.exportPath.trim().isEmpty
                 ? suggestExportPath(tab.id)
                 : tab.exportPath,
+            queryContract: tab.queryContract,
             messageHistory: tab.messageHistory,
             queryHistory: tab.queryHistory,
           ),

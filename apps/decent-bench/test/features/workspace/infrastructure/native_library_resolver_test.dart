@@ -29,7 +29,7 @@ void main() {
         '.dart_tool',
         'decentdb',
         'native',
-        'v2.3.0',
+        'v2.5.1',
         'Linux-x64',
         'libdecentdb.so',
       );
@@ -128,7 +128,7 @@ void main() {
                 '.dart_tool',
                 'decentdb',
                 'native',
-                'v2.3.0',
+                'v2.5.1',
                 'Linux-x64',
                 'libdecentdb.so',
               ),

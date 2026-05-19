@@ -1,4 +1,5 @@
 import 'package:decent_bench/features/workspace/domain/app_config.dart';
+import 'package:decent_bench/features/workspace/domain/import_target_types.dart';
 import 'package:decent_bench/features/workspace/domain/sql_autocomplete.dart';
 import 'package:decent_bench/features/workspace/domain/workspace_models.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -105,5 +106,54 @@ void main() {
     );
 
     expect(result.suggestions.map((item) => item.label), contains('COUNT'));
+  });
+
+  test('suggests native v2.5 types and spatial functions', () {
+    final config = AppConfig.defaults();
+    final typeResult = engine.suggest(
+      sql: 'CREATE TABLE places (shape geo',
+      cursorOffset: 'CREATE TABLE places (shape geo'.length,
+      schema: schema,
+      config: config,
+    );
+    final functionResult = engine.suggest(
+      sql: 'SELECT st_d',
+      cursorOffset: 'SELECT st_d'.length,
+      schema: schema,
+      config: config,
+    );
+    final snippetResult = engine.suggest(
+      sql: 'spa',
+      cursorOffset: 'spa'.length,
+      schema: schema,
+      config: config,
+    );
+
+    expect(
+      typeResult.suggestions.map((item) => item.label),
+      containsAll(<String>['GEOMETRY', 'GEOGRAPHY']),
+    );
+    expect(
+      functionResult.suggestions.map((item) => item.label),
+      containsAll(<String>['ST_DISTANCE', 'ST_DWITHIN']),
+    );
+    expect(
+      snippetResult.suggestions.map((item) => item.detail),
+      contains('snippet: Spatial Nearby Query'),
+    );
+  });
+
+  test('native import target types are selectable', () {
+    expect(
+      decentDbImportTargetTypes,
+      containsAll(<String>[
+        'TIMESTAMPTZ',
+        'IPADDR',
+        'CIDR',
+        'MACADDR',
+        'GEOMETRY',
+        'GEOGRAPHY',
+      ]),
+    );
   });
 }

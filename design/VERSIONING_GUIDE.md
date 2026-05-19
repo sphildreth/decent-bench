@@ -71,7 +71,7 @@ decentdb:
   git:
     url: https://github.com/sphildreth/decentdb
     path: bindings/dart/dart
-    ref: v2.3.0
+    ref: v2.5.1
 ```
 
 The DecentDB engine version and the Decent Bench application version are
@@ -156,7 +156,7 @@ The pinned DecentDB engine version lives in:
 # apps/decent-bench/pubspec.yaml
 decentdb:
   git:
-    ref: v2.3.0
+    ref: v2.5.1
 ```
 
 The `pubspec.lock` file records the resolved version automatically. CI workflows
@@ -333,16 +333,17 @@ Examples of when NOT to bump:
 
 ### Workspace state persistence (`workspace-state.json`)
 
-The workspace state file stores per-tab SQL, parameters, export paths, and
-query history. As of v1.1.0, this file does not carry an explicit schema version.
-The `WorkspaceStateController` handles state loading and gracefully degrades on
-unrecognized fields. If the state format changes:
+The workspace state file stores an explicit `schemaVersion` plus per-tab SQL,
+parameters, export paths, query history, schema fingerprint summaries, and
+query-contract summaries. The current workspace state schema version is `3`.
+State loading treats added fields as optional so older files continue to load.
+If the state format changes:
 
-- **Adding fields**: Backwards-compatible. No version action needed.
-- **Removing or renaming fields**: Add a `workspace_state_version` field and
-  migration logic before shipping.
-- **Changing field semantics**: Treat as breaking. Add a version field and
-  migration logic.
+- **Adding optional fields**: Backwards-compatible. Bump `schemaVersion` only
+  when the new field should be visible to diagnostics or migration tests.
+- **Removing or renaming fields**: Add migration logic before shipping.
+- **Changing field semantics**: Treat as breaking for persisted workspace
+  behavior. Add migration logic and document the compatibility impact.
 
 ### Theme compatibility
 
@@ -412,13 +413,13 @@ breaking changes. This is a code quality improvement.
 
 ### Scenario E: Pinned DecentDB engine update (dependent on content)
 
-Branch has: DecentDB pinned from v2.3.0 to v2.4.0, which adds one new SQL
+Branch has: DecentDB pinned from v2.5.0 to v2.5.1, which adds one new SQL
 function. Decent Bench exposes this in autocomplete and documentation.
 
 **Decision**: Minor bump. The new SQL function is a user-visible capability,
 even though the implementation is in the engine. Decent Bench is surfacing it.
 
-Branch has: DecentDB pinned from v2.3.0 to v2.3.1 (bug fix release). No new SQL
+Branch has: DecentDB pinned from v2.5.1 to v2.5.2 (bug fix release). No new SQL
 surface, no Decent Bench behavior changes.
 
 **Decision**: Patch bump. Engine bug fix, no user-visible capability change in

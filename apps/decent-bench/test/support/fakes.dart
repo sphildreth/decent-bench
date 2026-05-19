@@ -282,6 +282,46 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
     ],
     loadedAt: DateTime(2026, 3, 9),
   );
+  ToolingMetadata toolingMetadata = const ToolingMetadata(
+    metadataVersion: 1,
+    engineVersion: '2.5.1',
+    databaseFormatVersion: 8,
+    schemaCookie: 1,
+    tempSchemaCookie: 0,
+    schemaFingerprint:
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    schemaFingerprintAlgorithm: 'sha256:decentdb-tooling-schema-v1',
+    columnTypeMetadata: <ToolingColumnTypeMetadata>[
+      ToolingColumnTypeMetadata(
+        tableName: 'tasks',
+        columnName: 'id',
+        columnType: 'INT64',
+        typeInfo: ToolingTypeInfo(
+          typeName: 'INT64',
+          valueKind: 'int64',
+          cValueTag: 1,
+        ),
+      ),
+      ToolingColumnTypeMetadata(
+        tableName: 'tasks',
+        columnName: 'title',
+        columnType: 'TEXT',
+        typeInfo: ToolingTypeInfo(
+          typeName: 'TEXT',
+          valueKind: 'text',
+          cValueTag: 4,
+        ),
+      ),
+    ],
+    capabilities: ToolingCapabilities(
+      queryContractVersion: 1,
+      queryDescribe: true,
+      deterministicJson: true,
+    ),
+  );
+  Object? toolingMetadataError;
+  Object? queryContractError;
+  String? lastDescribedQuerySql;
 
   @override
   Future<void> cancelQuery(String cursorId) async {
@@ -353,6 +393,20 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   }) async {
     lastExportPath = path;
     return CsvExportResult(rowCount: 2, path: path);
+  }
+
+  @override
+  Future<JsonExportResult> exportJson({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    required String format,
+    required bool pretty,
+    required bool includeMetadata,
+  }) async {
+    lastExportPath = path;
+    return JsonExportResult(rowCount: 2, path: path);
   }
 
   @override
@@ -649,6 +703,28 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   Future<SchemaSnapshot> loadSchema() async => snapshot;
 
   @override
+  Future<ToolingMetadata> getToolingMetadata() async {
+    final error = toolingMetadataError;
+    if (error != null) {
+      throw error;
+    }
+    return toolingMetadata;
+  }
+
+  @override
+  Future<QueryContract> describeQueryContract(String sql) async {
+    lastDescribedQuerySql = sql;
+    final error = queryContractError;
+    if (error != null) {
+      throw error;
+    }
+    if (sql.toUpperCase().contains('BROKEN')) {
+      throw const BridgeFailure('syntax error near BROKEN', code: 'ERR_SQL');
+    }
+    return _fakeQueryContract(sql, toolingMetadata.schemaFingerprint);
+  }
+
+  @override
   Future<SqliteImportPreview> loadSqlitePreview({
     required String sourcePath,
     required String tableName,
@@ -922,6 +998,84 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
       rolledBack: true,
     );
   }
+}
+
+QueryContract _fakeQueryContract(String sql, String schemaFingerprint) {
+  final upperSql = sql.toUpperCase();
+  final isCreate = upperSql.startsWith('CREATE');
+  final usesProjects = sql.toLowerCase().contains('projects');
+  final columns = usesProjects
+      ? const <QueryResultColumnContract>[
+          QueryResultColumnContract(
+            ordinal: 0,
+            name: 'id',
+            typeName: 'INT64',
+            nullable: false,
+            source: 'catalog_column',
+            sourceTable: 'projects',
+            sourceColumn: 'id',
+            diagnostics: <String>[],
+          ),
+          QueryResultColumnContract(
+            ordinal: 1,
+            name: 'name',
+            typeName: 'TEXT',
+            nullable: false,
+            source: 'catalog_column',
+            sourceTable: 'projects',
+            sourceColumn: 'name',
+            diagnostics: <String>[],
+          ),
+        ]
+      : isCreate
+      ? const <QueryResultColumnContract>[]
+      : const <QueryResultColumnContract>[
+          QueryResultColumnContract(
+            ordinal: 0,
+            name: 'id',
+            typeName: 'INT64',
+            nullable: false,
+            source: 'catalog_column',
+            sourceTable: 'tasks',
+            sourceColumn: 'id',
+            diagnostics: <String>[],
+          ),
+          QueryResultColumnContract(
+            ordinal: 1,
+            name: 'title',
+            typeName: 'TEXT',
+            nullable: false,
+            source: 'catalog_column',
+            sourceTable: 'tasks',
+            sourceColumn: 'title',
+            diagnostics: <String>[],
+          ),
+        ];
+  return QueryContract(
+    contractVersion: 1,
+    sql: sql,
+    statementKind: isCreate ? 'create' : 'query',
+    readOnly: !isCreate,
+    schemaCookie: 1,
+    tempSchemaCookie: 0,
+    schemaFingerprint: schemaFingerprint,
+    parameters: sql.contains(r'$1')
+        ? const <QueryParameterContract>[
+            QueryParameterContract(
+              position: 1,
+              name: r'$1',
+              typeName: 'INT64',
+              nullable: false,
+              source: 'catalog_column',
+              sourceTable: 'tasks',
+              sourceColumn: 'id',
+              diagnostics: <String>[],
+            ),
+          ]
+        : const <QueryParameterContract>[],
+    resultColumns: columns,
+    diagnostics: const <String>[],
+  );
 }
 
 ExcelImportInspection _defaultExcelInspection(String sourcePath) {
