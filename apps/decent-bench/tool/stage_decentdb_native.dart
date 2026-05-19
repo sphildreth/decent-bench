@@ -16,6 +16,7 @@ Future<void> main(List<String> args) async {
   }
   final bundlePath = options['bundle']?.trim() ?? '';
   final sourcePath = options['source']?.trim();
+  final migrationToolSourcePath = options['migration-tool-source']?.trim();
   final verifyOnly = options.containsKey('verify-only');
 
   if (bundlePath.isEmpty) {
@@ -30,6 +31,11 @@ Future<void> main(List<String> args) async {
     resolver.bundleRelativeInstallPath,
   );
   final destinationFile = File(destinationPath);
+  final migrationToolDestinationPath = p.join(
+    bundlePath,
+    resolver.migrationToolBundleRelativeInstallPath,
+  );
+  final migrationToolDestinationFile = File(migrationToolDestinationPath);
 
   if (verifyOnly) {
     if (!destinationFile.existsSync()) {
@@ -42,15 +48,30 @@ Future<void> main(List<String> args) async {
     stdout.writeln(
       'Verified bundled DecentDB native library: $destinationPath',
     );
+    if (!migrationToolDestinationFile.existsSync()) {
+      stderr.writeln(
+        'Expected bundled DecentDB migration tool at $migrationToolDestinationPath, but no file was found.',
+      );
+      exitCode = 1;
+      return;
+    }
+    stdout.writeln(
+      'Verified bundled DecentDB migration tool: $migrationToolDestinationPath',
+    );
     return;
+  }
+
+  DecentDbNativeReleaseAsset? releaseAsset;
+  DecentDbNativeReleaseAsset resolveReleaseAsset() {
+    return releaseAsset ??= DecentDbNativeReleaseAsset.locate(
+      startPath: Directory.current.path,
+    );
   }
 
   final sourceFile = File(
     sourcePath?.isNotEmpty == true
         ? sourcePath!
-        : await DecentDbNativeReleaseAsset.ensureAvailableForCurrentProject(
-            startPath: Directory.current.path,
-          ),
+        : await resolveReleaseAsset().ensureAvailable(),
   );
   if (!sourceFile.existsSync()) {
     stderr.writeln(
@@ -63,6 +84,31 @@ Future<void> main(List<String> args) async {
   await destinationFile.parent.create(recursive: true);
   await sourceFile.copy(destinationFile.path);
   stdout.writeln('Staged ${sourceFile.path} -> ${destinationFile.path}');
+
+  final migrationToolSourceFile = File(
+    migrationToolSourcePath?.isNotEmpty == true
+        ? migrationToolSourcePath!
+        : await resolveReleaseAsset().ensureMigrationToolAvailable(),
+  );
+  if (!migrationToolSourceFile.existsSync()) {
+    stderr.writeln(
+      'Resolved DecentDB migration tool source file does not exist: ${migrationToolSourceFile.path}',
+    );
+    exitCode = 1;
+    return;
+  }
+
+  await migrationToolDestinationFile.parent.create(recursive: true);
+  await migrationToolSourceFile.copy(migrationToolDestinationFile.path);
+  if (!Platform.isWindows) {
+    await Process.run('chmod', <String>[
+      '755',
+      migrationToolDestinationFile.path,
+    ]);
+  }
+  stdout.writeln(
+    'Staged ${migrationToolSourceFile.path} -> ${migrationToolDestinationFile.path}',
+  );
 }
 
 Map<String, String?> _parseArgs(List<String> args) {
@@ -82,6 +128,14 @@ Map<String, String?> _parseArgs(List<String> args) {
         }
         options['source'] = args[++i];
         break;
+      case '--migration-tool-source':
+        if (i + 1 >= args.length) {
+          throw const FormatException(
+            '--migration-tool-source requires a value.',
+          );
+        }
+        options['migration-tool-source'] = args[++i];
+        break;
       case '--verify-only':
         options['verify-only'] = 'true';
         break;
@@ -98,6 +152,6 @@ Map<String, String?> _parseArgs(List<String> args) {
 
 void _printUsage(IOSink sink) {
   sink.writeln(
-    'Usage: dart run tool/stage_decentdb_native.dart --bundle <bundle-path> [--source <native-lib-path>] [--verify-only]',
+    'Usage: dart run tool/stage_decentdb_native.dart --bundle <bundle-path> [--source <native-lib-path>] [--migration-tool-source <decentdb-migrate-path>] [--verify-only]',
   );
 }

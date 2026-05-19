@@ -54,6 +54,11 @@ packages:
         searchRoots: [p.join(projectDir.path, 'test')],
         platform: DecentDbNativeAssetPlatform.linux,
       ).toList();
+      final toolCandidates =
+          DecentDbNativeReleaseAsset.cachedMigrationToolCandidates(
+            searchRoots: [p.join(projectDir.path, 'test')],
+            platform: DecentDbNativeAssetPlatform.linux,
+          ).toList();
 
       expect(
         candidates,
@@ -66,6 +71,20 @@ packages:
             'v2.5.1',
             'Linux-x64',
             'libdecentdb.so',
+          ),
+        ),
+      );
+      expect(
+        toolCandidates,
+        contains(
+          p.join(
+            projectDir.path,
+            '.dart_tool',
+            'decentdb',
+            'native',
+            'v2.5.1',
+            'Linux-x64',
+            'decentdb-migrate',
           ),
         ),
       );
@@ -125,5 +144,30 @@ packages:
       download.downloadUri.toString(),
       'https://example.invalid/dart-native',
     );
+  });
+
+  test('selects the full release bundle for migration tools', () {
+    final download = DecentDbNativeReleaseAsset.selectDownload(
+      metadata: {
+        'assets': [
+          {
+            'name': 'decentdb-v2.5.1-Linux-x64.tar.gz',
+            'browser_download_url': 'https://example.invalid/generic',
+          },
+          {
+            'name': 'decentdb-dart-native-v2.5.1-Linux-x64.tar.gz',
+            'browser_download_url': 'https://example.invalid/dart-native',
+          },
+        ],
+      },
+      tag: 'v2.5.1',
+      releaseSuffix: 'Linux-x64',
+      archiveExtension: 'tar.gz',
+      includeDartNative: false,
+      preferDartNative: false,
+    );
+
+    expect(download.name, 'decentdb-v2.5.1-Linux-x64.tar.gz');
+    expect(download.downloadUri.toString(), 'https://example.invalid/generic');
   });
 }

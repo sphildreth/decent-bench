@@ -32,7 +32,9 @@ import '../domain/sql_risk_assessment.dart';
 import '../domain/workspace_file_entry.dart';
 import '../domain/workspace_models.dart';
 import '../infrastructure/app_lifecycle_service.dart';
+import '../infrastructure/decentdb_migration_service.dart';
 import '../infrastructure/shortcut_config_service.dart';
+import 'decentdb_migration_dialog.dart';
 import 'excel_import_dialog.dart';
 import 'export_results_csv_dialog.dart';
 import 'export_results_excel_dialog.dart';
@@ -132,6 +134,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       const SqlAutocompleteEngine();
   final SqlFormatter _sqlFormatter = const SqlFormatter();
   final ImportManager _importManager = ImportManager();
+  final DecentDbMigrationService _migrationService = DecentDbMigrationService();
 
   bool _didHydrateShellPreferences = false;
   bool _isDropTargetActive = false;
@@ -277,6 +280,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         final databaseLabel = controller.databasePath == null
             ? 'sample.decentdb'
             : p.basename(controller.databasePath!);
+        final schemaPaneIsLoading =
+            controller.isInitializing ||
+            controller.isSchemaLoading ||
+            controller.isOpeningDatabase;
 
         return DropTarget(
           enable: !controller.hasImportSession && !_genericImportOpen,
@@ -342,9 +349,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                       onRefresh: () {
                                         controller.refreshSchema();
                                       },
-                                      isLoading:
-                                          controller.isSchemaLoading ||
-                                          controller.isOpeningDatabase,
+                                      isLoading: schemaPaneIsLoading,
                                     ),
                                     erdViewer: SchemaRelationshipDiagram(
                                       key: _erdDiagramKey,
@@ -359,9 +364,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                         });
                                       },
                                       onOpenTable: _openTableFromErd,
-                                      isLoading:
-                                          controller.isSchemaLoading ||
-                                          controller.isOpeningDatabase,
+                                      isLoading: schemaPaneIsLoading,
                                     ),
                                   ),
                                   propertiesPane: PropertiesPane(
@@ -2936,7 +2939,119 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (file == null) {
       return;
     }
-    await widget.controller.openDatabase(file.path, createIfMissing: false);
+    await _openDatabaseWithMigrationOffer(file.path);
+  }
+
+  Future<void> _openDatabaseWithMigrationOffer(
+    String path, {
+    bool allowMigrationOffer = true,
+  }) async {
+    await widget.controller.openDatabase(path, createIfMissing: false);
+    if (!mounted || !allowMigrationOffer) {
+      return;
+    }
+    final openError = widget.controller.workspaceError;
+    if (!DecentDbMigrationService.isUnsupportedFormatVersionMessage(
+      openError,
+    )) {
+      return;
+    }
+    await _showLegacyDatabaseMigrationOffer(
+      sourcePath: path,
+      openError: openError ?? 'Unsupported database format version.',
+    );
+  }
+
+  Future<void> _showLegacyDatabaseMigrationOffer({
+    required String sourcePath,
+    required String openError,
+  }) async {
+    final suggestedDestination = await _migrationService.suggestDestinationPath(
+      sourcePath,
+    );
+    if (!mounted) {
+      return;
+    }
+    final migrationRequest = await showDialog<DecentDbMigrationDialogResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => DecentDbMigrationDialog(
+        sourcePath: sourcePath,
+        initialDestinationPath: suggestedDestination,
+        openError: openError,
+        onBrowse: (currentPath) => browseDecentDbMigrationDestination(
+          currentPath: currentPath,
+          fallbackPath: suggestedDestination,
+        ),
+      ),
+    );
+    if (migrationRequest == null || !mounted) {
+      return;
+    }
+
+    final migrationResult = await _showMigrationProgressDialog(
+      sourcePath: sourcePath,
+      destinationPath: migrationRequest.destinationPath,
+    );
+    if (migrationResult == null || !mounted) {
+      return;
+    }
+    await _openDatabaseWithMigrationOffer(
+      migrationResult.destinationPath,
+      allowMigrationOffer: false,
+    );
+  }
+
+  Future<DecentDbMigrationResult?> _showMigrationProgressDialog({
+    required String sourcePath,
+    required String destinationPath,
+  }) {
+    final migrationFuture = _migrationService.migrate(
+      sourcePath: sourcePath,
+      destinationPath: destinationPath,
+    );
+    return showDialog<DecentDbMigrationResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return FutureBuilder<DecentDbMigrationResult>(
+          future: migrationFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return DecentDbMigrationProgressDialog(
+                sourcePath: sourcePath,
+                destinationPath: destinationPath,
+              );
+            }
+            if (snapshot.hasError) {
+              return AlertDialog(
+                title: const Text('Migration failed'),
+                content: SizedBox(
+                  width: 560,
+                  child: SelectableText(snapshot.error.toString()),
+                ),
+                actions: <Widget>[
+                  FilledButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('Close'),
+                  ),
+                ],
+              );
+            }
+            final result = snapshot.data;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (Navigator.of(dialogContext).canPop()) {
+                Navigator.of(dialogContext).pop(result);
+              }
+            });
+            return DecentDbMigrationProgressDialog(
+              sourcePath: sourcePath,
+              destinationPath: destinationPath,
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _openWorkspaceProject() async {
@@ -2961,7 +3076,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   Future<void> _openRecentWorkspace(String path) async {
-    await widget.controller.openDatabase(path, createIfMissing: false);
+    await _openDatabaseWithMigrationOffer(path);
   }
 
   Future<void> _showSqliteImportDialog({String sourcePath = ''}) async {
@@ -3095,7 +3210,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       launchOptions,
       showNotice: _showPlaceholderNotice,
       openDatabase: (path) {
-        return widget.controller.openDatabase(path, createIfMissing: false);
+        return _openDatabaseWithMigrationOffer(path);
       },
       startImport: _startImportFromPath,
     );
@@ -3105,7 +3220,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final detection = await _importManager.detectSource(path);
     switch (detection.format.implementationKind) {
       case ImportImplementationKind.directOpen:
-        await widget.controller.openDatabase(path, createIfMissing: false);
+        await _openDatabaseWithMigrationOffer(path);
         break;
       case ImportImplementationKind.legacyWizard:
         switch (detection.format.key) {

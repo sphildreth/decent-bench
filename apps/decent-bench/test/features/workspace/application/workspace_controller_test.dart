@@ -122,6 +122,31 @@ void main() {
     );
 
     test(
+      'initialize keeps auto-opened schema visible when tooling metadata fails',
+      () async {
+        final file = await _createTempDbFile();
+        final gateway = FakeWorkspaceGateway()
+          ..toolingMetadataError = const BridgeFailure(
+            'tooling metadata unavailable',
+          );
+        final config = AppConfig.defaults().copyWith(
+          recentFiles: <String>[file.path],
+        );
+        final controller = _createController(
+          gateway: gateway,
+          configStore: InMemoryConfigStore(config),
+        );
+
+        await controller.initialize();
+
+        expect(controller.databasePath, file.path);
+        expect(controller.schema.tables.single.name, 'tasks');
+        expect(controller.toolingMetadata, isNull);
+        expect(controller.workspaceError, isNull);
+      },
+    );
+
+    test(
       'initialize reruns the most recent saved query when reopening the last workspace',
       () async {
         final file = await _createTempDbFile();

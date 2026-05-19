@@ -129,7 +129,8 @@ formatter, JSON/Parquet/Excel export, and multi-tab editing.
 - Plain Postgres import unless later added by ADR and PRD/SPEC update
 - Multi-workspace support
 - Collaboration features
-- Full migration tooling
+- Full migration tooling beyond the ADR-0037 official legacy-file upgrade
+  wrapper
 - External databases as first-class query targets
 - ERD designer/schema modeling workflows
 - Query plan visualizer
@@ -228,6 +229,12 @@ concerns is required.
 - If DecentDB:
   - Open workspace
   - Load schema browser immediately
+  - If open fails with an unsupported legacy DecentDB format-version error,
+    offer the ADR-0037 migration workflow:
+    - keep the original file untouched
+    - suggest a new `*_migrated.ddb` destination
+    - run the official `decentdb-migrate --source <old> --dest <new>` tool
+    - open the migrated copy after success
 - Otherwise:
   - Launch import wizard with source file preselected
 - If launched with `--import <path>`:

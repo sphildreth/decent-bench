@@ -42,7 +42,9 @@
 
 ## ✨ Features
 
-- 🚀 **DecentDB-First:** A fully local-first workflow. Fast open/create, recent files, and intuitive drag-and-drop support.
+- 🚀 **DecentDB-First:** A fully local-first workflow. Fast open/create,
+  recent files, intuitive drag-and-drop support, and guided legacy `.ddb`
+  migration through the official `decentdb-migrate` tool.
 - 📥 **Smart Import Wizards:** Import delimited text, JSON/NDJSON, XML, HTML tables, Excel, SQLite, SQL dumps, and wrapped archives (`.zip`, `.gz`, `.bz2`). Includes previews, rename/type-override transforms, row-local filters/defaults/computed columns/dedup plans for generic imports, progress reporting, and post-import summaries.
 - 🛠️ **Modern SQL Workbench:** Iterate in a multi-tab editor with isolated per-tab results, schema-aware autocomplete, editable snippets, deterministic formatting, typed parameter fields, per-tab query history, and a searchable command palette.
 - ⚡ **Performance-Focused:** Background imports, paginated/streamed results grids, and best-effort query cancellation ensure the UI never freezes.
@@ -77,7 +79,7 @@
 
 | File type | Action | Details |
 | --- | --- | --- |
-| `.ddb` | **Open directly** | Main DecentDB workspace format. |
+| `.ddb` | **Open / Migrate** | Current-format files open directly. Legacy format-version failures offer a copy-based `decentdb-migrate` upgrade path. |
 | `.db`, `.sqlite`, `.sqlite3` | **Import Wizard** | Background import with schema preview and table selection. |
 | `.csv`, `.tsv` | **Import Wizard** | CSV/TSV import through the generic delimited-text pipeline. |
 | `.txt`, `.dat`, `.log`, `.psv` | **Import Wizard** | Generic delimited-text import with header, delimiter, quoting, malformed-row, preview, and type-override controls. |
@@ -164,18 +166,25 @@ flutter test integration_test
 ```
 
 These commands will fetch the matching pinned DecentDB native library on first
-use if it is not already cached.
+use if it is not already cached. Legacy `.ddb` migration also resolves the
+official `decentdb-migrate` executable from PATH, an explicit
+`DECENTDB_MIGRATE_PATH`, a packaged app bundle, or the pinned full DecentDB
+release asset.
 
 ### 5. Packaging Desktop Builds
 Build the bundle, then use the staging helper to inject the DecentDB native
-library. The `--source` path can point at either an extracted
-`decentdb-dart-native-<tag>-...` release asset or a local DecentDB build:
+library and `decentdb-migrate`. The `--source` path can point at either an
+extracted `decentdb-dart-native-<tag>-...` release asset or a local DecentDB
+build, and `--migration-tool-source` can point at a local migration executable:
 ```bash
 flutter build linux
 dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle
+dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle --source /path/to/libdecentdb.so --migration-tool-source /path/to/decentdb-migrate
 ```
 If `--source` is omitted, the helper resolves and downloads the pinned matching
-DecentDB native release asset automatically.
+DecentDB native release asset automatically. If `--migration-tool-source` is
+omitted, it resolves the official migration tool from the pinned full release
+asset.
 
 *(For macOS use `build/macos/Build/Products/Release/decent_bench.app` and
 Windows `build/windows/x64/runner/Release`.)*

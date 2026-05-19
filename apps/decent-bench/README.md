@@ -21,6 +21,7 @@ Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
 - the DecentDB Dart package is pinned from the upstream Git tag
   (`https://github.com/sphildreth/decentdb`), currently `v2.5.1`, and desktop
   packaging stages the matching `decentdb-dart-native-<tag>-...` release asset
+  plus the official `decentdb-migrate` tool from the full release asset
 - Excel import currently supports `.xlsx`; legacy `.xls` files route through
   the existing conversion/normalization path and remain explicitly partial
 - SQL dump import currently targets the MVP-lite parser scope documented in
@@ -48,6 +49,9 @@ Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
   column type metadata plus schema fingerprints
 - ERD image export writes full-diagram or viewport PNG/JPG files with safe
   raster limits before allocation
+- legacy DecentDB format-version open failures offer a safe copy-based
+  migration through `decentdb-migrate --source <old> --dest <new>` and then open
+  the migrated copy
 
 ## Validation
 
@@ -71,8 +75,11 @@ The app expects a compatible DecentDB v2.5.1 native library to be available via:
 
 CI, local tests, and Linux desktop builds resolve the pinned `decentdb` tag from
 `pubspec.lock` and use the matching `decentdb-dart-native-<tag>-...` asset from
-DecentDB Releases. You can still override the source library explicitly with
-`tool/stage_decentdb_native.dart --source <native-lib-path>` when needed.
+DecentDB Releases. The migration workflow resolves `decentdb-migrate` from
+PATH, `DECENTDB_MIGRATE_PATH`, a packaged bundle, or the pinned full release
+asset. You can still override the staged native library and migration tool with
+`tool/stage_decentdb_native.dart --source <native-lib-path>
+--migration-tool-source <decentdb-migrate-path>` when needed.
 
 Workspace tab drafts are stored separately from `config.toml` under the
 platform-specific `workspaces/` directory documented in the root

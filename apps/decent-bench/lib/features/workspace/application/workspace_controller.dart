@@ -533,9 +533,25 @@ class WorkspaceController extends ChangeNotifier {
 
     try {
       final loadedSchema = await _gateway.loadSchema();
-      final metadata = await _gateway.getToolingMetadata();
       schema = loadedSchema;
-      toolingMetadata = metadata;
+      _safeNotify();
+
+      ToolingMetadata? metadata;
+      try {
+        metadata = await _gateway.getToolingMetadata();
+        toolingMetadata = metadata;
+      } catch (error, stackTrace) {
+        toolingMetadata = null;
+        _logWarning(
+          'refresh_schema_metadata',
+          'Loaded schema snapshot, but tooling metadata was unavailable.',
+          databasePath: databasePath,
+          elapsedNanos: _durationToNanos(stopwatch.elapsed),
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+
       workspaceMessage =
           'Loaded ${schema.tables.length} tables and ${schema.views.length} views.';
       workspaceError = null;
@@ -549,9 +565,13 @@ class WorkspaceController extends ChangeNotifier {
           'table_count': schema.tables.length,
           'view_count': schema.views.length,
           'index_count': schema.indexes.length,
-          'schema_fingerprint': metadata.schemaFingerprint,
-          'metadata_version': metadata.metadataVersion,
-          'query_contract_version': metadata.capabilities.queryContractVersion,
+          'tooling_metadata_loaded': metadata != null,
+          if (metadata != null) ...<String, Object?>{
+            'schema_fingerprint': metadata.schemaFingerprint,
+            'metadata_version': metadata.metadataVersion,
+            'query_contract_version':
+                metadata.capabilities.queryContractVersion,
+          },
         },
       );
     } catch (error) {

@@ -122,6 +122,16 @@ class NativeLibraryResolver {
     }
   }
 
+  String get migrationToolFileName {
+    switch (_platform) {
+      case NativeLibraryPlatform.linux:
+      case NativeLibraryPlatform.macos:
+        return 'decentdb-migrate';
+      case NativeLibraryPlatform.windows:
+        return 'decentdb-migrate.exe';
+    }
+  }
+
   String get bundleRelativeInstallPath {
     switch (_platform) {
       case NativeLibraryPlatform.linux:
@@ -130,6 +140,17 @@ class NativeLibraryResolver {
         return p.join('Contents', 'Frameworks', libraryFileName);
       case NativeLibraryPlatform.windows:
         return libraryFileName;
+    }
+  }
+
+  String get migrationToolBundleRelativeInstallPath {
+    switch (_platform) {
+      case NativeLibraryPlatform.linux:
+        return p.join('bin', migrationToolFileName);
+      case NativeLibraryPlatform.macos:
+        return p.join('Contents', 'MacOS', migrationToolFileName);
+      case NativeLibraryPlatform.windows:
+        return migrationToolFileName;
     }
   }
 

@@ -38,6 +38,9 @@ This file records notable project changes. It follows the
   schema-relationship graph/layout generation, table search, selected-table
   neighborhood mode, double-click/Enter table-preview loading, and PNG/JPG
   image export with safe raster limits.
+- Added a guided legacy DecentDB migration workflow that detects unsupported
+  format-version open failures, runs the official `decentdb-migrate` tool into
+  a new copy, and opens the migrated database after success.
 - Added safe-run SQL risk prompts for mutating and destructive statements, with
   branch execution clearly disabled until the Dart binding exposes public branch
   APIs.

@@ -134,7 +134,8 @@ These are important, but were intentionally deferred beyond the shipped
 - Managing external databases as first-class live query targets
 - Being a DBeaver-style admin or operations tool
 - Collaborative editing, shared connections, or multi-user workflows
-- Full migration tooling
+- Full migration tooling beyond the official legacy DecentDB file upgrade
+  wrapper accepted in ADR-0037
 - Advanced script orchestration engines
 - Multi-workspace support (multiple DecentDB files open simultaneously)
 - Postgres custom-format backup import
@@ -201,6 +202,8 @@ Suggested measurable targets:
 1. User drags a file onto Decent Bench, or uses File → Open / Import.
 2. Decent Bench detects:
    - **DecentDB file** → open in workspace
+   - **Legacy DecentDB file** → offer a safe copy-based migration using the
+     official `decentdb-migrate` tool, then open the migrated copy
    - **Supported import source** → launch Import Wizard
    - **Recognized but unsupported type** → open a guidance path with clear
      messaging

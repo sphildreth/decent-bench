@@ -102,6 +102,18 @@ void main() {
       'Contents/Frameworks/libdecentdb.dylib',
     );
     expect(windows.bundleRelativeInstallPath, 'decentdb.dll');
+    expect(
+      linux.migrationToolBundleRelativeInstallPath,
+      'bin/decentdb-migrate',
+    );
+    expect(
+      macos.migrationToolBundleRelativeInstallPath,
+      'Contents/MacOS/decentdb-migrate',
+    );
+    expect(
+      windows.migrationToolBundleRelativeInstallPath,
+      'decentdb-migrate.exe',
+    );
   });
 
   test('failure includes checked candidates', () async {
