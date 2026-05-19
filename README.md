@@ -57,6 +57,10 @@
 - 📊 **Diagnostics & Visualization:** Column statistics, database statistics,
   EXPLAIN visualization, and result charts help users understand data and query
   behavior without leaving the workspace.
+- 🗺️ **Read-Only ERD Viewer:** Inspect table relationships from loaded
+  foreign-key metadata in the navigation pane, search tables/columns, jump from
+  ERD nodes to limited table-preview queries, and export full diagrams or the
+  current viewport as PNG/JPG.
 - 🛡️ **Safer SQL Execution:** Query contracts and SQL risk classification power
   typed parameters, result-column metadata, and prompts before mutating or
   destructive statements. Native branch execution is surfaced as unavailable
@@ -66,7 +70,7 @@
 - 🧪 **Import Validation:** Blocking failure dialogs and richer import summaries make unsuccessful imports obvious and successful imports easier to verify.
 - 📤 **Typed Exports:** CSV, JSON, NDJSON, and Excel export stream result pages
   and preserve DecentDB v2.5.x native value metadata where the format supports
-  it. Result charts can be exported as PNG.
+  it. Result charts can be exported as PNG, and ERDs can be exported as PNG/JPG.
 - 📦 **Desktop Native:** Packaged for Linux, macOS, and Windows with a repeatable native-library staging helper.
 
 ### Supported File Types
@@ -211,6 +215,7 @@ Typical files under that root include:
 - ✅ Paged results, query cancellation, safe-run prompts, and CSV/JSON/NDJSON export
 - ✅ Excel result export and PNG chart export
 - ✅ Column statistics, database statistics, EXPLAIN visualization, and result charts
+- ✅ Read-only ERD viewer with table-preview navigation and PNG/JPG image export
 - ✅ Import/export profiles plus row-local generic import transforms
 - ✅ Local app config plus persistent per-database workspaces
 

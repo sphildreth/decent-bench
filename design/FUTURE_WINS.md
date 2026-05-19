@@ -28,12 +28,11 @@ status.
 
 | Priority | Future Version | Status | Feature | Current Source Of Truth | Why This Rank |
 |---:|---|---|---|---|---|
-| 1 | Future | TODO | Read-only ERD viewer and image export | `design/ERD_UI_PLAN.md`, `design/adr/0035-read-only-erd-viewer-and-image-export.md` | Explicitly requested user-facing schema discovery feature; implementation can reuse current schema metadata and workspace preview behavior without waiting on external APIs |
-| 2 | Future | BACKLOG | Public DecentDB Dart branch/snapshot API integration | `design/adr/0032-database-snapshot-and-safe-run.md`, `design/adr/0028-inline-table-data-editor.md`, `design/adr/0029-workspace-project-file-and-query-library.md` | Decent Bench owns the UI/domain boundary, but native branch execution, branch-local edits/imports, and project branch preferences require public Dart APIs before production wiring can be completed |
-| 3 | Future | BACKLOG | Parquet export writer | `design/adr/0031-parquet-excel-export-dependency-strategy.md` | Excel export is implemented with the existing archive dependency; Parquet remains blocked on a maintained Apache-compatible Dart or FFI writer validated across desktop platforms |
-| 4 | Future | TODO | SDK generation CLI and UI workflow | `design/adr/0034-schema-first-sdk-generation-prototype.md` | The TypeScript IR/prototype exists; a user-facing `dbench generate-sdk` workflow should reuse that IR after project-file workflows settle |
-| 5 | Future | BACKLOG | Connector expansion beyond the current registry | `design/IMPORT_SUPPORT_PLAN.md`, `docs/IMPORT_FORMATS.md` | DuckDB, ODS, Parquet import, PostgreSQL dump expansion, DBF/Access, live database sources, clipboard tables, XZ, and PDF tables are recognized honestly but require dependency/product evaluation |
-| 6 | Future | BACKLOG | Query-plan and performance diagnostics, full suite | Needs ADR/spec | Broader than the implemented EXPLAIN visualization; covers plan comparison, index recommendations, runtime profiling, and historical plan tracking |
+| 1 | Future | BACKLOG | Public DecentDB Dart branch/snapshot API integration | `design/adr/0032-database-snapshot-and-safe-run.md`, `design/adr/0028-inline-table-data-editor.md`, `design/adr/0029-workspace-project-file-and-query-library.md` | Decent Bench owns the UI/domain boundary, but native branch execution, branch-local edits/imports, and project branch preferences require public Dart APIs before production wiring can be completed |
+| 2 | Future | BACKLOG | Parquet export writer | `design/adr/0031-parquet-excel-export-dependency-strategy.md` | Excel export is implemented with the existing archive dependency; Parquet remains blocked on a maintained Apache-compatible Dart or FFI writer validated across desktop platforms |
+| 3 | Future | TODO | SDK generation CLI and UI workflow | `design/adr/0034-schema-first-sdk-generation-prototype.md` | The TypeScript IR/prototype exists; a user-facing `dbench generate-sdk` workflow should reuse that IR after project-file workflows settle |
+| 4 | Future | BACKLOG | Connector expansion beyond the current registry | `design/IMPORT_SUPPORT_PLAN.md`, `docs/IMPORT_FORMATS.md` | DuckDB, ODS, Parquet import, PostgreSQL dump expansion, DBF/Access, live database sources, clipboard tables, XZ, and PDF tables are recognized honestly but require dependency/product evaluation |
+| 5 | Future | BACKLOG | Query-plan and performance diagnostics, full suite | Needs ADR/spec | Broader than the implemented EXPLAIN visualization; covers plan comparison, index recommendations, runtime profiling, and historical plan tracking |
 
 ## Current Foundations
 
@@ -86,6 +85,8 @@ be treated as future roadmap claims:
 - EXPLAIN visualization with operation/table/index metadata and raw-plan copy.
 - Data visualization from loaded query results for bar, line, scatter, and pie
   charts with PNG export.
+- Read-only ERD viewing with schema-pane navigation, table-preview loading, and
+  full-diagram or viewport PNG/JPG image export.
 - CSV, JSON, NDJSON, and Excel (`.xlsx`) exports with full v2.5.x native type
   handling where the target format supports it.
 - Import/export profile persistence shared by GUI/headless workflows.
@@ -95,19 +96,6 @@ be treated as future roadmap claims:
   bridge, command palette, and ADR-governed design process.
 
 ## Remaining Future Work
-
-### Read-only ERD Viewer And Image Export
-
-ADR-0035 accepts a read-only ERD viewer as a post-`v1.0.0` scope expansion. This
-is not an ERD designer: it must not mutate schema objects or relationships.
-
-Future implementation should follow `design/ERD_UI_PLAN.md`:
-
-- build a table/foreign-key graph from the loaded schema snapshot
-- render it as a non-modal tab in the upper-left navigation pane
-- double-click table nodes to select schema navigation and load the top-X table
-  preview query
-- export the full diagram or current viewport as PNG or JPG/JPEG
 
 ### Public Branch/Snapshot API Integration
 

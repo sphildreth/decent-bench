@@ -10,6 +10,12 @@ void main() {
     final registry = MenuCommandRegistry(
       commands: <MenuCommand>[
         MenuCommand(
+          id: 'tools_entity_relationship_diagram',
+          label: 'Entity Relationship Diagram',
+          icon: Icons.account_tree_outlined,
+          onInvoke: () async {},
+        ),
+        MenuCommand(
           id: 'tools_view_log',
           label: 'View Log',
           icon: Icons.receipt_long_outlined,
@@ -35,5 +41,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.widgetWithText(MenuItemButton, 'View Log'), findsOneWidget);
+    expect(
+      find.widgetWithText(MenuItemButton, 'Entity Relationship Diagram'),
+      findsOneWidget,
+    );
   });
 }

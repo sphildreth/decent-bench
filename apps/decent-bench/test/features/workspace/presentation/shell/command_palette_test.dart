@@ -6,9 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-MenuCommandRegistry _buildRegistry({
-  List<String> invokeLog = const [],
-}) {
+MenuCommandRegistry _buildRegistry({List<String> invokeLog = const []}) {
   return MenuCommandRegistry(
     commands: <MenuCommand>[
       MenuCommand(
@@ -41,6 +39,13 @@ MenuCommandRegistry _buildRegistry({
         label: 'Run Query',
         icon: Icons.play_arrow_outlined,
         onInvoke: () async => invokeLog.add('tools_run_query'),
+      ),
+      MenuCommand(
+        id: 'tools_entity_relationship_diagram',
+        label: 'Entity Relationship Diagram',
+        icon: Icons.account_tree_outlined,
+        onInvoke: () async =>
+            invokeLog.add('tools_entity_relationship_diagram'),
       ),
       MenuCommand(
         id: 'view_zoom_in',
@@ -240,6 +245,21 @@ void main() {
 
       expect(invokeLog, contains('file_open'));
       expect(dismissed, isTrue);
+    });
+
+    testWidgets('entity relationship diagram command is searchable', (
+      tester,
+    ) async {
+      final registry = _buildRegistry(invokeLog: invokeLog);
+      await tester.pumpWidget(buildPalette(registry));
+      await tester.pump();
+
+      await tester.enterText(find.byType(TextField), 'erd');
+      await tester.pump();
+      await tester.tap(find.text('Entity Relationship Diagram'));
+      await tester.pump();
+
+      expect(invokeLog, contains('tools_entity_relationship_diagram'));
     });
 
     testWidgets('search text field has focus on open', (tester) async {

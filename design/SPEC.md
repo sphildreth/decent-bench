@@ -139,7 +139,8 @@ formatter, JSON/Parquet/Excel export, and multi-tab editing.
 
 The read-only ERD viewer is intentionally not classified as an ERD designer.
 ADR-0035 accepts it as a post-`v1.0.0` scope expansion for schema discovery,
-navigation, table-preview loading, and PNG/JPG image export.
+navigation, table-preview loading, and PNG/JPG image export; the implementation
+must remain read-only and must not create, edit, or drop schema objects.
 
 ---
 

@@ -38,11 +38,16 @@ Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
   generated-column metadata, triggers, and temp-object metadata
 - DecentDB v2.5.x tooling metadata and query contracts flow through the bridge
   for schema fingerprints, parameter contracts, and result-column contracts
+- read-only ERD viewing uses the loaded schema snapshot to draw table nodes,
+  foreign-key edges, missing-reference placeholders, search/filter context, and
+  table-preview navigation without adding schema-design or mutation workflows
 - DecentDB v2.5.x native semantic/spatial types have first-class display
   helpers for schema details, result cells, autocomplete/snippets, import type
   overrides, WKB copy, and CSV export formatting
 - JSON and NDJSON result export reuse the paged query pipeline and can include
   column type metadata plus schema fingerprints
+- ERD image export writes full-diagram or viewport PNG/JPG files with safe
+  raster limits before allocation
 
 ## Validation
 

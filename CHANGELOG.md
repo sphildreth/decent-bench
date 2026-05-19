@@ -34,6 +34,10 @@ This file records notable project changes. It follows the
 - Added type-aware inline table editing for editable single-table result sets.
 - Added per-tab query history in the results surface, including load, rerun, and
   clear actions.
+- Added a read-only ERD viewer in the navigation pane with deterministic
+  schema-relationship graph/layout generation, table search, selected-table
+  neighborhood mode, double-click/Enter table-preview loading, and PNG/JPG
+  image export with safe raster limits.
 - Added safe-run SQL risk prompts for mutating and destructive statements, with
   branch execution clearly disabled until the Dart binding exposes public branch
   APIs.

@@ -30,12 +30,12 @@ exports PNG/JPG images.
 | Phase | Status | Depends On | Primary Output | Exit Criteria |
 |---:|---|---|---|---|
 | 0 | COMPLETE | None | Scope and design alignment | ADR, PRD, SPEC, Future Wins, and ERD plan agree that this is a read-only viewer |
-| 1 | TODO | Phase 0 | Domain graph model and builder | Graph unit tests pass for FK grouping, missing parents, cycles, self-FKs, isolated tables, and view exclusion |
-| 2 | TODO | Phase 1 | Simple deterministic layout | Layout unit tests pass; implementation does not become a full custom Sugiyama project |
-| 3 | TODO | Phases 1-2 | ERD navigation-pane viewer | Widget tests cover rendering states, search, responsive density, and keyboard focus basics |
-| 4 | TODO | Phase 3 | Workspace integration | Menu, command palette, context menu, and double-click table preview tests pass |
-| 5 | TODO | Phases 2-3 | PNG/JPG image export | Export tests cover full diagram, viewport, scale limits, and safe oversized export handling |
-| 6 | TODO | Phases 1-5 | Documentation and release hardening | README, SPEC, Future Wins, CHANGELOG, analyzer, tests, and build are clean |
+| 1 | COMPLETE | Phase 0 | Domain graph model and builder | Graph unit tests pass for FK grouping, missing parents, cycles, self-FKs, isolated tables, and view exclusion |
+| 2 | COMPLETE | Phase 1 | Simple deterministic layout | Layout unit tests pass; implementation does not become a full custom Sugiyama project |
+| 3 | COMPLETE | Phases 1-2 | ERD navigation-pane viewer | Widget tests cover rendering states, search, responsive density, and keyboard focus basics |
+| 4 | COMPLETE | Phase 3 | Workspace integration | Menu, command palette, context menu, and double-click table preview tests pass |
+| 5 | COMPLETE | Phases 2-3 | PNG/JPG image export | Export tests cover full diagram, viewport, scale limits, and safe oversized export handling |
+| 6 | COMPLETE | Phases 1-5 | Documentation and release hardening | README, SPEC, Future Wins, CHANGELOG, analyzer, tests, and build are clean |
 
 ## Phase 0 - Governance Alignment
 
@@ -63,7 +63,7 @@ Implementation guardrails:
 
 ## Phase 1 - Domain Graph
 
-**Status:** `TODO`
+**Status:** `COMPLETE`
 
 Build the schema relationship graph as pure domain code with no Flutter widget
 dependency.
@@ -121,7 +121,7 @@ Exit criteria:
 
 ## Phase 2 - Layout
 
-**Status:** `TODO`
+**Status:** `COMPLETE`
 
 Implement a simple deterministic layered-grid layout. This phase must not become
 a full custom Sugiyama implementation.
@@ -174,7 +174,7 @@ Exit criteria:
 
 ## Phase 3 - ERD Viewer
 
-**Status:** `TODO`
+**Status:** `COMPLETE`
 
 Add the non-modal ERD viewer as a tab or mode in the upper-left navigation pane.
 
@@ -234,7 +234,7 @@ Exit criteria:
 
 ## Phase 4 - Workspace Integration
 
-**Status:** `TODO`
+**Status:** `COMPLETE`
 
 Wire the ERD viewer into menus, commands, schema context menus, and table preview
 loading.
@@ -287,7 +287,7 @@ Exit criteria:
 
 ## Phase 5 - PNG/JPG Image Export
 
-**Status:** `TODO`
+**Status:** `COMPLETE`
 
 Add raster image export with safe pixel limits.
 
@@ -353,7 +353,7 @@ Exit criteria:
 
 ## Phase 6 - Documentation, Hardening, And Release Validation
 
-**Status:** `TODO`
+**Status:** `COMPLETE`
 
 Finalize documentation and run full validation.
 

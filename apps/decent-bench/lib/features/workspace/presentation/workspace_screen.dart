@@ -46,6 +46,7 @@ import 'shell/properties_pane.dart';
 import 'shell/results_pane.dart';
 import 'shell/schema_explorer_pane.dart';
 import 'shell/schema_browser_models.dart';
+import 'shell/schema_relationship_diagram.dart';
 import 'shell/sql_editor_pane.dart';
 import 'shell/sql_highlighting_text_controller.dart';
 import 'shell/status_bar.dart';
@@ -123,6 +124,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           );
         },
       );
+  final GlobalKey<SchemaRelationshipDiagramState> _erdDiagramKey =
+      GlobalKey<SchemaRelationshipDiagramState>();
   final ShortcutConfigService _shortcutConfigService =
       const ShortcutConfigService();
   final SqlAutocompleteEngine _autocompleteEngine =
@@ -143,6 +146,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   bool _didProcessStartupLaunchOptions = false;
   bool _pendingSqlEditorStateRebuild = false;
   bool _pendingControllerSync = false;
+  _NavigationPaneMode _navigationPaneMode = _NavigationPaneMode.schema;
   int _autocompleteSelectionIndex = 0;
   TextEditingValue? _dismissedAutocompleteValue;
   String? _pendingSqlText;
@@ -270,6 +274,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         final shellPreferences = _shellController.preferences;
         final resultsState = _resultsStateFor(activeTab.id);
         final usePlaceholderContent = _usePlaceholderContent(controller);
+        final databaseLabel = controller.databasePath == null
+            ? 'sample.decentdb'
+            : p.basename(controller.databasePath!);
 
         return DropTarget(
           enable: !controller.hasImportSession && !_genericImportOpen,
@@ -310,25 +317,52 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                 padding: const EdgeInsets.all(8),
                                 child: WorkspaceLayoutShell(
                                   controller: _shellController,
-                                  schemaExplorer: SchemaExplorerPane(
-                                    schema: controller.schema,
-                                    databasePath: controller.databasePath,
-                                    toolingMetadata: controller.toolingMetadata,
-                                    branchLabel:
-                                        controller.branchState.branchLabel,
-                                    selectedNodeId: selectedSelection?.nodeId,
-                                    onSelectNode: (nodeId) {
+                                  schemaExplorer: _WorkspaceNavigationPane(
+                                    mode: _navigationPaneMode,
+                                    onModeChanged: (mode) {
                                       setState(() {
-                                        _selectedSchemaNodeId = nodeId;
+                                        _navigationPaneMode = mode;
                                       });
                                     },
-                                    onShowNodeMenu: _showSchemaNodeContextMenu,
-                                    onRefresh: () {
-                                      controller.refreshSchema();
-                                    },
-                                    isLoading:
-                                        controller.isSchemaLoading ||
-                                        controller.isOpeningDatabase,
+                                    schemaExplorer: SchemaExplorerPane(
+                                      schema: controller.schema,
+                                      databasePath: controller.databasePath,
+                                      toolingMetadata:
+                                          controller.toolingMetadata,
+                                      branchLabel:
+                                          controller.branchState.branchLabel,
+                                      selectedNodeId: selectedSelection?.nodeId,
+                                      onSelectNode: (nodeId) {
+                                        setState(() {
+                                          _selectedSchemaNodeId = nodeId;
+                                        });
+                                      },
+                                      onShowNodeMenu:
+                                          _showSchemaNodeContextMenu,
+                                      onRefresh: () {
+                                        controller.refreshSchema();
+                                      },
+                                      isLoading:
+                                          controller.isSchemaLoading ||
+                                          controller.isOpeningDatabase,
+                                    ),
+                                    erdViewer: SchemaRelationshipDiagram(
+                                      key: _erdDiagramKey,
+                                      schema: controller.schema,
+                                      databaseLabel: databaseLabel,
+                                      selectedTableName:
+                                          _selectedTableNameForErd(controller),
+                                      onSelectTable: (tableName) {
+                                        setState(() {
+                                          _selectedSchemaNodeId =
+                                              'table:$tableName';
+                                        });
+                                      },
+                                      onOpenTable: _openTableFromErd,
+                                      isLoading:
+                                          controller.isSchemaLoading ||
+                                          controller.isOpeningDatabase,
+                                    ),
                                   ),
                                   propertiesPane: PropertiesPane(
                                     selection: selectedSelection,
@@ -467,8 +501,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                     controller.workspaceError ??
                                     controller.workspaceMessage ??
                                     'Ready',
-                                workspaceLabel:
-                                    'Workspace: ${controller.databasePath == null ? 'sample.decentdb' : p.basename(controller.databasePath!)}',
+                                workspaceLabel: 'Workspace: $databaseLabel',
                                 lastExecutionLabel:
                                     'Last execution: ${activeTab.elapsed?.inMilliseconds ?? 142} ms',
                                 rowsLabel:
@@ -591,6 +624,18 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return 'index:${controller.schema.indexes.first.name}';
     }
     return 'database';
+  }
+
+  String? _selectedTableNameForErd(WorkspaceController controller) {
+    final nodeId = _selectedSchemaNodeId ?? _fallbackSchemaNodeId(controller);
+    if (!nodeId.startsWith('table:')) {
+      return null;
+    }
+    final tableName = nodeId.substring('table:'.length);
+    return controller.schema.objectNamed(tableName)?.kind ==
+            SchemaObjectKind.table
+        ? tableName
+        : null;
   }
 
   SchemaSelectionDetails? _selectionDetailsForNode(
@@ -2748,6 +2793,19 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           onInvoke: () async => controller.createTab(),
         ),
         command(
+          id: 'tools_entity_relationship_diagram',
+          label: 'Entity Relationship Diagram',
+          icon: Icons.account_tree_outlined,
+          onInvoke: _showEntityRelationshipDiagram,
+        ),
+        command(
+          id: 'tools_export_erd_image',
+          label: 'Export ERD Image...',
+          icon: Icons.image_outlined,
+          onInvoke: _exportErdImageFromCommand,
+          enabled: _navigationPaneMode == _NavigationPaneMode.erd,
+        ),
+        command(
           id: 'tools_saved_queries',
           label: 'Saved Queries',
           icon: Icons.bookmarks_outlined,
@@ -3333,6 +3391,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           await _openObjectDataQuery(objectName);
         }
         break;
+      case _SchemaNodeMenuAction.showInErd:
+        if (objectName != null) {
+          await _showEntityRelationshipDiagram(tableName: objectName);
+        }
+        break;
       case _SchemaNodeMenuAction.scriptInsert:
         if (objectName != null) {
           _openSqlTemplate(_insertTemplateForTable(objectName));
@@ -3420,6 +3483,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           label: 'View Data',
         ),
         _popupMenuItem(
+          value: _SchemaNodeMenuAction.showInErd,
+          icon: Icons.account_tree_outlined,
+          label: 'Show in ER Diagram',
+        ),
+        _popupMenuItem(
           value: _SchemaNodeMenuAction.renameObject,
           icon: Icons.drive_file_rename_outline_outlined,
           label: 'Rename',
@@ -3491,6 +3559,31 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (widget.controller.hasOpenDatabase) {
       await widget.controller.runActiveTab();
     }
+  }
+
+  Future<void> _openTableFromErd(String tableName) async {
+    setState(() {
+      _navigationPaneMode = _NavigationPaneMode.erd;
+      _selectedSchemaNodeId = 'table:$tableName';
+    });
+    await _openObjectDataQuery(tableName);
+  }
+
+  Future<void> _showEntityRelationshipDiagram({String? tableName}) async {
+    _shellController.setSchemaExplorerVisible(true);
+    setState(() {
+      _navigationPaneMode = _NavigationPaneMode.erd;
+      if (tableName != null) {
+        _selectedSchemaNodeId = 'table:$tableName';
+      }
+    });
+  }
+
+  Future<void> _exportErdImageFromCommand() async {
+    if (_navigationPaneMode != _NavigationPaneMode.erd) {
+      await _showEntityRelationshipDiagram();
+    }
+    await _erdDiagramKey.currentState?.exportImageFromCommand();
   }
 
   void _openObjectDefinitionQuery(String objectName) {
@@ -4560,6 +4653,64 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 }
 
+enum _NavigationPaneMode { schema, erd }
+
+class _WorkspaceNavigationPane extends StatelessWidget {
+  const _WorkspaceNavigationPane({
+    required this.mode,
+    required this.onModeChanged,
+    required this.schemaExplorer,
+    required this.erdViewer,
+  });
+
+  final _NavigationPaneMode mode;
+  final ValueChanged<_NavigationPaneMode> onModeChanged;
+  final Widget schemaExplorer;
+  final Widget erdViewer;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            border: Border(
+              bottom: BorderSide(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+          ),
+          child: SegmentedButton<_NavigationPaneMode>(
+            segments: const <ButtonSegment<_NavigationPaneMode>>[
+              ButtonSegment<_NavigationPaneMode>(
+                value: _NavigationPaneMode.schema,
+                icon: Icon(Icons.schema_outlined, size: 16),
+                label: Text('Schema'),
+              ),
+              ButtonSegment<_NavigationPaneMode>(
+                value: _NavigationPaneMode.erd,
+                icon: Icon(Icons.account_tree_outlined, size: 16),
+                label: Text('ERD'),
+              ),
+            ],
+            selected: <_NavigationPaneMode>{mode},
+            onSelectionChanged: (value) => onModeChanged(value.single),
+          ),
+        ),
+        Expanded(
+          child: IndexedStack(
+            index: mode == _NavigationPaneMode.schema ? 0 : 1,
+            children: <Widget>[schemaExplorer, erdViewer],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _DropOverlay extends StatelessWidget {
   const _DropOverlay();
 
@@ -4683,6 +4834,7 @@ enum _SchemaNodeMenuAction {
   scriptUpdate,
   scriptDelete,
   viewData,
+  showInErd,
   renameObject,
   deleteObject,
   refresh,
