@@ -23,12 +23,11 @@
 </p>
 
 <p align="center">
-  Import CSV/TSV, JSON, XML, HTML, Excel, SQLite, and SQL dumps into DecentDB, inspect schema, iterate on SQL in a multi-tab editor, and export shaped results from a fast, responsive desktop app built with Flutter.
+  Import CSV/TSV, JSON/NDJSON, XML, HTML, Excel, SQLite, SQL dumps, and archive-wrapped sources into DecentDB, inspect schema, iterate on SQL in a multi-tab editor, and export shaped results from a fast, responsive desktop app built with Flutter.
 </p>
 
 <p align="center">
   <a href="#-features">Features</a> •
-  <a href="#-status">Status</a> •
   <a href="#-getting-started">Getting Started</a> •
   <a href="#-developer-onboarding">Developer Onboarding</a> •
   <a href="#-roadmap">Roadmap</a> •
@@ -45,7 +44,7 @@
 
 - 🚀 **DecentDB-First:** A fully local-first workflow. Fast open/create, recent files, and intuitive drag-and-drop support.
 - 📥 **Smart Import Wizards:** Import delimited text, JSON/NDJSON, XML, HTML tables, Excel, SQLite, SQL dumps, and wrapped archives (`.zip`, `.gz`, `.bz2`). Includes previews, rename/type-override transforms, progress reporting, and post-import summaries.
-- 🛠️ **Modern SQL Workbench:** Iterate in a multi-tab editor with isolated per-tab results, schema-aware autocomplete, editable snippets, and deterministic formatting.
+- 🛠️ **Modern SQL Workbench:** Iterate in a multi-tab editor with isolated per-tab results, schema-aware autocomplete, editable snippets, deterministic formatting, typed parameter fields, per-tab query history, and a searchable command palette.
 - ⚡ **Performance-Focused:** Background imports, paginated/streamed results grids, and best-effort query cancellation ensure the UI never freezes.
 - 🧭 **Rich Engine Metadata:** Schema browsing is powered by DecentDB's rich
   upstream schema snapshot (tables/views/indexes/triggers, checks, foreign keys,
@@ -55,13 +54,16 @@
 - 🧬 **Native Type Awareness:** DecentDB v2.5.x semantic and spatial types are
   surfaced in schema details, result metadata, autocomplete, snippets, import
   type overrides, copy behavior, and CSV export display values.
+- 🛡️ **Safer SQL Execution:** Query contracts and SQL risk classification power
+  typed parameters, result-column metadata, and prompts before mutating or
+  destructive statements. Native branch execution is surfaced as unavailable
+  until the Dart binding exposes public branch APIs.
 - 🎨 **Workspace Persistence:** Application preferences are stored as TOML, and per-database workspace state is stored separately for reliable tab and query restoration.
 - 🪵 **Operational Visibility:** Open the DecentDB-backed application log database directly from `Tools -> View Log`.
 - 🧪 **Import Validation:** Blocking failure dialogs and richer import summaries make unsuccessful imports obvious and successful imports easier to verify.
 - 📤 **Typed Exports:** CSV, JSON, and NDJSON export stream result pages and
   preserve DecentDB v2.5.x native value metadata where the format supports it.
 - 📦 **Desktop Native:** Packaged for Linux, macOS, and Windows with a repeatable native-library staging helper.
-
 
 ### Supported File Types
 
@@ -99,6 +101,7 @@ flows:
 dbench /path/to/workspace.ddb
 dbench --import /path/to/source.xlsx
 dbench --in /path/to/source.sqlite --out /tmp/import.ddb
+dbench --version
 ```
 
 - Passing a `.ddb` path opens that workspace directly.
@@ -107,6 +110,7 @@ dbench --in /path/to/source.sqlite --out /tmp/import.ddb
 - `--silent` suppresses headless progress output.
 - `--plan` is parsed but intentionally rejected for now; it is reserved for a
   future plan-file execution flow.
+- `--help` and `--version` print CLI help and the app version.
 
 ## 💻 Developer Onboarding
 
@@ -195,19 +199,26 @@ Typical files under that root include:
 - ✅ Expansive import support: CSV, JSON, XML, HTML, SQLite, Excel, and SQL dumps
 - ✅ ZIP, GZip, and BZip2 wrapper routing for imports
 - ✅ Headless CLI import mode
-- ✅ DecentDB native asset staging and pinned runtime resolution
+- ✅ DecentDB v2.5.1 binding alignment, native asset staging, and pinned runtime resolution
 - ✅ In-app application log viewing
 - ✅ Clear blocking import-failure dialogs and richer import summaries
-- ✅ Schema browsing and multi-tab SQL editing
-- ✅ Autocomplete, snippets, and deterministic formatter
-- ✅ Paged results, query cancellation, and CSV/JSON/NDJSON export
+- ✅ Schema browsing, metadata fingerprints, query contracts, and native type display
+- ✅ Multi-tab SQL editing with typed parameters, autocomplete, snippets, formatter, command palette, and query history
+- ✅ Paged results, query cancellation, safe-run prompts, and CSV/JSON/NDJSON export
 - ✅ Local app config plus persistent per-database workspaces
 
-**Coming Next (Post-1.1):**
-- 🔜 **Expanded Exports:** Parquet and Excel formats, plus schema exports and reusable export recipes.
-- 🔜 **New Database & Analytical Imports:** DuckDB, Parquet, broader PostgreSQL dump handling, and legacy DBs (Access, DBF).
-- 🔜 **New Document & Log Imports:** OpenDocument (`.ods`), YAML, Markdown/PDF tables, and continuous log streams.
-- 🔜 **Advanced Import Capabilities:** Computed-column transforms, native legacy binary `.xls` parsing, and full MS SQL `.bak` restore/extract execution.
+**Near-Term Roadmap:**
+- 🔜 **Native semantic and spatial type UX:** Continue polishing first-class
+  schema, result, copy, import, and export behavior for DecentDB-native values.
+- 🔜 **Branch/snapshot safe-run workbench:** Build on DecentDB native
+  branch/snapshot/diff/restore primitives as the Dart binding exposes them.
+- 🔜 **Table editor and saved workflows:** Add type-aware, branch-safe table
+  editing plus saved queries and workspace project files.
+- 🔜 **Schema and diagnostics expansion:** Broaden schema metadata presentation,
+  add type-aware statistics, and make `EXPLAIN` output easier to inspect.
+- 🔜 **Later import/export expansion:** Parquet/Excel export, import/export
+  profiles, richer import transforms, and connector expansion remain planned
+  after the DecentDB-native workbench surfaces mature.
 
 ## 🤝 Contributing
 
