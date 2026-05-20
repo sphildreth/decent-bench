@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -326,11 +328,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                   controller: _shellController,
                                   schemaExplorer: _WorkspaceNavigationPane(
                                     mode: _navigationPaneMode,
-                                    onModeChanged: (mode) {
-                                      setState(() {
-                                        _navigationPaneMode = mode;
-                                      });
-                                    },
+                                    onModeChanged: _setNavigationPaneMode,
                                     schemaExplorer: SchemaExplorerPane(
                                       schema: controller.schema,
                                       databasePath: controller.databasePath,
@@ -355,6 +353,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                       key: _erdDiagramKey,
                                       schema: controller.schema,
                                       databaseLabel: databaseLabel,
+                                      databasePath: controller.databasePath,
+                                      logger: controller.logger,
                                       selectedTableName:
                                           _selectedTableNameForErd(controller),
                                       onSelectTable: (tableName) {
@@ -600,6 +600,78 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     _dismissedAutocompleteValue = null;
     _autocompleteSelectionIndex = 0;
     widget.controller.updateActiveSql(value);
+  }
+
+  void _setNavigationPaneMode(_NavigationPaneMode mode) {
+    if (mode == _NavigationPaneMode.erd) {
+      _logErdNavigationSelected();
+    }
+    setState(() {
+      _navigationPaneMode = mode;
+    });
+  }
+
+  void _logErdNavigationSelected() {
+    final controller = widget.controller;
+    final schema = controller.schema;
+    final isLoading =
+        controller.isInitializing ||
+        controller.isSchemaLoading ||
+        controller.isOpeningDatabase;
+    final details = <String, Object?>{
+      'database_label': controller.databasePath == null
+          ? 'sample.decentdb'
+          : p.basename(controller.databasePath!),
+      'has_open_database': controller.hasOpenDatabase,
+      'is_initializing': controller.isInitializing,
+      'is_schema_loading': controller.isSchemaLoading,
+      'is_opening_database': controller.isOpeningDatabase,
+      'schema_loaded_at_utc': schema.loadedAt.toIso8601String(),
+      'object_count': schema.objects.length,
+      'table_count': schema.tables.length,
+      'view_count': schema.views.length,
+      'index_count': schema.indexes.length,
+      'trigger_count': schema.triggers.length,
+      'selected_schema_node_id': _selectedSchemaNodeId,
+      'selected_table_for_erd': _selectedTableNameForErd(controller),
+      'table_names_sample': _sampleSchemaNames(schema.tables),
+      'view_names_sample': _sampleSchemaNames(schema.views),
+    };
+    assert(() {
+      developer.log(
+        'ERD navigation selected ${jsonEncode(details)}',
+        name: 'erd.navigation',
+      );
+      return true;
+    }());
+    controller.logger.info(
+      category: 'erd',
+      operation: 'navigation_selected',
+      message: 'ERD navigation selected.',
+      databasePath: controller.databasePath,
+      details: details,
+    );
+    if (controller.hasOpenDatabase && !isLoading && schema.tables.isEmpty) {
+      controller.logger.warning(
+        category: 'erd',
+        operation: 'navigation_empty_schema',
+        message:
+            'ERD selected for ${details['database_label']} while the open '
+            'workspace schema has ${schema.tables.length} tables, '
+            '${schema.views.length} views, and ${schema.objects.length} '
+            'schema objects.',
+        databasePath: controller.databasePath,
+        details: details,
+      );
+    }
+  }
+
+  List<String> _sampleSchemaNames(List<SchemaObjectSummary> objects) {
+    const sampleLimit = 25;
+    return objects
+        .map((object) => object.name)
+        .take(sampleLimit)
+        .toList(growable: false);
   }
 
   SchemaSelectionDetails? _selectedSchemaSelection(
@@ -3686,6 +3758,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   Future<void> _showEntityRelationshipDiagram({String? tableName}) async {
     _shellController.setSchemaExplorerVisible(true);
+    _logErdNavigationSelected();
     setState(() {
       _navigationPaneMode = _NavigationPaneMode.erd;
       if (tableName != null) {

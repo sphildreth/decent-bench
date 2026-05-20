@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'workspace_models.dart';
 
 class SchemaRelationshipGraphOptions {
@@ -145,6 +147,19 @@ class SchemaRelationshipGraph {
       for (final node in nodes)
         node.copyWith(isIsolated: !incidentTables.contains(node.tableName)),
     ];
+
+    assert(() {
+      developer.log(
+        'Constructed ERD graph: '
+        'snapshotTables=${snapshot.tables.length}, '
+        'nodes=${annotatedNodes.length}, '
+        'edges=${relationshipEdges.length}, '
+        'placeholders=${placeholderNodes.length}, '
+        'warnings=${warnings.length}',
+        name: 'erd.graph',
+      );
+      return true;
+    }());
 
     return SchemaRelationshipGraph._(
       nodes: List<SchemaRelationshipNode>.unmodifiable(annotatedNodes),

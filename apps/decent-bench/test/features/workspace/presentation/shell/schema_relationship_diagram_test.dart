@@ -1,3 +1,4 @@
+import 'package:decent_bench/app/logging/app_logger.dart';
 import 'package:decent_bench/app/theme.dart';
 import 'package:decent_bench/app/theme_system/theme_presets.dart';
 import 'package:decent_bench/features/workspace/domain/workspace_models.dart';
@@ -5,6 +6,8 @@ import 'package:decent_bench/features/workspace/presentation/shell/schema_relati
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../../../support/fakes.dart';
 
 void main() {
   SchemaColumn column(
@@ -50,6 +53,8 @@ void main() {
     WidgetTester tester, {
     required SchemaSnapshot schema,
     String? selectedTableName,
+    String? databasePath,
+    AppLogger logger = const NoOpAppLogger(),
     Size size = const Size(720, 520),
   }) async {
     final opened = <String>[];
@@ -63,6 +68,8 @@ void main() {
             child: SchemaRelationshipDiagram(
               schema: schema,
               databaseLabel: 'sample.decentdb',
+              databasePath: databasePath,
+              logger: logger,
               selectedTableName: selectedTableName,
               onSelectTable: (_) {},
               onOpenTable: (tableName) async {
@@ -99,6 +106,91 @@ void main() {
     );
     expect(find.text('users'), findsOneWidget);
     expect(find.text('products'), findsOneWidget);
+  });
+
+  testWidgets('logs schema handoff and graph construction details', (
+    tester,
+  ) async {
+    final logger = RecordingAppLogger();
+
+    await pumpDiagram(
+      tester,
+      databasePath: '/tmp/sample.ddb',
+      logger: logger,
+      schema: schema(<SchemaObjectSummary>[
+        table('users', columns: <SchemaColumn>[column('id')]),
+        table('products', columns: <SchemaColumn>[column('id')]),
+      ]),
+    );
+
+    final handoff = logger.entries.singleWhere(
+      (entry) => entry.category == 'erd' && entry.operation == 'schema_handoff',
+    );
+    final graph = logger.entries.singleWhere(
+      (entry) => entry.category == 'erd' && entry.operation == 'graph_built',
+    );
+
+    expect(handoff.databasePath, '/tmp/sample.ddb');
+    expect(handoff.details?['table_count'], 2);
+    expect(handoff.details?['table_names_sample'], <String>[
+      'users',
+      'products',
+    ]);
+    expect(graph.details?['node_count'], 2);
+    expect(graph.details?['edge_count'], 0);
+  });
+
+  testWidgets('warns when an open database produces an empty ERD graph', (
+    tester,
+  ) async {
+    final logger = RecordingAppLogger();
+
+    await pumpDiagram(
+      tester,
+      databasePath: '/tmp/empty.ddb',
+      logger: logger,
+      schema: SchemaSnapshot.empty(),
+    );
+
+    final warning = logger.entries.singleWhere(
+      (entry) => entry.category == 'erd' && entry.operation == 'empty_graph',
+    );
+    expect(warning.databasePath, '/tmp/empty.ddb');
+    expect(warning.details?['table_count'], 0);
+    expect(warning.details?['node_count'], 0);
+  });
+
+  testWidgets('updates graph when the received schema changes', (tester) async {
+    final logger = RecordingAppLogger();
+
+    await pumpDiagram(
+      tester,
+      databasePath: '/tmp/sample.ddb',
+      logger: logger,
+      schema: SchemaSnapshot.empty(),
+    );
+    expect(find.text('No tables'), findsOneWidget);
+
+    await pumpDiagram(
+      tester,
+      databasePath: '/tmp/sample.ddb',
+      logger: logger,
+      schema: schema(<SchemaObjectSummary>[
+        table('users', columns: <SchemaColumn>[column('id')]),
+      ]),
+    );
+
+    expect(find.text('No tables'), findsNothing);
+    expect(find.text('users'), findsOneWidget);
+    expect(
+      logger.entries.any(
+        (entry) =>
+            entry.category == 'erd' &&
+            entry.operation == 'graph_built' &&
+            entry.details?['node_count'] == 1,
+      ),
+      isTrue,
+    );
   });
 
   testWidgets('missing parent placeholder appears', (tester) async {

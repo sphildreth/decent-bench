@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -5,6 +7,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../../app/logging/app_logger.dart';
 import '../../domain/schema_relationship_export.dart';
 import '../../domain/schema_relationship_graph.dart';
 import '../../domain/schema_relationship_layout.dart';
@@ -16,6 +19,8 @@ class SchemaRelationshipDiagram extends StatefulWidget {
     super.key,
     required this.schema,
     required this.databaseLabel,
+    required this.databasePath,
+    required this.logger,
     required this.selectedTableName,
     required this.onSelectTable,
     required this.onOpenTable,
@@ -24,6 +29,8 @@ class SchemaRelationshipDiagram extends StatefulWidget {
 
   final SchemaSnapshot schema;
   final String databaseLabel;
+  final String? databasePath;
+  final AppLogger logger;
   final String? selectedTableName;
   final ValueChanged<String> onSelectTable;
   final Future<void> Function(String tableName) onOpenTable;
@@ -53,13 +60,23 @@ class SchemaRelationshipDiagramState extends State<SchemaRelationshipDiagram> {
   bool _neighborhoodMode = false;
   bool _exporting = false;
   String _search = '';
+  late SchemaRelationshipGraph _graph;
   SchemaRelationshipGraph? _lastGraph;
   SchemaRelationshipLayout? _lastLayout;
+  String? _lastLoggedLoadSignature;
+  String? _lastLoggedEmptyGraphSignature;
 
   @override
   void initState() {
     super.initState();
+    _rebuildGraphAndLog();
     _searchController.addListener(_handleSearchChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant SchemaRelationshipDiagram oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _rebuildGraphAndLog();
   }
 
   @override
@@ -87,8 +104,7 @@ class SchemaRelationshipDiagramState extends State<SchemaRelationshipDiagram> {
 
   @override
   Widget build(BuildContext context) {
-    final graph = SchemaRelationshipGraph.fromSnapshot(widget.schema);
-    _lastGraph = graph;
+    final graph = _graph;
     return ShellPaneFrame(
       title: 'ER Diagram',
       subtitle: widget.databaseLabel,
@@ -172,6 +188,135 @@ class SchemaRelationshipDiagramState extends State<SchemaRelationshipDiagram> {
               },
             ),
     );
+  }
+
+  void _rebuildGraphAndLog() {
+    final graph = SchemaRelationshipGraph.fromSnapshot(widget.schema);
+    _graph = graph;
+    _lastGraph = graph;
+    _logErdLoad(graph);
+  }
+
+  void _logErdLoad(SchemaRelationshipGraph graph) {
+    final tableNames = widget.schema.tables
+        .map((object) => object.name)
+        .toList(growable: false);
+    final viewNames = widget.schema.views
+        .map((object) => object.name)
+        .toList(growable: false);
+    final signature = <Object?>[
+      widget.databasePath,
+      widget.databaseLabel,
+      widget.schema.loadedAt.toIso8601String(),
+      widget.schema.objects.length,
+      widget.schema.tables.length,
+      widget.schema.views.length,
+      widget.schema.indexes.length,
+      widget.schema.triggers.length,
+      graph.nodes.length,
+      graph.edges.length,
+      graph.warnings.length,
+      widget.selectedTableName,
+      widget.isLoading,
+    ].join('|');
+    if (_lastLoggedLoadSignature == signature) {
+      return;
+    }
+    _lastLoggedLoadSignature = signature;
+
+    final schemaDetails = <String, Object?>{
+      'database_label': widget.databaseLabel,
+      'schema_loaded_at_utc': widget.schema.loadedAt.toIso8601String(),
+      'is_loading': widget.isLoading,
+      'selected_table': widget.selectedTableName,
+      'object_count': widget.schema.objects.length,
+      'table_count': widget.schema.tables.length,
+      'view_count': widget.schema.views.length,
+      'index_count': widget.schema.indexes.length,
+      'trigger_count': widget.schema.triggers.length,
+      'total_table_column_count': widget.schema.tables.fold<int>(
+        0,
+        (total, table) => total + table.columns.length,
+      ),
+      'table_names_sample': _sampleNames(tableNames),
+      'view_names_sample': _sampleNames(viewNames),
+    };
+    final graphDetails = <String, Object?>{
+      ...schemaDetails,
+      'node_count': graph.nodes.length,
+      'edge_count': graph.edges.length,
+      'placeholder_node_count': graph.nodes
+          .where((node) => node.isPlaceholder)
+          .length,
+      'isolated_node_count': graph.nodes
+          .where((node) => node.isIsolated)
+          .length,
+      'warning_count': graph.warnings.length,
+      'node_names_sample': _sampleNames(
+        graph.nodes.map((node) => node.tableName).toList(growable: false),
+      ),
+      'warning_sample': _sampleNames(graph.warnings),
+    };
+
+    assert(() {
+      developer.log(
+        'ERD schema handoff ${jsonEncode(schemaDetails)}',
+        name: 'erd.schema_handoff',
+      );
+      developer.log(
+        'ERD graph built ${jsonEncode(graphDetails)}',
+        name: 'erd.graph',
+      );
+      return true;
+    }());
+    widget.logger.info(
+      category: 'erd',
+      operation: 'schema_handoff',
+      message: 'ERD received schema snapshot.',
+      databasePath: widget.databasePath,
+      details: schemaDetails,
+    );
+    widget.logger.info(
+      category: 'erd',
+      operation: 'graph_built',
+      message: 'ERD built graph from schema snapshot.',
+      databasePath: widget.databasePath,
+      details: graphDetails,
+    );
+
+    if (!widget.isLoading &&
+        widget.databasePath != null &&
+        graph.nodes.isEmpty) {
+      final emptySignature = <Object?>[
+        widget.databasePath,
+        widget.schema.loadedAt.toIso8601String(),
+        widget.schema.objects.length,
+        widget.schema.tables.length,
+        widget.schema.views.length,
+      ].join('|');
+      if (_lastLoggedEmptyGraphSignature != emptySignature) {
+        _lastLoggedEmptyGraphSignature = emptySignature;
+        widget.logger.warning(
+          category: 'erd',
+          operation: 'empty_graph',
+          message:
+              'ERD graph is empty for ${widget.databaseLabel}: '
+              '${widget.schema.tables.length} tables, '
+              '${widget.schema.views.length} views, '
+              '${widget.schema.objects.length} schema objects.',
+          databasePath: widget.databasePath,
+          details: graphDetails,
+        );
+      }
+    }
+  }
+
+  List<String> _sampleNames(List<String> values) {
+    const sampleLimit = 25;
+    if (values.length <= sampleLimit) {
+      return values;
+    }
+    return values.take(sampleLimit).toList(growable: false);
   }
 
   Widget _buildInteractiveDiagram({
