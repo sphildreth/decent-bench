@@ -580,9 +580,7 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
         expect(export.rowCount, 1);
         expect(
           csv,
-          contains(
-            'status,seen_date,seen_time,seen_at,span,ip,net,mac,mac8',
-          ),
+          contains('status,seen_date,seen_time,seen_at,span,ip,net,mac,mac8'),
         );
         expect(csv, isNot(contains('DecentDBEnumValue')));
         expect(csv, isNot(contains('DecentDBIntervalValue')));
@@ -652,7 +650,8 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
 
         expect(ndjsonExport.rowCount, 1);
         expect(ndjsonLines, hasLength(1));
-        final ndjsonRow = jsonDecode(ndjsonLines.single)! as Map<String, Object?>;
+        final ndjsonRow =
+            jsonDecode(ndjsonLines.single)! as Map<String, Object?>;
         expect(ndjsonRow['status'], isA<Map<String, Object?>>());
         expect(ndjsonRow['seen_date'], '2026-05-01');
         expect(ndjsonRow['seen_time'], '09:30:01');
@@ -786,6 +785,38 @@ INSERT INTO `metrics` VALUES ('Q1', 1200.50), ('Q2', 1800.25);
       expect(userNameIndex.temporary, isFalse);
       expect(userNameIndex.predicateSql, anyOf(isNull, isEmpty));
     });
+
+    test(
+      'maps table-level foreign keys onto schema columns',
+      skip: skipReason,
+      () async {
+        await exec(
+          'CREATE TABLE "Artists" ('
+          '"Id" INT64 NOT NULL PRIMARY KEY UNIQUE, '
+          '"Name" TEXT NOT NULL'
+          ')',
+        );
+        await exec(
+          'CREATE TABLE "Albums" ('
+          '"Id" INT64 NOT NULL PRIMARY KEY UNIQUE, '
+          '"ArtistId" INT64 NOT NULL, '
+          '"Name" TEXT NOT NULL, '
+          'FOREIGN KEY ("ArtistId") REFERENCES "Artists" ("Id")'
+          ')',
+        );
+
+        final schema = await bridge.loadSchema();
+        final albums = schema.objectNamed('Albums');
+        final artistId = albums!.columns.firstWhere(
+          (column) => column.name == 'ArtistId',
+        );
+
+        expect(artistId.refTable, 'Artists');
+        expect(artistId.refColumn, 'Id');
+        expect(artistId.refOnDelete, 'NO ACTION');
+        expect(artistId.refOnUpdate, 'NO ACTION');
+      },
+    );
 
     test(
       'exposes tooling metadata and query contracts',
@@ -2169,11 +2200,7 @@ ORDER BY o.order_id, i.sku
         final branchToken = row['branch_token'];
         expect(
           branchToken,
-          anyOf(
-            isA<String>(),
-            isA<Uint8List>(),
-            isA<Map<Object?, Object?>>(),
-          ),
+          anyOf(isA<String>(), isA<Uint8List>(), isA<Map<Object?, Object?>>()),
         );
         if (branchToken is Uint8List) {
           expect(
@@ -2197,9 +2224,7 @@ ORDER BY o.order_id, i.sku
         expect(export.rowCount, 1);
         expect(
           await File(exportPath).readAsString(),
-          contains(
-            'status_enum,temporal_timestamptz,ip_address,revenue',
-          ),
+          contains('status_enum,temporal_timestamptz,ip_address,revenue'),
         );
 
         final jsonPath = p.join(tempDir.path, 'v25-native-export.json');
@@ -2214,8 +2239,9 @@ ORDER BY o.order_id, i.sku
           pretty: false,
           includeMetadata: true,
         );
-        final jsonPayload = jsonDecode(await File(jsonPath).readAsString())
-            as Map<String, Object?>;
+        final jsonPayload =
+            jsonDecode(await File(jsonPath).readAsString())
+                as Map<String, Object?>;
         final jsonRows = jsonPayload['rows']! as List<Object?>;
         final jsonRow = jsonRows.single! as Map<String, Object?>;
 
@@ -2223,10 +2249,7 @@ ORDER BY o.order_id, i.sku
         final jsonBranchToken = jsonRow['branch_token'];
         expect(
           jsonBranchToken,
-          anyOf(
-            isA<String>(),
-            isA<Map<Object?, Object?>>(),
-          ),
+          anyOf(isA<String>(), isA<Map<Object?, Object?>>()),
         );
         expect(jsonRow['status_enum'], isA<String>());
         expect(jsonRow['ip_address'], '192.168.1.15');

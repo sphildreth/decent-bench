@@ -449,8 +449,8 @@ class SchemaRelationshipDiagramState extends State<SchemaRelationshipDiagram> {
 
   double _nodeHeightForDensity(_DiagramDensity density) {
     return switch (density) {
-      _DiagramDensity.wide => 150,
-      _DiagramDensity.medium => 112,
+      _DiagramDensity.wide => 190,
+      _DiagramDensity.medium => 128,
       _DiagramDensity.narrow => 64,
     };
   }

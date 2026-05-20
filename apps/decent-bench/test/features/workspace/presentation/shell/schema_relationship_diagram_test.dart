@@ -331,6 +331,37 @@ void main() {
     expect(find.textContaining('amount'), findsNothing);
   });
 
+  testWidgets('wide table cards fit six columns and overflow summary', (
+    tester,
+  ) async {
+    await pumpDiagram(
+      tester,
+      schema: schema(<SchemaObjectSummary>[
+        table(
+          'albums',
+          columns: <SchemaColumn>[
+            column('id', primaryKey: true),
+            column('artist_id', refTable: 'artists', refColumn: 'id'),
+            column('sort_name', type: 'TEXT'),
+            column('album_type'),
+            column('musicbrainz_release_group_id', type: 'TEXT'),
+            column('itunes_id', type: 'TEXT'),
+            column('release_date', type: 'DATE'),
+            column('release_country', type: 'TEXT'),
+            column('barcode', type: 'TEXT'),
+            column('comment', type: 'TEXT'),
+          ],
+        ),
+        table('artists', columns: <SchemaColumn>[column('id')]),
+      ]),
+      size: const Size(720, 520),
+    );
+
+    expect(find.textContaining('itunes_id'), findsOneWidget);
+    expect(find.text('+4 more'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('table nodes are focusable and Enter opens table preview', (
     tester,
   ) async {

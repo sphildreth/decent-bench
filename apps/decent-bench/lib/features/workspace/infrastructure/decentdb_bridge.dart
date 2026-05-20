@@ -971,7 +971,7 @@ class _BridgeWorkerState {
           'kind': 'table',
           'temporary': table.temporary,
           'ddl': table.ddl,
-          'columns': _serializeTableColumns(table.columns),
+          'columns': _serializeTableColumns(table),
           'checks': _serializeChecks(_allTableChecks(table)),
         },
       for (final view in views)
@@ -1706,34 +1706,47 @@ List<SchemaCheckConstraintInfo> _allTableChecks(SchemaTableInfo table) {
   return merged;
 }
 
-List<Map<String, Object?>> _serializeTableColumns(
-  List<SchemaColumnInfo> columns,
-) {
-  return <Map<String, Object?>>[
-    for (final column in columns)
-      <String, Object?>{
-        'name': column.name,
-        'type': column.type,
-        'notNull': !column.nullable,
-        'unique': column.unique,
-        'primaryKey': column.primaryKey,
-        'defaultExpr': column.defaultSql,
-        'generatedExpr': column.generatedSql,
-        'generatedStored': column.generatedStored,
-        'refTable': column.foreignKey?.referencedTable,
-        'refColumn': _referencedColumnFor(column),
-        'refOnDelete': column.foreignKey?.onDelete,
-        'refOnUpdate': column.foreignKey?.onUpdate,
-      },
-  ];
+List<Map<String, Object?>> _serializeTableColumns(SchemaTableInfo table) {
+  final serialized = <Map<String, Object?>>[];
+  for (final column in table.columns) {
+    final foreignKey =
+        column.foreignKey ??
+        _foreignKeyForColumn(table.foreignKeys, column.name);
+    serialized.add(<String, Object?>{
+      'name': column.name,
+      'type': column.type,
+      'notNull': !column.nullable,
+      'unique': column.unique,
+      'primaryKey': column.primaryKey,
+      'defaultExpr': column.defaultSql,
+      'generatedExpr': column.generatedSql,
+      'generatedStored': column.generatedStored,
+      'refTable': foreignKey?.referencedTable,
+      'refColumn': _referencedColumnFor(column.name, foreignKey),
+      'refOnDelete': foreignKey?.onDelete,
+      'refOnUpdate': foreignKey?.onUpdate,
+    });
+  }
+  return serialized;
 }
 
-String? _referencedColumnFor(SchemaColumnInfo column) {
-  final foreignKey = column.foreignKey;
+ForeignKeyInfo? _foreignKeyForColumn(
+  List<ForeignKeyInfo> foreignKeys,
+  String columnName,
+) {
+  for (final foreignKey in foreignKeys) {
+    if (foreignKey.columns.contains(columnName)) {
+      return foreignKey;
+    }
+  }
+  return null;
+}
+
+String? _referencedColumnFor(String columnName, ForeignKeyInfo? foreignKey) {
   if (foreignKey == null || foreignKey.columns.isEmpty) {
     return null;
   }
-  final localIndex = foreignKey.columns.indexOf(column.name);
+  final localIndex = foreignKey.columns.indexOf(columnName);
   if (localIndex < 0 || localIndex >= foreignKey.referencedColumns.length) {
     return foreignKey.referencedColumns.isEmpty
         ? null
