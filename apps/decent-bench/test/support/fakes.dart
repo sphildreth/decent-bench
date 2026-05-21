@@ -237,8 +237,8 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   bool branchApiAvailable = false;
   String branchApiUnavailableReason =
       'Native DecentDB branch and snapshot operations require a public Dart '
-      'binding API. DecentDB v2.5.x exposes the C ABI JSON bridge, but Decent '
-      'Bench does not call private binding internals.';
+      'binding API. Decent Bench does not call private binding internals or '
+      'C ABI surfaces that are not exported by the public Dart package.';
   List<WorkspaceBranchInfo> branches = const <WorkspaceBranchInfo>[
     WorkspaceBranchInfo(name: 'main', isCurrent: true),
   ];
@@ -342,7 +342,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   );
   ToolingMetadata toolingMetadata = const ToolingMetadata(
     metadataVersion: 1,
-    engineVersion: '2.5.1',
+    engineVersion: '2.6.0',
     databaseFormatVersion: 8,
     schemaCookie: 1,
     tempSchemaCookie: 0,

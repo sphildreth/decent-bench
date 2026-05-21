@@ -1,16 +1,16 @@
 # Decent Bench Future Wins
 
 **Status:** v2.0.0 completion refresh
-**Last reviewed:** 2026-05-19
+**Last reviewed:** 2026-05-21
 **Purpose:** Product and engineering priority index for work that is still
 future-facing. Implemented v2.0.0 capabilities are listed as current
 foundations, not future wins.
 
-Decent Bench now covers the high-priority v2.5.x workbench surface: rich
-metadata, native types, branch-aware safety boundaries, table editing, saved
-queries, diagnostics, visualization, repeatable profiles, typed exports, and
-row-local import transforms. The remaining roadmap is mostly dependency-gated
-or intentionally larger than the current workbench slice.
+Decent Bench now covers the high-priority v2.x workbench surface through the
+DecentDB v2.6.0 pin: rich metadata, native types, branch-aware safety
+boundaries, table editing, saved queries, diagnostics, visualization,
+repeatable profiles, typed exports, and row-local import transforms. New v2.6.0
+surfaces are tracked in `design/DECENTDB_2_6_ENHANCEMENT_PLAN.md`.
 
 ## Status Values
 
@@ -28,11 +28,13 @@ status.
 
 | Priority | Future Version | Status | Feature | Current Source Of Truth | Why This Rank |
 |---:|---|---|---|---|---|
-| 1 | Future | BACKLOG | Public DecentDB Dart branch/snapshot API integration | `design/adr/0032-database-snapshot-and-safe-run.md`, `design/adr/0028-inline-table-data-editor.md`, `design/adr/0029-workspace-project-file-and-query-library.md` | Decent Bench owns the UI/domain boundary, but native branch execution, branch-local edits/imports, and project branch preferences require public Dart APIs before production wiring can be completed |
-| 2 | Future | BACKLOG | Parquet export writer | `design/adr/0031-parquet-excel-export-dependency-strategy.md` | Excel export is implemented with the existing archive dependency; Parquet remains blocked on a maintained Apache-compatible Dart or FFI writer validated across desktop platforms |
-| 3 | Future | TODO | SDK generation CLI and UI workflow | `design/adr/0034-schema-first-sdk-generation-prototype.md` | The TypeScript IR/prototype exists; a user-facing `dbench generate-sdk` workflow should reuse that IR after project-file workflows settle |
-| 4 | Future | BACKLOG | Connector expansion beyond the current registry | `design/IMPORT_SUPPORT_PLAN.md`, `docs/IMPORT_FORMATS.md` | DuckDB, ODS, Parquet import, PostgreSQL dump expansion, DBF/Access, live database sources, clipboard tables, XZ, and PDF tables are recognized honestly but require dependency/product evaluation |
-| 5 | Future | BACKLOG | Query-plan and performance diagnostics, full suite | Needs ADR/spec | Broader than the implemented EXPLAIN visualization; covers plan comparison, index recommendations, runtime profiling, and historical plan tracking |
+| 1 | Future | TODO | DecentDB v2.6.0 observability and SQL-surface parity | `design/DECENTDB_2_6_ENHANCEMENT_PLAN.md` | Operational `sys.*` metrics, PRAGMA compatibility, `generate_series`, and compatibility catalogs fit the existing workbench without expanding product scope |
+| 2 | Future | TODO | DecentDB v2.6.0 queued write integration | `design/DECENTDB_2_6_ENHANCEMENT_PLAN.md`; needs ADR before implementation | Useful for self-contained app-generated writes and concurrency diagnostics, but it changes the app-owned write execution model |
+| 3 | Future | BACKLOG | Public DecentDB Dart branch/snapshot API integration | `design/adr/0032-database-snapshot-and-safe-run.md`, `design/adr/0028-inline-table-data-editor.md`, `design/adr/0029-workspace-project-file-and-query-library.md` | Decent Bench owns the UI/domain boundary, but native branch execution, branch-local edits/imports, and project branch preferences require public Dart APIs before production wiring can be completed |
+| 4 | Future | BACKLOG | Parquet export writer | `design/adr/0031-parquet-excel-export-dependency-strategy.md` | Excel export is implemented with the existing archive dependency; Parquet remains blocked on a maintained Apache-compatible Dart or FFI writer validated across desktop platforms |
+| 5 | Future | TODO | SDK generation CLI and UI workflow | `design/adr/0034-schema-first-sdk-generation-prototype.md` | The TypeScript IR/prototype exists; a user-facing `dbench generate-sdk` workflow should reuse that IR after project-file workflows settle |
+| 6 | Future | BACKLOG | Connector expansion beyond the current registry | `design/IMPORT_SUPPORT_PLAN.md`, `docs/IMPORT_FORMATS.md` | DuckDB, ODS, Parquet import, PostgreSQL dump expansion, DBF/Access, live database sources, clipboard tables, XZ, and PDF tables are recognized honestly but require dependency/product evaluation |
+| 7 | Future | BACKLOG | Query-plan and performance diagnostics, full suite | Needs ADR/spec | Broader than the implemented EXPLAIN visualization; covers plan comparison, index recommendations, runtime profiling, and historical plan tracking |
 
 ## Current Foundations
 
@@ -58,11 +60,11 @@ be treated as future roadmap claims:
 - Schema browser expansion for triggers, constraints, generated columns, temp
   objects, native type details, enum labels, spatial metadata, search/filter,
   and branch context.
-- DecentDB v2.5.1 engine, binding, and fixture compatibility.
+- DecentDB v2.6.0 engine, binding, and fixture compatibility.
 - DecentDB tooling metadata bridge with schema fingerprints and query contracts.
 - Query-parameterized SQL execution with typed fields driven by contracts, plus
   pre-execution validation for contract-required arguments.
-- DecentDB v2.5.x native semantic and spatial type UX across schema metadata,
+- DecentDB v2.x native semantic and spatial type UX across schema metadata,
   result grids, copy actions, autocomplete, snippets, import overrides, and
   typed export paths.
 - Multi-tab SQL editor against the pinned DecentDB SQL surface.
@@ -87,7 +89,7 @@ be treated as future roadmap claims:
   charts with PNG export.
 - Read-only ERD viewing with schema-pane navigation, table-preview loading, and
   full-diagram or viewport PNG/JPG image export.
-- CSV, JSON, NDJSON, and Excel (`.xlsx`) exports with full v2.5.x native type
+- CSV, JSON, NDJSON, and Excel (`.xlsx`) exports with full v2.x native type
   handling where the target format supports it.
 - Import/export profile persistence shared by GUI/headless workflows.
 - DecentDB native asset staging and hardened library resolution.

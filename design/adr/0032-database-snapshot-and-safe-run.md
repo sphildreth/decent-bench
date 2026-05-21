@@ -6,8 +6,8 @@
 ## Context
 
 ADR-0032 originally treated snapshots as file copies. That was the safest
-available model before DecentDB v2.5.x, but it is no longer the primary design.
-DecentDB v2.5.x exposes native named snapshots, branches, branch-local
+available model before DecentDB v2.x, but it is no longer the primary design.
+DecentDB v2.x exposes native named snapshots, branches, branch-local
 execution, branch diffs, guarded restore, constrained merge, and a C ABI JSON
 bridge for branch operations.
 
@@ -15,7 +15,7 @@ Decent Bench should build its safety workflow on those native database
 primitives. File-copy snapshots remain useful as an exportable fallback, but
 they should not define the main workbench model.
 
-As of DecentDB `v2.5.1`, the Dart binding exposes `Database.saveAs()` for
+As of DecentDB `v2.6.0`, the Dart binding exposes `Database.saveAs()` for
 file-level copies and the C ABI exposes `ddb_db_branch_execute_json`, but the
 Dart package does not yet expose a public branch/snapshot API. Decent Bench must
 not hard-wire a private binding detail. The first implementation slice should
@@ -123,5 +123,5 @@ primary rollback model.
 - `design/adr/0002-results-paging-and-streaming-contract.md`
 - `design/PRD.md` section 9.2
 - `design/PRD.md` section 9.4
-- DecentDB `v2.5.1` C ABI branch JSON entry point:
+- DecentDB C ABI branch JSON entry point:
   `ddb_db_branch_execute_json`

@@ -16,7 +16,7 @@ Decent Bench will introduce two layered persistence features:
 Both use TOML — consistent with the existing configuration format and the
 project's `TOML-first` convention established in the PRD.
 
-With DecentDB v2.5.x, saved queries also store query-contract summaries and the
+With DecentDB v2.x, saved queries also store query-contract summaries and the
 schema fingerprint observed when the query was saved. These fields let Decent
 Bench warn about schema drift before rerunning or exporting a saved query.
 

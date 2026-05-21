@@ -318,7 +318,7 @@ class _FakeLogGateway implements WorkspaceDatabaseGateway {
   Future<ToolingMetadata> getToolingMetadata() async {
     return const ToolingMetadata(
       metadataVersion: 1,
-      engineVersion: '2.5.1',
+      engineVersion: '2.6.0',
       databaseFormatVersion: 8,
       schemaCookie: 1,
       tempSchemaCookie: 0,

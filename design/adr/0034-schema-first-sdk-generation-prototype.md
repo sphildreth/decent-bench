@@ -5,7 +5,7 @@
 ### Decision
 
 Decent Bench will prototype SDK generation from a stable internal IR built from
-the loaded DecentDB schema snapshot, v2.5.x tooling metadata, and saved-query
+the loaded DecentDB schema snapshot, v2.x tooling metadata, and saved-query
 contracts. The first language target is TypeScript declarations because it is
 easy to golden test, broadly useful, and does not require runtime ORM behavior.
 
@@ -32,7 +32,7 @@ against an optional previous manifest.
 
 ### Rationale
 
-DecentDB v2.5.x provides the missing metadata surface: deterministic schema
+DecentDB v2.x provides the missing metadata surface: deterministic schema
 fingerprints, query contracts, and native type metadata. Decent Bench can now
 generate application-facing artifacts without guessing from SQL text alone.
 

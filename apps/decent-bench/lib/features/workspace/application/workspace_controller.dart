@@ -26,8 +26,8 @@ class WorkspaceController extends ChangeNotifier {
   static const int _maxMessageHistoryEntries = 80;
   static const String nativeBranchApiUnavailableReason =
       'Native DecentDB branch and snapshot operations require a public Dart '
-      'binding API. DecentDB v2.5.x exposes the C ABI JSON bridge, but Decent '
-      'Bench does not call private binding internals.';
+      'binding API. Decent Bench does not call private binding internals or '
+      'C ABI surfaces that are not exported by the public Dart package.';
 
   WorkspaceController({
     WorkspaceDatabaseGateway? gateway,

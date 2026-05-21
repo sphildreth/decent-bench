@@ -6,7 +6,7 @@ void main() {
     test('decodes deterministic column metadata and spatial type details', () {
       final metadata = ToolingMetadata.fromMap(<String, Object?>{
         'metadata_version': 1,
-        'engine_version': '2.5.1',
+        'engine_version': '2.6.0',
         'database_format_version': 8,
         'schema_cookie': 4,
         'temp_schema_cookie': 0,

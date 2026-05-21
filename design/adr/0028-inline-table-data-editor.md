@@ -11,7 +11,7 @@ from the grid surface. On commit, the tool generates and executes parameterized 
 `DecentDbBridge` isolate. The grid becomes a write-through surface, not a
 separate "data editor" view.
 
-With DecentDB v2.5.x, editability and editor selection must use query contracts,
+With DecentDB v2.x, editability and editor selection must use query contracts,
 tooling metadata, and native type metadata instead of relying on display text.
 Risky edit sessions should be branch-aware: when native branch operations are
 available through the Dart binding, Decent Bench should offer "edit on branch"

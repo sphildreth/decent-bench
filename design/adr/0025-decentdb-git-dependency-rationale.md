@@ -12,7 +12,7 @@ decentdb:
   git:
     url: https://github.com/sphildreth/decentdb
     path: bindings/dart/dart
-    ref: v2.5.1
+    ref: v2.6.0
 ```
 
 ### Rationale

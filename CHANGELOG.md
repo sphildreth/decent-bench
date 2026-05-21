@@ -8,8 +8,11 @@ This file records notable project changes. It follows the
 
 ### Added
 
-- Added DecentDB v2.5.1 alignment, including pinned binding/runtime metadata,
-  native asset resolution hardening, and a v2.5.x fixture smoke path.
+- Added a DecentDB v2.6.0 enhancement adoption plan covering queued writes,
+  operational `sys.*` metrics, SQL/PRAGMA compatibility, local web console,
+  reactive streams, sync/relay, Lua extensions, and WASM/browser boundaries.
+- Added DecentDB v2.6.0 alignment, including pinned binding/runtime metadata,
+  native asset resolution hardening, and a v2.x fixture smoke path.
 - Added DecentDB tooling metadata and query-contract bridge support for schema
   fingerprints, parameter contracts, result-column contracts, and persisted
   workspace summaries.
@@ -53,12 +56,14 @@ This file records notable project changes. It follows the
 
 ### Changed
 
-- Updated roadmap, README, and ADR documentation to treat completed v2.5.1,
+- Updated the pinned DecentDB Dart binding/runtime dependency from v2.5.1 to
+  v2.6.0.
+- Updated roadmap, README, and ADR documentation to treat completed v2.x,
   metadata, typed exports, diagnostics, visualization, profiles, import
   transforms, saved queries, and editor work as shipped foundations rather than
   future wins.
 - Revised table-editor, saved-query/project, and branch/snapshot ADRs around
-  DecentDB v2.5.x query contracts, native types, and branch safety.
+  DecentDB v2.x query contracts, native types, and branch safety.
 - Revised charting, Excel/Parquet export, and import-transform ADRs to match
   the implemented dependency and execution choices.
 - Refactored `DecentDbBridge` worker isolate into a `_BridgeWorkerState` class

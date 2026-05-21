@@ -71,7 +71,7 @@ decentdb:
   git:
     url: https://github.com/sphildreth/decentdb
     path: bindings/dart/dart
-    ref: v2.5.1
+    ref: v2.6.0
 ```
 
 The DecentDB engine version and the Decent Bench application version are
@@ -156,7 +156,7 @@ The pinned DecentDB engine version lives in:
 # apps/decent-bench/pubspec.yaml
 decentdb:
   git:
-    ref: v2.5.1
+    ref: v2.6.0
 ```
 
 The `pubspec.lock` file records the resolved version automatically. CI workflows

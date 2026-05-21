@@ -12,16 +12,16 @@ packages:
     dependency: "direct main"
     description:
       path: "bindings/dart/dart"
-      ref: "v2.5.1"
+      ref: "v2.6.0"
       resolved-ref: "abc123"
       url: "https://github.com/sphildreth/decentdb"
     source: git
-    version: "2.5.1"
+    version: "2.6.0"
 ''';
 
     expect(
       DecentDbNativeReleaseAsset.parsePinnedTagFromPubspecLock(contents),
-      'v2.5.1',
+      'v2.6.0',
     );
   });
 
@@ -44,10 +44,10 @@ packages:
   decentdb:
     dependency: "direct main"
     description:
-      ref: "v2.5.1"
+      ref: "v2.6.0"
       url: "https://github.com/sphildreth/decentdb"
     source: git
-    version: "2.5.1"
+    version: "2.6.0"
 ''');
 
       final candidates = DecentDbNativeReleaseAsset.cachedLibraryCandidates(
@@ -68,7 +68,7 @@ packages:
             '.dart_tool',
             'decentdb',
             'native',
-            'v2.5.1',
+            'v2.6.0',
             'Linux-x64',
             'libdecentdb.so',
           ),
@@ -82,7 +82,7 @@ packages:
             '.dart_tool',
             'decentdb',
             'native',
-            'v2.5.1',
+            'v2.6.0',
             'Linux-x64',
             'decentdb-migrate',
           ),
@@ -98,21 +98,21 @@ packages:
         metadata: {
           'assets': [
             {
-              'name': 'decentdb-jdbc-v2.5.1-Linux.jar',
+              'name': 'decentdb-jdbc-v2.6.0-Linux.jar',
               'browser_download_url': 'https://example.invalid/jdbc',
             },
             {
-              'name': 'decentdb-v2.5.1-Linux-x64.tar.gz',
+              'name': 'decentdb-v2.6.0-Linux-x64.tar.gz',
               'browser_download_url': 'https://example.invalid/linux-x64',
             },
           ],
         },
-        tag: 'v2.5.1',
+        tag: 'v2.6.0',
         releaseSuffix: 'Linux-x64',
         archiveExtension: 'tar.gz',
       );
 
-      expect(download.name, 'decentdb-v2.5.1-Linux-x64.tar.gz');
+      expect(download.name, 'decentdb-v2.6.0-Linux-x64.tar.gz');
       expect(
         download.downloadUri.toString(),
         'https://example.invalid/linux-x64',
@@ -125,21 +125,21 @@ packages:
       metadata: {
         'assets': [
           {
-            'name': 'decentdb-v2.5.1-Linux-x64.tar.gz',
+            'name': 'decentdb-v2.6.0-Linux-x64.tar.gz',
             'browser_download_url': 'https://example.invalid/generic',
           },
           {
-            'name': 'decentdb-dart-native-v2.5.1-Linux-x64.tar.gz',
+            'name': 'decentdb-dart-native-v2.6.0-Linux-x64.tar.gz',
             'browser_download_url': 'https://example.invalid/dart-native',
           },
         ],
       },
-      tag: 'v2.5.1',
+      tag: 'v2.6.0',
       releaseSuffix: 'Linux-x64',
       archiveExtension: 'tar.gz',
     );
 
-    expect(download.name, 'decentdb-dart-native-v2.5.1-Linux-x64.tar.gz');
+    expect(download.name, 'decentdb-dart-native-v2.6.0-Linux-x64.tar.gz');
     expect(
       download.downloadUri.toString(),
       'https://example.invalid/dart-native',
@@ -151,23 +151,23 @@ packages:
       metadata: {
         'assets': [
           {
-            'name': 'decentdb-v2.5.1-Linux-x64.tar.gz',
+            'name': 'decentdb-v2.6.0-Linux-x64.tar.gz',
             'browser_download_url': 'https://example.invalid/generic',
           },
           {
-            'name': 'decentdb-dart-native-v2.5.1-Linux-x64.tar.gz',
+            'name': 'decentdb-dart-native-v2.6.0-Linux-x64.tar.gz',
             'browser_download_url': 'https://example.invalid/dart-native',
           },
         ],
       },
-      tag: 'v2.5.1',
+      tag: 'v2.6.0',
       releaseSuffix: 'Linux-x64',
       archiveExtension: 'tar.gz',
       includeDartNative: false,
       preferDartNative: false,
     );
 
-    expect(download.name, 'decentdb-v2.5.1-Linux-x64.tar.gz');
+    expect(download.name, 'decentdb-v2.6.0-Linux-x64.tar.gz');
     expect(download.downloadUri.toString(), 'https://example.invalid/generic');
   });
 }
