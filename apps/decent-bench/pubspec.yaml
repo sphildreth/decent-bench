@@ -34,4 +34,5 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/logo-256x256.png
     - assets/themes/

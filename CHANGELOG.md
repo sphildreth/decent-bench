@@ -73,6 +73,8 @@ This file records notable project changes. It follows the
 
 - Updated the pinned DecentDB Dart binding/runtime dependency from v2.5.1 to
   v2.6.0.
+- Updated the desktop runtime/app icons to use the Decent Bench logo instead
+  of the default Flutter logo.
 - Updated the TOML configuration version for write-queue settings while keeping
   the DecentDB write queue disabled by default.
 - Updated roadmap, README, and ADR documentation to treat completed v2.x,
