@@ -75,6 +75,9 @@ This file records notable project changes. It follows the
   v2.6.0.
 - Updated the desktop runtime/app icons to use the Decent Bench logo instead
   of the default Flutter logo.
+- Updated DecentDB v2.6 operational metrics display to collapse current Dart
+  binding `sys.*` inspection-view limits into one note instead of repeating the
+  same unavailable error for every metric view.
 - Updated the TOML configuration version for write-queue settings while keeping
   the DecentDB write queue disabled by default.
 - Updated roadmap, README, and ADR documentation to treat completed v2.x,

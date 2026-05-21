@@ -1068,11 +1068,16 @@ class _BridgeWorkerState {
   ) async {
     final db = _requireDatabase();
     final maxRows = (payload['maxRows'] as int? ?? 20).clamp(1, 200);
-    final views = <Map<String, Object?>>[
-      _nativeWriteQueueMetricsView(db),
-      for (final spec in _operationalMetricQueries)
-        _queryOperationalMetricView(db, spec, maxRows: maxRows),
-    ];
+    final views = <Map<String, Object?>>[_nativeWriteQueueMetricsView(db)];
+    for (final spec in _operationalMetricQueries) {
+      final view = _queryOperationalMetricView(db, spec, maxRows: maxRows);
+      if (!((view['available'] as bool?) ?? false) &&
+          _isSysSchemaBoundaryError(view['error'] as String?)) {
+        views.add(_sysInspectionPreparedBoundaryView());
+        break;
+      }
+      views.add(view);
+    }
     return <String, Object?>{'views': views};
   }
 
@@ -1808,6 +1813,29 @@ Map<String, Object?> _queryOperationalMetricView(
       'truncated': false,
     };
   }
+}
+
+bool _isSysSchemaBoundaryError(String? error) {
+  final normalized = error?.toLowerCase() ?? '';
+  return normalized.contains('schema-qualified objects outside main/temp') &&
+      normalized.contains("schema 'sys'");
+}
+
+Map<String, Object?> _sysInspectionPreparedBoundaryView() {
+  return <String, Object?>{
+    'name': 'decentdb.sys_inspection_views',
+    'label': 'DecentDB sys.* SQL metrics',
+    'query': 'SELECT * FROM sys.*',
+    'available': false,
+    'columns': const <String>[],
+    'rows': const <Map<String, Object?>>[],
+    'error':
+        'Unavailable through the current Dart prepared-statement paging path. '
+        'DecentDB v2.6 exposes these inspection views through direct SQL '
+        'execution, but the Dart binding does not yet expose direct-result '
+        'paging. Native public metrics APIs are shown when available.',
+    'truncated': false,
+  };
 }
 
 String _inlineQueuedWriteParameters(String sql, List<Object?> params) {

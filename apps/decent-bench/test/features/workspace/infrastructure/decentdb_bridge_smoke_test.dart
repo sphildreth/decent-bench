@@ -1157,6 +1157,28 @@ ORDER BY dept
       },
     );
 
+    test(
+      'collapses unavailable v2.6 sys inspection metrics into one binding note',
+      skip: skipReason,
+      () async {
+        final metrics = await bridge.loadOperationalMetrics();
+
+        expect(metrics.view('native.write_queue_metrics'), isNotNull);
+        final boundary = metrics.view('decentdb.sys_inspection_views');
+        if (boundary != null) {
+          expect(boundary.available, isFalse);
+          expect(
+            boundary.error,
+            contains('Dart prepared-statement paging path'),
+          );
+          expect(
+            metrics.views.where((view) => view.name.startsWith('sys.')),
+            isEmpty,
+          );
+        }
+      },
+    );
+
     test('supports planner introspection', skip: skipReason, () async {
       await exec(
         'CREATE TABLE explain_items (id INTEGER PRIMARY KEY, score INTEGER)',
