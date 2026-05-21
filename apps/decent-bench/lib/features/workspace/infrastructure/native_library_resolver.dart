@@ -132,6 +132,16 @@ class NativeLibraryResolver {
     }
   }
 
+  String get cliToolFileName {
+    switch (_platform) {
+      case NativeLibraryPlatform.linux:
+      case NativeLibraryPlatform.macos:
+        return 'decentdb';
+      case NativeLibraryPlatform.windows:
+        return 'decentdb.exe';
+    }
+  }
+
   String get bundleRelativeInstallPath {
     switch (_platform) {
       case NativeLibraryPlatform.linux:
@@ -151,6 +161,17 @@ class NativeLibraryResolver {
         return p.join('Contents', 'MacOS', migrationToolFileName);
       case NativeLibraryPlatform.windows:
         return migrationToolFileName;
+    }
+  }
+
+  String get cliToolBundleRelativeInstallPath {
+    switch (_platform) {
+      case NativeLibraryPlatform.linux:
+        return p.join('bin', cliToolFileName);
+      case NativeLibraryPlatform.macos:
+        return p.join('Contents', 'MacOS', cliToolFileName);
+      case NativeLibraryPlatform.windows:
+        return cliToolFileName;
     }
   }
 

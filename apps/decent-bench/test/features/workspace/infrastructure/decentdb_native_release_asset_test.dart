@@ -59,6 +59,10 @@ packages:
             searchRoots: [p.join(projectDir.path, 'test')],
             platform: DecentDbNativeAssetPlatform.linux,
           ).toList();
+      final cliCandidates = DecentDbNativeReleaseAsset.cachedCliToolCandidates(
+        searchRoots: [p.join(projectDir.path, 'test')],
+        platform: DecentDbNativeAssetPlatform.linux,
+      ).toList();
 
       expect(
         candidates,
@@ -85,6 +89,20 @@ packages:
             'v2.6.0',
             'Linux-x64',
             'decentdb-migrate',
+          ),
+        ),
+      );
+      expect(
+        cliCandidates,
+        contains(
+          p.join(
+            projectDir.path,
+            '.dart_tool',
+            'decentdb',
+            'native',
+            'v2.6.0',
+            'Linux-x64',
+            'decentdb',
           ),
         ),
       );

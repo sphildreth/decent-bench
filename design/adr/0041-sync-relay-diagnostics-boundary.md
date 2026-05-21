@@ -1,6 +1,6 @@
 ## Sync and Relay Diagnostics Boundary
 **Date:** 2026-05-21
-**Status:** Proposed
+**Status:** Accepted
 
 ### Decision
 
@@ -19,6 +19,11 @@ separate ADR that defines:
 - how relay endpoints and credentials are configured
 - how retention and pruning are guarded
 - what manual verification is required for data movement
+
+Implementation note: the v2.6.0 adoption slice surfaces sync status,
+retention, peer lag, and relay status inspection views in Database Statistics
+only. It does not configure peers, move changesets, manage relays, or mutate
+retention state.
 
 ### Rationale
 
@@ -58,4 +63,3 @@ silently expanding into a sync administration tool.
 - `design/SPEC.md`
 - `/home/steven/src/github/decentdb/docs/user-guide/sync/index.md`
 - `/home/steven/src/github/decentdb/docs/user-guide/sync/relay.md`
-

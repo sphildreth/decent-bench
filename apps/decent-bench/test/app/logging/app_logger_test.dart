@@ -404,6 +404,13 @@ class _FakeLogGateway implements WorkspaceDatabaseGateway {
   }
 
   @override
+  Future<OperationalMetricsSnapshot> loadOperationalMetrics({
+    int maxRows = 20,
+  }) async {
+    return OperationalMetricsSnapshot.empty();
+  }
+
+  @override
   Future<SqliteImportPreview> loadSqlitePreview({
     required String sourcePath,
     required String tableName,
@@ -413,7 +420,10 @@ class _FakeLogGateway implements WorkspaceDatabaseGateway {
   }
 
   @override
-  Future<DatabaseSession> openDatabase(String path) async {
+  Future<DatabaseSession> openDatabase(
+    String path, {
+    WriteQueueSettings? writeQueue,
+  }) async {
     openCalls += 1;
     if (failOpenCount > 0) {
       failOpenCount -= 1;
@@ -446,6 +456,16 @@ class _FakeLogGateway implements WorkspaceDatabaseGateway {
       rowsAffected: 1,
       elapsed: Duration(milliseconds: 1),
     );
+  }
+
+  @override
+  Future<QueuedWriteResult> executeQueuedWrite({
+    required String sql,
+    required List<Object?> params,
+    int? timeoutMs,
+  }) async {
+    executedSql.add(sql);
+    return const QueuedWriteResult(rowsAffected: 1);
   }
 }
 

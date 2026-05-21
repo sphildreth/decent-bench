@@ -1112,6 +1112,51 @@ ORDER BY dept
       expect(reopenedSchema.objectNamed('temp_summary'), isNull);
     });
 
+    test(
+      'supports v2.6 pragma probes and SQL parity inspection surfaces',
+      skip: skipReason,
+      () async {
+        await exec(
+          'CREATE TABLE parity_items (id INTEGER PRIMARY KEY, label TEXT NOT NULL)',
+        );
+        await exec("INSERT INTO parity_items VALUES (1, 'alpha')");
+        await exec("INSERT INTO parity_items VALUES (2, 'beta')");
+        await exec('PRAGMA user_version = 260');
+        await exec('PRAGMA application_id = 26001');
+
+        final userVersionRows = await queryAllRows('PRAGMA user_version');
+        final applicationIdRows = await queryAllRows('PRAGMA application_id');
+        final seriesRows = await queryAllRows(
+          'SELECT value FROM generate_series(2, 4) ORDER BY value',
+        );
+        final sqliteSchemaRows = await queryAllRows(
+          "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name",
+        );
+        final informationSchemaRows = await queryAllRows(
+          'SELECT COUNT(*) AS row_count FROM information_schema.tables',
+        );
+
+        expect(userVersionRows, hasLength(1));
+        expect(userVersionRows.single['user_version'], 260);
+        expect(applicationIdRows, hasLength(1));
+        expect(applicationIdRows.single['application_id'], 26001);
+        expect(
+          seriesRows.map((row) => row['value']),
+          orderedEquals(<Object?>[2, 3, 4]),
+        );
+        expect(
+          sqliteSchemaRows.map((row) => row['name']),
+          contains('parity_items'),
+        );
+        expect(informationSchemaRows, hasLength(1));
+        expect(informationSchemaRows.single['row_count'], isA<num>());
+        expect(
+          informationSchemaRows.single['row_count']! as num,
+          greaterThanOrEqualTo(1),
+        );
+      },
+    );
+
     test('supports planner introspection', skip: skipReason, () async {
       await exec(
         'CREATE TABLE explain_items (id INTEGER PRIMARY KEY, score INTEGER)',

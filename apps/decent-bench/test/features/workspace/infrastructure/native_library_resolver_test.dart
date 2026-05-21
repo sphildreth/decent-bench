@@ -114,6 +114,9 @@ void main() {
       windows.migrationToolBundleRelativeInstallPath,
       'decentdb-migrate.exe',
     );
+    expect(linux.cliToolBundleRelativeInstallPath, 'bin/decentdb');
+    expect(macos.cliToolBundleRelativeInstallPath, 'Contents/MacOS/decentdb');
+    expect(windows.cliToolBundleRelativeInstallPath, 'decentdb.exe');
   });
 
   test('failure includes checked candidates', () async {

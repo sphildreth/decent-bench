@@ -60,6 +60,29 @@ void main() {
           WorkspaceSnapshotInfo(name: 'baseline', ref: 'snapshot:baseline'),
         ],
       ),
+      operationalMetrics: const OperationalMetricsSnapshot(
+        views: <OperationalMetricView>[
+          OperationalMetricView(
+            name: 'sys.wal_metrics',
+            label: 'WAL metrics',
+            query: 'SELECT * FROM sys.wal_metrics',
+            available: true,
+            columns: <String>['latest_lsn', 'file_size_bytes'],
+            rows: <Map<String, Object?>>[
+              <String, Object?>{'latest_lsn': 7, 'file_size_bytes': 2048},
+            ],
+          ),
+          OperationalMetricView(
+            name: 'sys.sync_status',
+            label: 'Sync status',
+            query: 'SELECT * FROM sys.sync_status',
+            available: false,
+            columns: <String>[],
+            rows: <Map<String, Object?>>[],
+            error: 'unknown view',
+          ),
+        ],
+      ),
     );
 
     expect(stats.tableCount, 1);
@@ -75,7 +98,10 @@ void main() {
       'SELECT COUNT(*) AS row_count\nFROM "tasks";',
     );
     expect(stats.maintenanceHints.first, contains('WAL sidecar'));
+    expect(stats.operationalMetricRows.first.value, contains('latest_lsn=7'));
+    expect(stats.operationalMetricRows.last.value, contains('unknown view'));
     expect(stats.toClipboardText(), contains('Database file: 4.00 KB'));
+    expect(stats.toClipboardText(), contains('Operational metrics:'));
   });
 
   test('quotes table identifiers for row count templates', () {

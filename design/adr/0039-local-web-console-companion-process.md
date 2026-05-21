@@ -1,6 +1,6 @@
 ## Local Web Console Companion Process
 **Date:** 2026-05-21
-**Status:** Proposed
+**Status:** Accepted
 
 ### Decision
 
@@ -22,6 +22,11 @@ The first implementation must:
 
 The Web Console is a companion inspection surface, not the primary Decent Bench
 workspace.
+
+Implementation note: the v2.6.0 adoption slice includes CLI resolution/caching,
+the Web Console process service, and `Tools -> Open Web Console`. The command
+uses `decentdb serve --db=<current.ddb> --read-only --open` by default and does
+not expose no-auth, remote binding, or CORS controls.
 
 ### Rationale
 
@@ -59,4 +64,3 @@ promise and avoid surprising users with a remotely reachable API.
 - `design/adr/0001-decentdb-flutter-binding-strategy.md`
 - `design/adr/0009-desktop-native-library-packaging-and-resolution.md`
 - `/home/steven/src/github/decentdb/docs/api/cli-reference.md`
-

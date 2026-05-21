@@ -16,6 +16,18 @@ This file records notable project changes. It follows the
   and Lua extension trust management.
 - Added DecentDB v2.6.0 alignment, including pinned binding/runtime metadata,
   native asset resolution hardening, and a v2.x fixture smoke path.
+- Added DecentDB v2.6.0 operational diagnostics in Database Statistics,
+  including WAL, storage, write-queue, sync, reactive, relay, and Lua extension
+  inspection surfaces with graceful fallback for unavailable `sys.*` views.
+- Added opt-in DecentDB queued-write configuration and queued app-generated
+  inline table DML, with queue metrics and native queue error codes surfaced
+  through the existing gateway error model.
+- Added DecentDB CLI resolution/caching, `Tools -> Open Web Console`, a
+  managed read-only `decentdb serve` companion-process service, and CLI-backed
+  Lua extension package validation.
+- Added DecentDB v2.6 SQL compatibility coverage for PRAGMA metadata,
+  `generate_series`, `sqlite_schema`, `information_schema`, collations, and
+  `main.`/`temp.` autocomplete qualifiers.
 - Added DecentDB tooling metadata and query-contract bridge support for schema
   fingerprints, parameter contracts, result-column contracts, and persisted
   workspace summaries.
@@ -61,6 +73,8 @@ This file records notable project changes. It follows the
 
 - Updated the pinned DecentDB Dart binding/runtime dependency from v2.5.1 to
   v2.6.0.
+- Updated the TOML configuration version for write-queue settings while keeping
+  the DecentDB write queue disabled by default.
 - Updated roadmap, README, and ADR documentation to treat completed v2.x,
   metadata, typed exports, diagnostics, visualization, profiles, import
   transforms, saved queries, and editor work as shipped foundations rather than

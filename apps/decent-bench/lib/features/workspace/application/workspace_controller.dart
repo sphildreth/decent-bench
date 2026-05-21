@@ -382,11 +382,15 @@ class WorkspaceController extends ChangeNotifier {
       details: <String, Object?>{
         'create_if_missing': createIfMissing,
         'restore_startup_query': restoreStartupQuery,
+        'write_queue_enabled': config.writeQueue.enabled,
       },
     );
 
     try {
-      final session = await _gateway.openDatabase(normalized);
+      final session = await _gateway.openDatabase(
+        normalized,
+        writeQueue: config.writeQueue,
+      );
       databasePath = session.path;
       engineVersion = session.engineVersion;
       config = config.pushRecentFile(session.path);
@@ -2384,6 +2388,27 @@ class WorkspaceController extends ChangeNotifier {
     return workspaceError == null;
   }
 
+  Future<OperationalMetricsSnapshot> loadOperationalMetrics({
+    int maxRows = 20,
+  }) async {
+    if (!hasOpenDatabase) {
+      return OperationalMetricsSnapshot.empty();
+    }
+    try {
+      return await _gateway.loadOperationalMetrics(maxRows: maxRows);
+    } catch (error, stackTrace) {
+      _logWarning(
+        'load_operational_metrics',
+        'Loading DecentDB operational metrics failed.',
+        category: 'diagnostics',
+        databasePath: databasePath,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return OperationalMetricsSnapshot.empty();
+    }
+  }
+
   void beginExcelImport({String sourcePath = ''}) {
     final trimmedSource = sourcePath.trim();
     excelImportSession = ExcelImportSession.initial(sourcePath: trimmedSource)
@@ -3977,12 +4002,10 @@ class WorkspaceController extends ChangeNotifier {
         'SET ${_quoteIdentifier(sourceColumn)} = \$1 '
         'WHERE ${_quoteIdentifier(primaryKeyColumn)} = \$2';
     try {
-      final page = await _gateway.runQuery(
+      final rowsAffected = await _executeAppGeneratedTableDml(
         sql: sql,
         params: <Object?>[coerced.value, primaryKeyValue],
-        pageSize: config.defaultPageSize,
       );
-      final rowsAffected = page.rowsAffected;
       if (rowsAffected == 0) {
         return const TableEditCommitResult(
           success: false,
@@ -4104,12 +4127,10 @@ class WorkspaceController extends ChangeNotifier {
               '(${insertedValues.keys.map(_quoteIdentifier).join(', ')}) '
               'VALUES (${List<String>.generate(insertedValues.length, (index) => '\$${index + 1}').join(', ')})';
     try {
-      final page = await _gateway.runQuery(
+      final rowsAffected = await _executeAppGeneratedTableDml(
         sql: sql,
         params: <Object?>[...insertedValues.values],
-        pageSize: config.defaultPageSize,
       );
-      final rowsAffected = page.rowsAffected;
       if (rowsAffected == 0) {
         return const TableEditCommitResult(
           success: false,
@@ -4217,12 +4238,10 @@ class WorkspaceController extends ChangeNotifier {
         'DELETE FROM ${_quoteIdentifier(tableName)} '
         'WHERE ${_quoteIdentifier(primaryKeyColumn)} = \$1';
     try {
-      final page = await _gateway.runQuery(
+      final rowsAffected = await _executeAppGeneratedTableDml(
         sql: sql,
         params: <Object?>[primaryKeyValue],
-        pageSize: config.defaultPageSize,
       );
-      final rowsAffected = page.rowsAffected;
       if (rowsAffected == 0) {
         return const TableEditCommitResult(
           success: false,
@@ -4276,6 +4295,25 @@ class WorkspaceController extends ChangeNotifier {
       );
       return TableEditCommitResult(success: false, message: failure.message);
     }
+  }
+
+  Future<int?> _executeAppGeneratedTableDml({
+    required String sql,
+    required List<Object?> params,
+  }) async {
+    if (config.writeQueue.enabled) {
+      final result = await _gateway.executeQueuedWrite(
+        sql: sql,
+        params: params,
+      );
+      return result.rowsAffected;
+    }
+    final page = await _gateway.runQuery(
+      sql: sql,
+      params: params,
+      pageSize: config.defaultPageSize,
+    );
+    return page.rowsAffected;
   }
 
   List<SchemaObjectSummary> filterSchemaObjects(String rawFilter) {
@@ -4992,6 +5030,18 @@ class WorkspaceController extends ChangeNotifier {
     }
     if (next.editorSettings.indentSpaces <= 0) {
       return 'Indent spaces must be a positive integer.';
+    }
+    if (next.writeQueue.capacity <= 0) {
+      return 'Write queue capacity must be a positive integer.';
+    }
+    if (next.writeQueue.defaultTimeoutMs < 0) {
+      return 'Write queue timeout cannot be negative.';
+    }
+    if (next.writeQueue.maxBatch <= 0) {
+      return 'Write queue max batch must be a positive integer.';
+    }
+    if (next.writeQueue.maxGroupDelayUs < 0) {
+      return 'Write queue group delay cannot be negative.';
     }
 
     final snippetIds = <String>{};

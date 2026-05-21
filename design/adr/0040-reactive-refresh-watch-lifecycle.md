@@ -1,6 +1,6 @@
 ## Reactive Refresh Watch Lifecycle
 **Date:** 2026-05-21
-**Status:** Proposed
+**Status:** Accepted
 
 ### Decision
 
@@ -19,6 +19,11 @@ run off the UI thread. They will be used to:
 Reactive events must not silently re-run arbitrary user queries or mix old
 result pages with new database state. Result refresh remains an explicit user
 or controller action unless a narrower workflow is later specified.
+
+Implementation note: the DecentDB v2.6.0 adoption slice exposes
+`sys.reactive_metrics` and `sys.reactive_subscriptions` in Database Statistics,
+but does not create watch handles. That keeps the shipped implementation inside
+the public Dart binding boundary until upstream watch APIs are available.
 
 ### Rationale
 
@@ -59,4 +64,3 @@ than ad hoc widget-level subscriptions.
 - `design/adr/0002-results-paging-and-streaming-contract.md`
 - `/home/steven/src/github/decentdb/docs/about/changelog.md`
 - `/home/steven/src/github/decentdb/docs/api/c-cpp.md`
-

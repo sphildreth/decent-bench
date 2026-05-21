@@ -13,6 +13,13 @@ void main() {
         themesDir: '/tmp/themes',
       ),
       logging: const LoggingSettings(verbosity: LogVerbosity.debug),
+      writeQueue: const WriteQueueSettings(
+        enabled: true,
+        capacity: 32,
+        defaultTimeoutMs: 250,
+        maxBatch: 8,
+        maxGroupDelayUs: 1000,
+      ),
       recentFiles: const <String>['/tmp/a.ddb', '/tmp/b.ddb'],
       defaultPageSize: 250,
       queryHistoryLimit: 12,
@@ -59,6 +66,8 @@ void main() {
     expect(toml, contains('active_theme = "classic-light"'));
     expect(toml, contains('[logging]'));
     expect(toml, contains('verbosity = "debug"'));
+    expect(toml, contains('[write_queue]'));
+    expect(toml, contains('enabled = true'));
     expect(toml, contains('[layout]'));
     expect(toml, contains('[shortcuts]'));
     expect(toml, contains('[[editor_snippets]]'));
@@ -66,6 +75,17 @@ void main() {
     expect(parsed.appearance.activeTheme, 'classic-light');
     expect(parsed.appearance.themesDir, '/tmp/themes');
     expect(parsed.logging.verbosity, LogVerbosity.debug);
+    expect(parsed.writeQueue.enabled, isTrue);
+    expect(parsed.writeQueue.capacity, 32);
+    expect(parsed.writeQueue.defaultTimeoutMs, 250);
+    expect(parsed.writeQueue.maxBatch, 8);
+    expect(parsed.writeQueue.maxGroupDelayUs, 1000);
+    expect(
+      parsed.writeQueue.toDecentDbOpenOptions(),
+      'write_queue_enabled=true;write_queue_capacity=32;'
+      'write_queue_default_timeout_ms=250;write_queue_max_batch=8;'
+      'write_queue_max_group_delay_us=1000',
+    );
     expect(parsed.recentFiles, config.recentFiles);
     expect(parsed.defaultPageSize, 250);
     expect(parsed.queryHistoryLimit, 12);
@@ -110,6 +130,7 @@ recent_files = ["/tmp/example.ddb"]
       AppearanceSettings.defaultActiveTheme,
     );
     expect(parsed.defaultPageSize, 500);
+    expect(parsed.writeQueue, WriteQueueSettings.defaults());
     expect(parsed.queryHistoryLimit, AppConfig.defaultQueryHistoryLimitValue);
     expect(parsed.editorSettings.autocompleteEnabled, isTrue);
     expect(parsed.shellPreferences, isNotNull);

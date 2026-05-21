@@ -288,6 +288,98 @@ class DatabaseSession {
   }
 }
 
+class QueuedWriteResult {
+  const QueuedWriteResult({required this.rowsAffected});
+
+  final int rowsAffected;
+
+  factory QueuedWriteResult.fromMap(Map<String, Object?> map) {
+    return QueuedWriteResult(rowsAffected: map['rowsAffected']! as int);
+  }
+}
+
+class OperationalMetricsSnapshot {
+  const OperationalMetricsSnapshot({required this.views});
+
+  final List<OperationalMetricView> views;
+
+  bool get hasAvailableViews => views.any((view) => view.available);
+
+  OperationalMetricView? view(String name) {
+    for (final view in views) {
+      if (view.name == name) {
+        return view;
+      }
+    }
+    return null;
+  }
+
+  factory OperationalMetricsSnapshot.empty() {
+    return const OperationalMetricsSnapshot(views: <OperationalMetricView>[]);
+  }
+
+  factory OperationalMetricsSnapshot.fromMap(Map<String, Object?> map) {
+    return OperationalMetricsSnapshot(
+      views: ((map['views'] as List?) ?? const <Object?>[])
+          .cast<Map<Object?, Object?>>()
+          .map(
+            (view) => OperationalMetricView.fromMap(
+              view.map((key, value) => MapEntry(key as String, value)),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
+class OperationalMetricView {
+  const OperationalMetricView({
+    required this.name,
+    required this.label,
+    required this.query,
+    required this.available,
+    required this.columns,
+    required this.rows,
+    this.error,
+    this.truncated = false,
+  });
+
+  final String name;
+  final String label;
+  final String query;
+  final bool available;
+  final List<String> columns;
+  final List<Map<String, Object?>> rows;
+  final String? error;
+  final bool truncated;
+
+  int get rowCount => rows.length;
+
+  factory OperationalMetricView.fromMap(Map<String, Object?> map) {
+    return OperationalMetricView(
+      name: map['name']! as String,
+      label: map['label']! as String,
+      query: map['query']! as String,
+      available: map['available']! as bool,
+      columns: ((map['columns'] as List?) ?? const <Object?>[]).cast<String>(),
+      rows: ((map['rows'] as List?) ?? const <Object?>[])
+          .cast<Map<Object?, Object?>>()
+          .map(
+            (row) => row.map(
+              (key, value) => MapEntry(key as String, _decodeMetricCell(value)),
+            ),
+          )
+          .toList(growable: false),
+      error: map['error'] as String?,
+      truncated: map['truncated'] as bool? ?? false,
+    );
+  }
+
+  static Object? _decodeMetricCell(Object? value) {
+    return QueryResultPage._decodeCell(value);
+  }
+}
+
 class BranchWorkflowUnavailable implements Exception {
   const BranchWorkflowUnavailable([this.message]);
 

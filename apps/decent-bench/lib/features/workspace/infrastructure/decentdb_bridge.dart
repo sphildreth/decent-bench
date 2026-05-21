@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:decentdb/decentdb.dart' hide SchemaSnapshot;
 
+import '../domain/app_config.dart';
 import '../domain/excel_import_models.dart';
 import '../domain/sql_dump_import_models.dart';
 import '../domain/sqlite_import_models.dart';
@@ -21,9 +22,14 @@ abstract class WorkspaceDatabaseGateway {
 
   Future<String> initialize();
 
-  Future<DatabaseSession> openDatabase(String path);
+  Future<DatabaseSession> openDatabase(
+    String path, {
+    WriteQueueSettings? writeQueue,
+  });
 
   Future<SchemaSnapshot> loadSchema();
+
+  Future<OperationalMetricsSnapshot> loadOperationalMetrics({int maxRows});
 
   Future<ToolingMetadata> getToolingMetadata();
 
@@ -41,6 +47,12 @@ abstract class WorkspaceDatabaseGateway {
   });
 
   Future<void> cancelQuery(String cursorId);
+
+  Future<QueuedWriteResult> executeQueuedWrite({
+    required String sql,
+    required List<Object?> params,
+    int? timeoutMs,
+  });
 
   Future<CsvExportResult> exportCsv({
     required String sql,
@@ -227,9 +239,13 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   }
 
   @override
-  Future<DatabaseSession> openDatabase(String path) async {
+  Future<DatabaseSession> openDatabase(
+    String path, {
+    WriteQueueSettings? writeQueue,
+  }) async {
     final data = await _request('openDatabase', <String, Object?>{
       'path': path,
+      if (writeQueue != null) 'writeQueue': _serializeWriteQueue(writeQueue),
     });
     return DatabaseSession.fromMap(data);
   }
@@ -238,6 +254,16 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   Future<SchemaSnapshot> loadSchema() async {
     final data = await _request('loadSchema');
     return SchemaSnapshot.fromMap(data);
+  }
+
+  @override
+  Future<OperationalMetricsSnapshot> loadOperationalMetrics({
+    int maxRows = 20,
+  }) async {
+    final data = await _request('loadOperationalMetrics', <String, Object?>{
+      'maxRows': maxRows,
+    });
+    return OperationalMetricsSnapshot.fromMap(data);
   }
 
   @override
@@ -283,6 +309,20 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   @override
   Future<void> cancelQuery(String cursorId) async {
     await _request('cancelQuery', <String, Object?>{'cursorId': cursorId});
+  }
+
+  @override
+  Future<QueuedWriteResult> executeQueuedWrite({
+    required String sql,
+    required List<Object?> params,
+    int? timeoutMs,
+  }) async {
+    final payload = <String, Object?>{'sql': sql, 'params': params};
+    if (timeoutMs != null) {
+      payload['timeoutMs'] = timeoutMs;
+    }
+    final data = await _request('executeQueuedWrite', payload);
+    return QueuedWriteResult.fromMap(data);
   }
 
   @override
@@ -848,9 +888,7 @@ class _BridgeWorkerState {
           break;
         }
       } catch (error, stackTrace) {
-        final failure = error is BridgeFailure
-            ? error
-            : BridgeFailure(error.toString());
+        final failure = _bridgeFailureFromError(error);
         replyPort.send(<String, Object?>{
           'id': requestId,
           'ok': false,
@@ -882,6 +920,8 @@ class _BridgeWorkerState {
         return _handleOpenDatabase(payload);
       case 'loadSchema':
         return _handleLoadSchema();
+      case 'loadOperationalMetrics':
+        return _handleLoadOperationalMetrics(payload);
       case 'getToolingMetadata':
         return _handleGetToolingMetadata();
       case 'describeQueryContract':
@@ -892,6 +932,8 @@ class _BridgeWorkerState {
         return _handleFetchNextPage(payload);
       case 'cancelQuery':
         return _handleCancelQuery(payload);
+      case 'executeQueuedWrite':
+        return _handleExecuteQueuedWrite(payload);
       case 'exportCsv':
         return _handleExportCsv(payload);
       case 'exportJson':
@@ -950,7 +992,15 @@ class _BridgeWorkerState {
   ) async {
     await _closeAll();
     final path = payload['path']! as String;
-    _database = Database.open(path, libraryPath: _libraryPath);
+    final writeQueue = (payload['writeQueue'] as Map<Object?, Object?>?)?.map(
+      (key, value) => MapEntry(key as String, value),
+    );
+    final openOptions = _writeQueueOpenOptionsFromPayload(writeQueue);
+    _database = Database.open(
+      path,
+      libraryPath: _libraryPath,
+      options: openOptions,
+    );
     return <String, Object?>{
       'path': path,
       'engineVersion': _database!.engineVersion,
@@ -1013,6 +1063,19 @@ class _BridgeWorkerState {
     };
   }
 
+  Future<Map<String, Object?>> _handleLoadOperationalMetrics(
+    Map<String, Object?> payload,
+  ) async {
+    final db = _requireDatabase();
+    final maxRows = (payload['maxRows'] as int? ?? 20).clamp(1, 200);
+    final views = <Map<String, Object?>>[
+      _nativeWriteQueueMetricsView(db),
+      for (final spec in _operationalMetricQueries)
+        _queryOperationalMetricView(db, spec, maxRows: maxRows),
+    ];
+    return <String, Object?>{'views': views};
+  }
+
   Future<Map<String, Object?>> _handleGetToolingMetadata() async {
     final db = _requireDatabase();
     return _normalizeJsonMap(db.schema.getToolingMetadata());
@@ -1035,12 +1098,109 @@ class _BridgeWorkerState {
         .cast<Object?>();
     final pageSize = payload['pageSize']! as int;
     final stopwatch = Stopwatch()..start();
+    final pragmaPage = _tryHandleApplicationMetadataPragma(
+      db,
+      sql,
+      params,
+      stopwatch,
+    );
+    if (pragmaPage != null) {
+      return pragmaPage;
+    }
     final returnsRows = _statementReturnsRows(sql);
     if (!returnsRows) {
       return _executeNonReturningQuery(db, sql, params, stopwatch);
     }
 
     return _executeReturningQuery(db, sql, params, pageSize, stopwatch);
+  }
+
+  Map<String, Object?>? _tryHandleApplicationMetadataPragma(
+    Database db,
+    String sql,
+    List<Object?> params,
+    Stopwatch stopwatch,
+  ) {
+    final match = RegExp(
+      r'^\s*PRAGMA\s+(?:(?:main|temp)\.)?(user_version|application_id)\s*(?:=\s*(-?\d+))?\s*;?\s*$',
+      caseSensitive: false,
+    ).firstMatch(sql);
+    if (match == null) {
+      return null;
+    }
+    if (params.isNotEmpty) {
+      throw const BridgeFailure('PRAGMA statements do not accept parameters.');
+    }
+
+    final key = match.group(1)!.toLowerCase();
+    final rawValue = match.group(2);
+    if (rawValue != null) {
+      final value = int.parse(rawValue);
+      if (value < -2147483648 || value > 2147483647) {
+        throw BridgeFailure(
+          'PRAGMA $key requires a signed 32-bit integer value.',
+          code: 'DDB_ERR_SQL',
+        );
+      }
+      _setApplicationPragmaValue(db, key, value);
+      return _serializePage(
+        const ResultPage(<String>[], <Row>[], true),
+        cursorId: null,
+        rowsAffected: 0,
+        elapsed: stopwatch.elapsed,
+      );
+    }
+
+    final value = _loadApplicationPragmaValue(db, key);
+    return _serializePage(
+      ResultPage(
+        <String>[key],
+        <Row>[
+          Row(<String>[key], <Object?>[value]),
+        ],
+        true,
+      ),
+      cursorId: null,
+      rowsAffected: null,
+      elapsed: stopwatch.elapsed,
+    );
+  }
+
+  void _setApplicationPragmaValue(Database db, String key, int value) {
+    const table = '"__decentdb_application_pragmas"';
+    final keySql = _sqlStringLiteral(key);
+    db.executeDirect(
+      'CREATE TABLE IF NOT EXISTS $table '
+      '(name TEXT PRIMARY KEY, value INT64 NOT NULL)',
+    );
+    db.executeDirect('DELETE FROM $table WHERE name = $keySql');
+    db.executeDirect(
+      'INSERT INTO $table (name, value) VALUES ($keySql, $value)',
+    );
+  }
+
+  int _loadApplicationPragmaValue(Database db, String key) {
+    const table = '"__decentdb_application_pragmas"';
+    final keySql = _sqlStringLiteral(key);
+    try {
+      final stmt = db.prepare('SELECT value FROM $table WHERE name = $keySql');
+      try {
+        final page = stmt.nextPage(1);
+        final rawValue = page.rows.isEmpty
+            ? null
+            : page.rows.first.values.first;
+        return rawValue is int ? rawValue : 0;
+      } finally {
+        stmt.dispose();
+      }
+    } on DecentDbException catch (error) {
+      final message = error.message.toLowerCase();
+      if (message.contains('unknown table') ||
+          message.contains('no such table')) {
+        return 0;
+      }
+      rethrow;
+    }
   }
 
   Future<Map<String, Object?>> _executeNonReturningQuery(
@@ -1146,6 +1306,19 @@ class _BridgeWorkerState {
     final stmt = _cursors.remove(cursorId);
     stmt?.dispose();
     return const <String, Object?>{};
+  }
+
+  Future<Map<String, Object?>> _handleExecuteQueuedWrite(
+    Map<String, Object?> payload,
+  ) async {
+    final db = _requireDatabase();
+    final sql = payload['sql']! as String;
+    final params = ((payload['params'] as List?) ?? const <Object?>[])
+        .cast<Object?>();
+    final timeoutMs = payload['timeoutMs'] as int?;
+    final queuedSql = _inlineQueuedWriteParameters(sql, params);
+    final rowsAffected = db.executeQueued(queuedSql, timeoutMs: timeoutMs);
+    return <String, Object?>{'rowsAffected': rowsAffected};
   }
 
   Future<Map<String, Object?>> _handleExportCsv(
@@ -1402,6 +1575,304 @@ class _BridgeWorkerState {
       stmt.dispose();
     }
   }
+}
+
+class _OperationalMetricQuery {
+  const _OperationalMetricQuery({
+    required this.name,
+    required this.label,
+    required this.query,
+  });
+
+  final String name;
+  final String label;
+  final String query;
+}
+
+const List<_OperationalMetricQuery> _operationalMetricQueries =
+    <_OperationalMetricQuery>[
+      _OperationalMetricQuery(
+        name: 'sys.wal_metrics',
+        label: 'WAL metrics',
+        query: 'SELECT * FROM sys.wal_metrics',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.storage_metrics',
+        label: 'Storage metrics',
+        query: 'SELECT * FROM sys.storage_metrics',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.write_queue_metrics',
+        label: 'Write queue metrics',
+        query: 'SELECT * FROM sys.write_queue_metrics',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.sync_status',
+        label: 'Sync status',
+        query: 'SELECT * FROM sys.sync_status',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.sync_retention',
+        label: 'Sync retention',
+        query: 'SELECT * FROM sys.sync_retention',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.sync_peer_lag',
+        label: 'Sync peer lag',
+        query: 'SELECT * FROM sys.sync_peer_lag',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.sync_relay_status',
+        label: 'Sync relay status',
+        query: 'SELECT * FROM sys.sync_relay_status',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.reactive_metrics',
+        label: 'Reactive metrics',
+        query: 'SELECT * FROM sys.reactive_metrics',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.reactive_subscriptions',
+        label: 'Reactive subscriptions',
+        query: 'SELECT * FROM sys.reactive_subscriptions',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.extensions',
+        label: 'Lua extensions',
+        query: 'SELECT * FROM sys.extensions',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.extension_functions',
+        label: 'Lua extension functions',
+        query: 'SELECT * FROM sys.extension_functions',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.extension_collations',
+        label: 'Lua extension collations',
+        query: 'SELECT * FROM sys.extension_collations',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.extension_dependencies',
+        label: 'Lua extension dependencies',
+        query: 'SELECT * FROM sys.extension_dependencies',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.extension_validation',
+        label: 'Lua extension validation',
+        query: 'SELECT * FROM sys.extension_validation',
+      ),
+    ];
+
+Map<String, Object?> _serializeWriteQueue(WriteQueueSettings settings) {
+  return <String, Object?>{
+    'enabled': settings.enabled,
+    'capacity': settings.capacity,
+    'defaultTimeoutMs': settings.defaultTimeoutMs,
+    'maxBatch': settings.maxBatch,
+    'maxGroupDelayUs': settings.maxGroupDelayUs,
+  };
+}
+
+String? _writeQueueOpenOptionsFromPayload(Map<String, Object?>? payload) {
+  if (payload == null) {
+    return null;
+  }
+  final enabled = payload['enabled'] as bool? ?? false;
+  if (!enabled) {
+    return null;
+  }
+  return WriteQueueSettings(
+    enabled: enabled,
+    capacity: payload['capacity'] as int? ?? WriteQueueSettings.defaultCapacity,
+    defaultTimeoutMs:
+        payload['defaultTimeoutMs'] as int? ??
+        WriteQueueSettings.defaultDefaultTimeoutMs,
+    maxBatch: payload['maxBatch'] as int? ?? WriteQueueSettings.defaultMaxBatch,
+    maxGroupDelayUs:
+        payload['maxGroupDelayUs'] as int? ??
+        WriteQueueSettings.defaultMaxGroupDelayUs,
+  ).toDecentDbOpenOptions();
+}
+
+BridgeFailure _bridgeFailureFromError(Object error) {
+  if (error is BridgeFailure) {
+    return error;
+  }
+  if (error is DecentDbException) {
+    return BridgeFailure(error.message, code: _decentDbErrorCodeName(error));
+  }
+  final message = error.toString();
+  final unknownCodeMatch = RegExp(
+    r'Unknown DecentDB error code: (\d+)',
+  ).firstMatch(message);
+  if (unknownCodeMatch != null) {
+    return BridgeFailure(
+      message,
+      code: _nativeStatusName(int.tryParse(unknownCodeMatch.group(1)!)),
+    );
+  }
+  return BridgeFailure(message);
+}
+
+String _decentDbErrorCodeName(DecentDbException error) {
+  return _nativeStatusName(error.code.code) ??
+      'DDB_ERR_${error.code.name.toUpperCase()}';
+}
+
+String? _nativeStatusName(int? code) {
+  return switch (code) {
+    1 => 'DDB_ERR_IO',
+    2 => 'DDB_ERR_CORRUPTION',
+    3 => 'DDB_ERR_CONSTRAINT',
+    4 => 'DDB_ERR_TRANSACTION',
+    5 => 'DDB_ERR_SQL',
+    6 => 'DDB_ERR_INTERNAL',
+    7 => 'DDB_ERR_PANIC',
+    8 => 'DDB_ERR_UNSUPPORTED_FORMAT_VERSION',
+    9 => 'DDB_ERR_BUSY',
+    10 => 'DDB_ERR_TIMEOUT',
+    11 => 'DDB_ERR_CANCELED',
+    12 => 'DDB_ERR_QUEUE_FULL',
+    13 => 'DDB_ERR_QUEUE_CLOSED',
+    _ => null,
+  };
+}
+
+Map<String, Object?> _nativeWriteQueueMetricsView(Database db) {
+  const name = 'native.write_queue_metrics';
+  const label = 'Write queue API metrics';
+  const query = 'Database.writeQueueMetrics()';
+  try {
+    final metrics = db.writeQueueMetrics();
+    return <String, Object?>{
+      'name': name,
+      'label': label,
+      'query': query,
+      'available': true,
+      'columns': metrics.keys.toList(growable: false),
+      'rows': <Map<String, Object?>>[metrics],
+      'truncated': false,
+    };
+  } catch (error) {
+    final failure = _bridgeFailureFromError(error);
+    return <String, Object?>{
+      'name': name,
+      'label': label,
+      'query': query,
+      'available': false,
+      'columns': const <String>[],
+      'rows': const <Map<String, Object?>>[],
+      'error': failure.toString(),
+      'truncated': false,
+    };
+  }
+}
+
+Map<String, Object?> _queryOperationalMetricView(
+  Database db,
+  _OperationalMetricQuery spec, {
+  required int maxRows,
+}) {
+  try {
+    final stmt = db.prepare(spec.query);
+    try {
+      final page = stmt.nextPage(maxRows);
+      return <String, Object?>{
+        'name': spec.name,
+        'label': spec.label,
+        'query': spec.query,
+        'available': true,
+        'columns': page.columns,
+        'rows': <Map<String, Object?>>[
+          for (final row in page.rows)
+            <String, Object?>{
+              for (var index = 0; index < row.columns.length; index++)
+                row.columns[index]: _encodeCell(row.values[index]),
+            },
+        ],
+        'truncated': !page.isLast,
+      };
+    } finally {
+      stmt.dispose();
+    }
+  } catch (error) {
+    final failure = _bridgeFailureFromError(error);
+    return <String, Object?>{
+      'name': spec.name,
+      'label': spec.label,
+      'query': spec.query,
+      'available': false,
+      'columns': const <String>[],
+      'rows': const <Map<String, Object?>>[],
+      'error': failure.toString(),
+      'truncated': false,
+    };
+  }
+}
+
+String _inlineQueuedWriteParameters(String sql, List<Object?> params) {
+  if (params.isEmpty) {
+    return sql;
+  }
+  var rendered = sql;
+  for (var index = params.length; index >= 1; index--) {
+    rendered = rendered.replaceAll('\$$index', _sqlLiteral(params[index - 1]));
+  }
+  if (RegExp(r'\$\d+').hasMatch(rendered)) {
+    throw const BridgeFailure(
+      'Queued writes require every positional parameter to be bound.',
+    );
+  }
+  return rendered;
+}
+
+String _sqlStringLiteral(String value) {
+  return "'${value.replaceAll("'", "''")}'";
+}
+
+String _sqlLiteral(Object? value) {
+  if (value == null) {
+    return 'NULL';
+  }
+  if (value is bool) {
+    return value ? 'TRUE' : 'FALSE';
+  }
+  if (value is int || value is double) {
+    return '$value';
+  }
+  if (value is DecimalValue) {
+    return formatDecimalValue(value.scaled, value.scale);
+  }
+  if (value is String) {
+    return _sqlStringLiteral(value);
+  }
+  if (value is Uint8List) {
+    final hex = value
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return "X'$hex'";
+  }
+  if (value is DateTime) {
+    return _sqlStringLiteral(value.toIso8601String());
+  }
+  if (value is Duration) {
+    return '${value.inMicroseconds}';
+  }
+  if (value is DecentDBIntervalValue) {
+    return _sqlStringLiteral(
+      NativeIntervalCellValue(
+        months: value.months,
+        days: value.days,
+        microseconds: value.microseconds,
+      ).displayString(),
+    );
+  }
+  if (value is DecentDBEnumValue) {
+    throw const BridgeFailure(
+      'Queued writes do not support native enum parameter inlining yet.',
+    );
+  }
+  return _sqlStringLiteral(value.toString());
 }
 
 Map<String, String> _queryResultTypesByColumn(Database db, String sql) {

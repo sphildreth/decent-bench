@@ -58,37 +58,55 @@ class SqlAutocompleteEngine {
       r'([A-Za-z_][A-Za-z0-9_]*)$',
     ).firstMatch(beforeCursor);
 
-    final replaceStart = aliasContext != null
-        ? clampedCursor - aliasContext.group(2)!.length
-        : prefixMatch != null
-        ? clampedCursor - prefixMatch.group(1)!.length
-        : clampedCursor;
-    final prefix =
-        aliasContext?.group(2)?.toLowerCase() ??
-        prefixMatch?.group(1)?.toLowerCase() ??
-        '';
+    if (aliasContext != null) {
+      final alias = aliasContext.group(1)!;
+      final suffix = aliasContext.group(2) ?? '';
+      final columnSuggestions = _columnSuggestions(
+        alias: alias,
+        prefix: suffix.toLowerCase(),
+        sql: sql,
+        schema: schema,
+      );
+      if (columnSuggestions.isNotEmpty) {
+        return AutocompleteResult(
+          replaceStart: clampedCursor - suffix.length,
+          replaceEnd: clampedCursor,
+          suggestions: columnSuggestions
+              .take(config.editorSettings.autocompleteMaxSuggestions)
+              .toList(),
+        );
+      }
 
-    final suggestions = aliasContext != null
-        ? _columnSuggestions(
-            alias: aliasContext.group(1)!,
-            prefix: prefix,
-            sql: sql,
-            schema: schema,
-          )
-        : _contextSuggestions(
-            prefix: prefix,
-            beforeCursor: beforeCursor,
-            schema: schema,
-            config: config,
-          );
+      final qualifierSuggestions = _builtInQualifierSuggestions(
+        '$alias.$suffix'.toLowerCase(),
+      );
+      if (qualifierSuggestions.isNotEmpty) {
+        return AutocompleteResult(
+          replaceStart: clampedCursor - aliasContext.group(0)!.length,
+          replaceEnd: clampedCursor,
+          suggestions: qualifierSuggestions
+              .take(config.editorSettings.autocompleteMaxSuggestions)
+              .toList(),
+        );
+      }
+    }
 
-    final limited = suggestions
-        .take(config.editorSettings.autocompleteMaxSuggestions)
-        .toList();
+    final prefix = prefixMatch?.group(1)?.toLowerCase() ?? '';
+    final suggestions = _contextSuggestions(
+      prefix: prefix,
+      beforeCursor: beforeCursor,
+      schema: schema,
+      config: config,
+    );
+
     return AutocompleteResult(
-      replaceStart: replaceStart,
+      replaceStart: prefixMatch != null
+          ? clampedCursor - prefixMatch.group(1)!.length
+          : clampedCursor,
       replaceEnd: clampedCursor,
-      suggestions: limited,
+      suggestions: suggestions
+          .take(config.editorSettings.autocompleteMaxSuggestions)
+          .toList(),
     );
   }
 
@@ -120,6 +138,7 @@ class SqlAutocompleteEngine {
       ..._schemaObjectSuggestions(schema.objects, prefix),
       ..._keywordSuggestions(prefix),
       ..._functionSuggestions(prefix),
+      ..._builtInQualifierSuggestions(prefix),
       ..._snippetSuggestions(prefix, config.snippets),
     ];
 
@@ -250,6 +269,19 @@ class SqlAutocompleteEngine {
         if (prefix.isEmpty ||
             snippet.trigger.toLowerCase().startsWith(prefix) ||
             snippet.name.toLowerCase().startsWith(prefix))
+          AutocompleteSuggestion(
+            label: snippet.trigger,
+            insertText: snippet.body,
+            detail: 'snippet: ${snippet.name}',
+            kind: AutocompleteSuggestionKind.snippet,
+          ),
+    ];
+  }
+
+  List<AutocompleteSuggestion> _builtInQualifierSuggestions(String prefix) {
+    return <AutocompleteSuggestion>[
+      for (final snippet in decentDbBuiltInSqlSnippets)
+        if (snippet.trigger.toLowerCase().startsWith(prefix))
           AutocompleteSuggestion(
             label: snippet.trigger,
             insertText: snippet.body,

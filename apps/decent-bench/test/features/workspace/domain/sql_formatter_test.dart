@@ -45,4 +45,18 @@ void main() {
       '"uuid_col" UUID);',
     );
   });
+
+  test('uppercases phase-1 v2.6 keywords and functions', () {
+    final formatted = formatter.format(
+      'pragma user_version = 7; select * from generate_series(1, 3) '
+      'order by value collate nocase, value collate rtrim, value collate binary',
+      settings: EditorSettings.defaults(),
+    );
+
+    expect(formatted, contains('PRAGMA user_version = 7'));
+    expect(formatted, contains('FROM GENERATE_SERIES(1, 3)'));
+    expect(formatted, contains('COLLATE NOCASE'));
+    expect(formatted, contains('COLLATE RTRIM'));
+    expect(formatted, contains('COLLATE BINARY'));
+  });
 }

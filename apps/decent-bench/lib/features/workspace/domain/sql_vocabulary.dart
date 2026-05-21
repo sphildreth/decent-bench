@@ -7,6 +7,7 @@ const Set<String> decentDbSqlKeywords = <String>{
   'ASC',
   'BEGIN',
   'BETWEEN',
+  'BINARY',
   'BY',
   'CASCADE',
   'CASE',
@@ -74,6 +75,7 @@ const Set<String> decentDbSqlKeywords = <String>{
   'NOT',
   'NULL',
   'NULLS',
+  'NOCASE',
   'OFFSET',
   'ON',
   'ONLY',
@@ -83,6 +85,7 @@ const Set<String> decentDbSqlKeywords = <String>{
   'OVER',
   'PARTITION',
   'PRECEDING',
+  'PRAGMA',
   'PRIMARY',
   'RANGE',
   'RECURSIVE',
@@ -96,6 +99,7 @@ const Set<String> decentDbSqlKeywords = <String>{
   'ROLLBACK',
   'ROW',
   'ROWS',
+  'RTRIM',
   'SAVEPOINT',
   'SELECT',
   'SET',
@@ -118,11 +122,13 @@ const Set<String> decentDbSqlKeywords = <String>{
   'UUID',
   'VALUES',
   'VIEW',
+  'INFORMATION_SCHEMA',
   'WHEN',
   'WHERE',
   'WINDOW',
   'WITH',
   'WITHOUT',
+  'SQLITE_SCHEMA',
 };
 
 const Set<String> decentDbSqlFunctions = <String>{
@@ -137,6 +143,7 @@ const Set<String> decentDbSqlFunctions = <String>{
   'DENSE_RANK',
   'FIRST_VALUE',
   'FLOOR',
+  'GENERATE_SERIES',
   'HEX',
   'INSTR',
   'JSON_ARRAY',
@@ -203,6 +210,32 @@ const Set<String> decentDbSqlFunctions = <String>{
   'UPPER',
   'decentdb_exec_sql',
 };
+
+class BuiltInSqlSnippetTemplate {
+  const BuiltInSqlSnippetTemplate({
+    required this.name,
+    required this.trigger,
+    required this.body,
+  });
+
+  final String name;
+  final String trigger;
+  final String body;
+}
+
+const List<BuiltInSqlSnippetTemplate> decentDbBuiltInSqlSnippets =
+    <BuiltInSqlSnippetTemplate>[
+      BuiltInSqlSnippetTemplate(
+        name: 'Main Schema Qualifier',
+        trigger: 'main.',
+        body: 'main.',
+      ),
+      BuiltInSqlSnippetTemplate(
+        name: 'Temp Schema Qualifier',
+        trigger: 'temp.',
+        body: 'temp.',
+      ),
+    ];
 
 const Set<String> formatterClauseKeywords = <String>{
   'ALTER',

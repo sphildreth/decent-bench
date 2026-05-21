@@ -1,6 +1,6 @@
 ## Lua Extension Management Trust Model
 **Date:** 2026-05-21
-**Status:** Proposed
+**Status:** Accepted
 
 ### Decision
 
@@ -24,6 +24,11 @@ The first lifecycle UI, if implemented, must:
 
 Decent Bench will not implement a package registry, dependency resolver, or
 native-code extension loading model as part of this phase.
+
+Implementation note: the v2.6.0 adoption slice surfaces read-only extension
+inspection views through Database Statistics and adds a CLI-backed package
+validation service. Normal UI still does not install, enable, execute, or trust
+extensions automatically.
 
 ### Rationale
 
@@ -64,4 +69,3 @@ the app can surface instead of inventing its own trust semantics.
 - `design/SPEC.md` section 9
 - `/home/steven/src/github/decentdb/docs/user-guide/lua-extensions.md`
 - `/home/steven/src/github/decentdb/docs/api/cli-reference.md`
-

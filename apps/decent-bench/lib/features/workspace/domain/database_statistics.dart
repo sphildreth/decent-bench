@@ -17,6 +17,7 @@ class DatabaseStatistics {
     required this.branchWorkflowAvailable,
     required this.branchWorkflowMessage,
     required this.rowCountQueries,
+    required this.operationalMetrics,
   });
 
   final String? databasePath;
@@ -34,6 +35,7 @@ class DatabaseStatistics {
   final bool branchWorkflowAvailable;
   final String branchWorkflowMessage;
   final Map<String, String> rowCountQueries;
+  final OperationalMetricsSnapshot operationalMetrics;
 
   bool get hasWalSidecar => (walFileBytes ?? 0) > 0;
 
@@ -55,6 +57,13 @@ class DatabaseStatistics {
         'Branch workflow',
         branchWorkflowAvailable ? 'Available' : branchWorkflowMessage,
       ),
+    ];
+  }
+
+  List<MapEntry<String, String>> get operationalMetricRows {
+    return <MapEntry<String, String>>[
+      for (final view in operationalMetrics.views)
+        MapEntry(view.label, _formatMetricView(view)),
     ];
   }
 
@@ -81,6 +90,12 @@ class DatabaseStatistics {
         buffer.writeln('- $hint');
       }
     }
+    if (operationalMetricRows.isNotEmpty) {
+      buffer.writeln('Operational metrics:');
+      for (final row in operationalMetricRows) {
+        buffer.writeln('${row.key}: ${row.value}');
+      }
+    }
     return buffer.toString().trimRight();
   }
 }
@@ -92,6 +107,7 @@ DatabaseStatistics buildDatabaseStatistics({
   int? databaseFileBytes,
   int? walFileBytes,
   int? shmFileBytes,
+  OperationalMetricsSnapshot? operationalMetrics,
 }) {
   final temporaryObjectCount =
       schema.objects.where((object) => object.temporary).length +
@@ -114,6 +130,8 @@ DatabaseStatistics buildDatabaseStatistics({
     branchWorkflowMessage: branchState.isNativeBranchApiAvailable
         ? 'Available'
         : branchState.nativeBranchApiUnavailableReason,
+    operationalMetrics:
+        operationalMetrics ?? OperationalMetricsSnapshot.empty(),
     rowCountQueries: <String, String>{
       for (final table in schema.tables)
         table.name:
@@ -141,4 +159,37 @@ String _formatBytes(int? value) {
     unitIndex++;
   }
   return '${amount.toStringAsFixed(amount >= 10 ? 1 : 2)} ${units[unitIndex]}';
+}
+
+String _formatMetricView(OperationalMetricView view) {
+  if (!view.available) {
+    final message = view.error?.trim();
+    return message == null || message.isEmpty
+        ? 'Unavailable'
+        : 'Unavailable: $message';
+  }
+  if (view.rows.isEmpty) {
+    return view.truncated ? 'Available, no rows in first page' : 'No rows';
+  }
+  final first = view.rows.first;
+  final fields = <String>[
+    for (final column in view.columns.take(4))
+      if (first.containsKey(column))
+        '$column=${_formatMetricValue(first[column])}',
+  ];
+  final suffix = view.truncated ? ' (truncated)' : '';
+  if (fields.isEmpty) {
+    return '${view.rowCount} row${view.rowCount == 1 ? '' : 's'}$suffix';
+  }
+  return '${fields.join(', ')}$suffix';
+}
+
+String _formatMetricValue(Object? value) {
+  if (value == null) {
+    return 'null';
+  }
+  if (value is String) {
+    return value;
+  }
+  return '$value';
 }

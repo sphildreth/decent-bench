@@ -207,6 +207,9 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   bool? lastExcelIncludeHeaders;
   String? lastRunQuerySql;
   List<Object?>? lastRunQueryParams;
+  WriteQueueSettings? lastWriteQueueSettings;
+  String? lastQueuedWriteSql;
+  List<Object?>? lastQueuedWriteParams;
   String? lastBranchQuerySql;
   String? lastCreatedBranchName;
   String? lastCreatedBranchFromRef;
@@ -926,7 +929,11 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   }
 
   @override
-  Future<DatabaseSession> openDatabase(String path) async {
+  Future<DatabaseSession> openDatabase(
+    String path, {
+    WriteQueueSettings? writeQueue,
+  }) async {
+    lastWriteQueueSettings = writeQueue;
     final error = openDatabaseError;
     if (error != null) {
       throw error;
@@ -937,6 +944,13 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
       await file.writeAsString('');
     }
     return DatabaseSession(path: path, engineVersion: '1.6.1');
+  }
+
+  @override
+  Future<OperationalMetricsSnapshot> loadOperationalMetrics({
+    int maxRows = 20,
+  }) async {
+    return OperationalMetricsSnapshot.empty();
   }
 
   @override
@@ -1023,6 +1037,17 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
       rowsAffected: null,
       elapsed: const Duration(milliseconds: 5),
     );
+  }
+
+  @override
+  Future<QueuedWriteResult> executeQueuedWrite({
+    required String sql,
+    required List<Object?> params,
+    int? timeoutMs,
+  }) async {
+    lastQueuedWriteSql = sql;
+    lastQueuedWriteParams = <Object?>[...params];
+    return const QueuedWriteResult(rowsAffected: 1);
   }
 
   SqliteImportSummary _buildCompletedSummary(SqliteImportRequest request) {

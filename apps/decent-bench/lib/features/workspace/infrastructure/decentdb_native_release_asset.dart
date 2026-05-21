@@ -44,6 +44,12 @@ class DecentDbNativeReleaseAsset {
   String get migrationToolPath =>
       p.join(cacheDirectoryPath, migrationToolFileName);
 
+  String get cliToolFileName => platform == DecentDbNativeAssetPlatform.windows
+      ? 'decentdb.exe'
+      : 'decentdb';
+
+  String get cliToolPath => p.join(cacheDirectoryPath, cliToolFileName);
+
   static Future<String> ensureAvailableForCurrentProject({
     String? startPath,
   }) async {
@@ -130,6 +136,17 @@ class DecentDbNativeReleaseAsset {
     );
   }
 
+  static Iterable<String> cachedCliToolCandidates({
+    required Iterable<String> searchRoots,
+    required DecentDbNativeAssetPlatform platform,
+  }) sync* {
+    yield* _cachedFileCandidates(
+      searchRoots: searchRoots,
+      platform: platform,
+      pathForAsset: (asset) => asset.cliToolPath,
+    );
+  }
+
   static Iterable<String> _cachedFileCandidates({
     required Iterable<String> searchRoots,
     required DecentDbNativeAssetPlatform platform,
@@ -175,6 +192,16 @@ class DecentDbNativeReleaseAsset {
     return _ensureCachedFile(
       fileName: migrationToolFileName,
       destinationPath: migrationToolPath,
+      executable: true,
+      includeDartNativeDownload: false,
+      preferDartNativeDownload: false,
+    );
+  }
+
+  Future<String> ensureCliToolAvailable() async {
+    return _ensureCachedFile(
+      fileName: cliToolFileName,
+      destinationPath: cliToolPath,
       executable: true,
       includeDartNativeDownload: false,
       preferDartNativeDownload: false,

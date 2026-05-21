@@ -422,8 +422,22 @@ void main() {
   group('Database operations', () {
     test('openDatabase refreshes schema and stores recent files', () async {
       final dbPath = _tempDbPath();
-      final store = InMemoryConfigStore();
-      final controller = _createController(configStore: store);
+      final gateway = FakeWorkspaceGateway();
+      final store = InMemoryConfigStore(
+        AppConfig.defaults().copyWith(
+          writeQueue: const WriteQueueSettings(
+            enabled: true,
+            capacity: 16,
+            defaultTimeoutMs: 100,
+            maxBatch: 4,
+            maxGroupDelayUs: 25,
+          ),
+        ),
+      );
+      final controller = _createController(
+        gateway: gateway,
+        configStore: store,
+      );
       await controller.initialize();
 
       await controller.openDatabase(dbPath, createIfMissing: true);
@@ -433,6 +447,8 @@ void main() {
       expect(controller.schema.tables.single.name, 'tasks');
       expect(controller.schema.views.single.name, 'active_tasks');
       expect((await store.load()).recentFiles, contains(dbPath));
+      expect(gateway.lastWriteQueueSettings?.enabled, isTrue);
+      expect(gateway.lastWriteQueueSettings?.capacity, 16);
     });
 
     test(
@@ -835,6 +851,38 @@ void main() {
         expect(controller.activeTab.resultRows.single['title'], 'Ship phase 2');
       },
     );
+
+    test('updateResultCell uses queued writes when configured', () async {
+      final dbPath = _tempDbPath();
+      final gateway = FakeWorkspaceGateway();
+      final controller = _createController(
+        gateway: gateway,
+        configStore: InMemoryConfigStore(
+          AppConfig.defaults().copyWith(
+            writeQueue: WriteQueueSettings.defaults().copyWith(enabled: true),
+          ),
+        ),
+      );
+
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+      controller.updateActiveSql('SELECT id, title FROM tasks ORDER BY id');
+      await controller.runActiveTab();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final result = await controller.updateResultCell(
+        rowIndex: 0,
+        columnName: 'title',
+        value: 'Ship phase 2',
+      );
+
+      expect(result.success, isTrue);
+      expect(
+        gateway.lastQueuedWriteSql,
+        'UPDATE "tasks" SET "title" = \$1 WHERE "id" = \$2',
+      );
+      expect(gateway.lastQueuedWriteParams, <Object?>['Ship phase 2', 1]);
+    });
 
     test('updateResultCell rejects read-only result columns', () async {
       final dbPath = _tempDbPath();

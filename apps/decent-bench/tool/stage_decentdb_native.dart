@@ -17,6 +17,7 @@ Future<void> main(List<String> args) async {
   final bundlePath = options['bundle']?.trim() ?? '';
   final sourcePath = options['source']?.trim();
   final migrationToolSourcePath = options['migration-tool-source']?.trim();
+  final cliSourcePath = options['cli-source']?.trim();
   final verifyOnly = options.containsKey('verify-only');
 
   if (bundlePath.isEmpty) {
@@ -36,6 +37,11 @@ Future<void> main(List<String> args) async {
     resolver.migrationToolBundleRelativeInstallPath,
   );
   final migrationToolDestinationFile = File(migrationToolDestinationPath);
+  final cliDestinationPath = p.join(
+    bundlePath,
+    resolver.cliToolBundleRelativeInstallPath,
+  );
+  final cliDestinationFile = File(cliDestinationPath);
 
   if (verifyOnly) {
     if (!destinationFile.existsSync()) {
@@ -58,6 +64,14 @@ Future<void> main(List<String> args) async {
     stdout.writeln(
       'Verified bundled DecentDB migration tool: $migrationToolDestinationPath',
     );
+    if (!cliDestinationFile.existsSync()) {
+      stderr.writeln(
+        'Expected bundled DecentDB CLI at $cliDestinationPath, but no file was found.',
+      );
+      exitCode = 1;
+      return;
+    }
+    stdout.writeln('Verified bundled DecentDB CLI: $cliDestinationPath');
     return;
   }
 
@@ -109,6 +123,26 @@ Future<void> main(List<String> args) async {
   stdout.writeln(
     'Staged ${migrationToolSourceFile.path} -> ${migrationToolDestinationFile.path}',
   );
+
+  final cliSourceFile = File(
+    cliSourcePath?.isNotEmpty == true
+        ? cliSourcePath!
+        : await resolveReleaseAsset().ensureCliToolAvailable(),
+  );
+  if (!cliSourceFile.existsSync()) {
+    stderr.writeln(
+      'Resolved DecentDB CLI source file does not exist: ${cliSourceFile.path}',
+    );
+    exitCode = 1;
+    return;
+  }
+
+  await cliDestinationFile.parent.create(recursive: true);
+  await cliSourceFile.copy(cliDestinationFile.path);
+  if (!Platform.isWindows) {
+    await Process.run('chmod', <String>['755', cliDestinationFile.path]);
+  }
+  stdout.writeln('Staged ${cliSourceFile.path} -> ${cliDestinationFile.path}');
 }
 
 Map<String, String?> _parseArgs(List<String> args) {
@@ -136,6 +170,12 @@ Map<String, String?> _parseArgs(List<String> args) {
         }
         options['migration-tool-source'] = args[++i];
         break;
+      case '--cli-source':
+        if (i + 1 >= args.length) {
+          throw const FormatException('--cli-source requires a value.');
+        }
+        options['cli-source'] = args[++i];
+        break;
       case '--verify-only':
         options['verify-only'] = 'true';
         break;
@@ -152,6 +192,6 @@ Map<String, String?> _parseArgs(List<String> args) {
 
 void _printUsage(IOSink sink) {
   sink.writeln(
-    'Usage: dart run tool/stage_decentdb_native.dart --bundle <bundle-path> [--source <native-lib-path>] [--migration-tool-source <decentdb-migrate-path>] [--verify-only]',
+    'Usage: dart run tool/stage_decentdb_native.dart --bundle <bundle-path> [--source <native-lib-path>] [--migration-tool-source <decentdb-migrate-path>] [--cli-source <decentdb-path>] [--verify-only]',
   );
 }

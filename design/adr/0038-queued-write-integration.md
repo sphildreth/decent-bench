@@ -1,6 +1,6 @@
 ## Queued Write Integration
 **Date:** 2026-05-21
-**Status:** Proposed
+**Status:** Accepted
 
 ### Decision
 
@@ -26,6 +26,11 @@ changes that model with benchmark evidence.
 Decent Bench will surface write-queue metrics in diagnostics and map queue
 errors such as busy, timeout, canceled, queue-full, and queue-closed into
 actionable UI errors.
+
+Implementation note: the v2.6.0 adoption slice adds TOML-backed queue settings,
+passes open options only when enabled, exposes queue metrics in Database
+Statistics, and routes inline table-cell edits through queued writes when the
+queue is enabled.
 
 ### Rationale
 
@@ -73,4 +78,3 @@ by default.
 - `design/adr/0028-inline-table-data-editor.md`
 - `/home/steven/src/github/decentdb/docs/user-guide/write-concurrency.md`
 - `/home/steven/src/github/decentdb/docs/api/dart.md`
-

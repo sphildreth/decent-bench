@@ -142,6 +142,86 @@ class LoggingSettings {
   }
 }
 
+class WriteQueueSettings {
+  static const bool defaultEnabled = false;
+  static const int defaultCapacity = 1024;
+  static const int defaultDefaultTimeoutMs = 0;
+  static const int defaultMaxBatch = 64;
+  static const int defaultMaxGroupDelayUs = 0;
+
+  const WriteQueueSettings({
+    required this.enabled,
+    required this.capacity,
+    required this.defaultTimeoutMs,
+    required this.maxBatch,
+    required this.maxGroupDelayUs,
+  });
+
+  final bool enabled;
+  final int capacity;
+  final int defaultTimeoutMs;
+  final int maxBatch;
+  final int maxGroupDelayUs;
+
+  factory WriteQueueSettings.defaults() {
+    return const WriteQueueSettings(
+      enabled: defaultEnabled,
+      capacity: defaultCapacity,
+      defaultTimeoutMs: defaultDefaultTimeoutMs,
+      maxBatch: defaultMaxBatch,
+      maxGroupDelayUs: defaultMaxGroupDelayUs,
+    );
+  }
+
+  WriteQueueSettings copyWith({
+    bool? enabled,
+    int? capacity,
+    int? defaultTimeoutMs,
+    int? maxBatch,
+    int? maxGroupDelayUs,
+  }) {
+    return WriteQueueSettings(
+      enabled: enabled ?? this.enabled,
+      capacity: capacity ?? this.capacity,
+      defaultTimeoutMs: defaultTimeoutMs ?? this.defaultTimeoutMs,
+      maxBatch: maxBatch ?? this.maxBatch,
+      maxGroupDelayUs: maxGroupDelayUs ?? this.maxGroupDelayUs,
+    );
+  }
+
+  String? toDecentDbOpenOptions() {
+    if (!enabled) {
+      return null;
+    }
+    return <String>[
+      'write_queue_enabled=true',
+      'write_queue_capacity=$capacity',
+      'write_queue_default_timeout_ms=$defaultTimeoutMs',
+      'write_queue_max_batch=$maxBatch',
+      'write_queue_max_group_delay_us=$maxGroupDelayUs',
+    ].join(';');
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is WriteQueueSettings &&
+        other.enabled == enabled &&
+        other.capacity == capacity &&
+        other.defaultTimeoutMs == defaultTimeoutMs &&
+        other.maxBatch == maxBatch &&
+        other.maxGroupDelayUs == maxGroupDelayUs;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    enabled,
+    capacity,
+    defaultTimeoutMs,
+    maxBatch,
+    maxGroupDelayUs,
+  );
+}
+
 class AppearanceSettings {
   static const String defaultActiveTheme = 'classic-dark';
   static const Object _unset = Object();
@@ -177,7 +257,7 @@ class AppearanceSettings {
 }
 
 class AppConfig {
-  static const int currentConfigVersion = 1;
+  static const int currentConfigVersion = 2;
   static const int defaultPageSizeValue = 1000;
   static const int defaultQueryHistoryLimitValue = 40;
   static const String defaultCsvDelimiter = ',';
@@ -188,6 +268,7 @@ class AppConfig {
     required this.configVersion,
     required this.appearance,
     required this.logging,
+    required this.writeQueue,
     required this.recentFiles,
     required this.defaultPageSize,
     required this.queryHistoryLimit,
@@ -202,6 +283,7 @@ class AppConfig {
   final int configVersion;
   final AppearanceSettings appearance;
   final LoggingSettings logging;
+  final WriteQueueSettings writeQueue;
   final List<String> recentFiles;
   final int defaultPageSize;
   final int queryHistoryLimit;
@@ -217,6 +299,7 @@ class AppConfig {
       configVersion: currentConfigVersion,
       appearance: AppearanceSettings.defaults(),
       logging: LoggingSettings.defaults(),
+      writeQueue: WriteQueueSettings.defaults(),
       recentFiles: const <String>[],
       defaultPageSize: defaultPageSizeValue,
       queryHistoryLimit: defaultQueryHistoryLimitValue,
@@ -233,6 +316,7 @@ class AppConfig {
     int? configVersion,
     AppearanceSettings? appearance,
     LoggingSettings? logging,
+    WriteQueueSettings? writeQueue,
     List<String>? recentFiles,
     int? defaultPageSize,
     int? queryHistoryLimit,
@@ -247,6 +331,7 @@ class AppConfig {
       configVersion: configVersion ?? this.configVersion,
       appearance: appearance ?? this.appearance,
       logging: logging ?? this.logging,
+      writeQueue: writeQueue ?? this.writeQueue,
       recentFiles: recentFiles ?? this.recentFiles,
       defaultPageSize: defaultPageSize ?? this.defaultPageSize,
       queryHistoryLimit: queryHistoryLimit ?? this.queryHistoryLimit,
@@ -320,6 +405,13 @@ class AppConfig {
       ..writeln()
       ..writeln('[logging]')
       ..writeln('verbosity = ${jsonEncode(logging.verbosity.tomlValue)}')
+      ..writeln()
+      ..writeln('[write_queue]')
+      ..writeln('enabled = ${writeQueue.enabled}')
+      ..writeln('capacity = ${writeQueue.capacity}')
+      ..writeln('default_timeout_ms = ${writeQueue.defaultTimeoutMs}')
+      ..writeln('max_batch = ${writeQueue.maxBatch}')
+      ..writeln('max_group_delay_us = ${writeQueue.maxGroupDelayUs}')
       ..writeln()
       ..writeln()
       ..writeln('[layout]')
@@ -454,6 +546,46 @@ class AppConfig {
               logging: config.logging.copyWith(
                 verbosity: LogVerbosity.parse(parsed),
               ),
+            );
+          }
+          break;
+        case 'write_queue.enabled':
+          final parsed = _parseBool(value);
+          if (parsed != null) {
+            config = config.copyWith(
+              writeQueue: config.writeQueue.copyWith(enabled: parsed),
+            );
+          }
+          break;
+        case 'write_queue.capacity':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed > 0) {
+            config = config.copyWith(
+              writeQueue: config.writeQueue.copyWith(capacity: parsed),
+            );
+          }
+          break;
+        case 'write_queue.default_timeout_ms':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed >= 0) {
+            config = config.copyWith(
+              writeQueue: config.writeQueue.copyWith(defaultTimeoutMs: parsed),
+            );
+          }
+          break;
+        case 'write_queue.max_batch':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed > 0) {
+            config = config.copyWith(
+              writeQueue: config.writeQueue.copyWith(maxBatch: parsed),
+            );
+          }
+          break;
+        case 'write_queue.max_group_delay_us':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed >= 0) {
+            config = config.copyWith(
+              writeQueue: config.writeQueue.copyWith(maxGroupDelayUs: parsed),
             );
           }
           break;

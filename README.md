@@ -19,7 +19,7 @@
     <img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square">
   </a>
   <img alt="Flutter desktop" src="https://img.shields.io/badge/Flutter-desktop-02569B?style=flat-square&logo=flutter&logoColor=white">
-  <img alt="DecentDB v2.5.1" src="https://img.shields.io/badge/DecentDB-v2.5.1-6f42c1?style=flat-square">
+  <img alt="DecentDB v2.6.0" src="https://img.shields.io/badge/DecentDB-v2.6.0-6f42c1?style=flat-square">
 </p>
 
 <p align="center">
@@ -50,10 +50,14 @@
 - ⚡ **Performance-Focused:** Background imports, paginated/streamed results grids, and best-effort query cancellation ensure the UI never freezes.
 - 🧭 **Rich Engine Metadata:** Schema browsing is powered by DecentDB's rich
   upstream schema snapshot (tables/views/indexes/triggers, checks, foreign keys,
-  generated columns, temp-object metadata, and canonical DDL), with v2.5.x
+  generated columns, temp-object metadata, and canonical DDL), with v2.6.x
   tooling metadata and query contracts used for schema fingerprints, parameter
   types, and result-column types.
-- 🧬 **Native Type Awareness:** DecentDB v2.5.x semantic and spatial types are
+- 📊 **DecentDB v2.6 Diagnostics:** Database Statistics includes WAL, storage,
+  write-queue, sync, reactive, relay, and Lua extension inspection surfaces,
+  plus optional queued inline table edits and a read-only local Web Console
+  launcher.
+- 🧬 **Native Type Awareness:** DecentDB v2.6.x semantic and spatial types are
   surfaced in schema details, result metadata, autocomplete, snippets, import
   type overrides, copy behavior, and CSV export display values.
 - 📊 **Diagnostics & Visualization:** Column statistics, database statistics,
@@ -71,7 +75,7 @@
 - 🪵 **Operational Visibility:** Open the DecentDB-backed application log database directly from `Tools -> View Log`.
 - 🧪 **Import Validation:** Blocking failure dialogs and richer import summaries make unsuccessful imports obvious and successful imports easier to verify.
 - 📤 **Typed Exports:** CSV, JSON, NDJSON, and Excel export stream result pages
-  and preserve DecentDB v2.5.x native value metadata where the format supports
+  and preserve DecentDB v2.6.x native value metadata where the format supports
   it. Result charts can be exported as PNG, and ERDs can be exported as PNG/JPG.
 - 📦 **Desktop Native:** Packaged for Linux, macOS, and Windows with a repeatable native-library staging helper.
 
@@ -136,7 +140,7 @@ Want to build from source or contribute? Welcome!
 
 Decent Bench pins the upstream Dart package by Git tag and expects the matching
 DecentDB desktop native library alongside it. CI and release packaging currently
-resolve `v2.5.1` from `apps/decent-bench/pubspec.lock` and download the matching
+resolve `v2.6.0` from `apps/decent-bench/pubspec.lock` and download the matching
 `decentdb-dart-native-<tag>-...` asset from
 [`sphildreth/decentdb` Releases](https://github.com/sphildreth/decentdb/releases).
 
@@ -169,22 +173,26 @@ These commands will fetch the matching pinned DecentDB native library on first
 use if it is not already cached. Legacy `.ddb` migration also resolves the
 official `decentdb-migrate` executable from PATH, an explicit
 `DECENTDB_MIGRATE_PATH`, a packaged app bundle, or the pinned full DecentDB
-release asset.
+release asset. The optional Web Console workflow resolves the official
+`decentdb` CLI from PATH, `DECENTDB_CLI_PATH`, a packaged bundle, or the same
+pinned full release asset.
 
 ### 5. Packaging Desktop Builds
 Build the bundle, then use the staging helper to inject the DecentDB native
-library and `decentdb-migrate`. The `--source` path can point at either an
-extracted `decentdb-dart-native-<tag>-...` release asset or a local DecentDB
-build, and `--migration-tool-source` can point at a local migration executable:
+library, `decentdb-migrate`, and the `decentdb` CLI. The `--source` path can
+point at either an extracted `decentdb-dart-native-<tag>-...` release asset or a
+local DecentDB build, `--migration-tool-source` can point at a local migration
+executable, and `--cli-source` can point at a local CLI executable:
 ```bash
 flutter build linux
 dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle
-dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle --source /path/to/libdecentdb.so --migration-tool-source /path/to/decentdb-migrate
+dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle --source /path/to/libdecentdb.so --migration-tool-source /path/to/decentdb-migrate --cli-source /path/to/decentdb
 ```
 If `--source` is omitted, the helper resolves and downloads the pinned matching
 DecentDB native release asset automatically. If `--migration-tool-source` is
 omitted, it resolves the official migration tool from the pinned full release
-asset.
+asset. If `--cli-source` is omitted, it resolves the official CLI from the
+pinned full release asset.
 
 *(For macOS use `build/macos/Build/Products/Release/decent_bench.app` and
 Windows `build/windows/x64/runner/Release`.)*
@@ -216,7 +224,7 @@ Typical files under that root include:
 - ✅ Expansive import support: CSV, JSON, XML, HTML, SQLite, Excel, and SQL dumps
 - ✅ ZIP, GZip, and BZip2 wrapper routing for imports
 - ✅ Headless CLI import mode
-- ✅ DecentDB v2.5.1 binding alignment, native asset staging, and pinned runtime resolution
+- ✅ DecentDB v2.6.0 binding alignment, native asset staging, CLI staging, and pinned runtime resolution
 - ✅ In-app application log viewing
 - ✅ Clear blocking import-failure dialogs and richer import summaries
 - ✅ Schema browsing, metadata fingerprints, query contracts, and native type display

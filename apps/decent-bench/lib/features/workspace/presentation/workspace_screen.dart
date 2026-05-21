@@ -35,6 +35,7 @@ import '../domain/workspace_file_entry.dart';
 import '../domain/workspace_models.dart';
 import '../infrastructure/app_lifecycle_service.dart';
 import '../infrastructure/decentdb_migration_service.dart';
+import '../infrastructure/decentdb_web_console_service.dart';
 import '../infrastructure/shortcut_config_service.dart';
 import 'decentdb_migration_dialog.dart';
 import 'excel_import_dialog.dart';
@@ -65,12 +66,14 @@ class WorkspaceScreen extends StatefulWidget {
     required this.themeManager,
     this.appLifecycleService = const FlutterAppLifecycleService(),
     this.startupLaunchOptions = const StartupLaunchOptions(),
+    this.webConsoleService,
   });
 
   final WorkspaceController controller;
   final ThemeManager themeManager;
   final AppLifecycleService appLifecycleService;
   final StartupLaunchOptions startupLaunchOptions;
+  final DecentDbWebConsoleService? webConsoleService;
 
   @override
   State<WorkspaceScreen> createState() => _WorkspaceScreenState();
@@ -137,6 +140,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   final SqlFormatter _sqlFormatter = const SqlFormatter();
   final ImportManager _importManager = ImportManager();
   final DecentDbMigrationService _migrationService = DecentDbMigrationService();
+  late final DecentDbWebConsoleService _webConsoleService =
+      widget.webConsoleService ?? DecentDbWebConsoleService();
 
   bool _didHydrateShellPreferences = false;
   bool _isDropTargetActive = false;
@@ -201,6 +206,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     _paramsController.dispose();
     _sqlController.removeListener(_handleSqlEditorStateChanged);
     _sqlController.dispose();
+    unawaited(_webConsoleService.shutdown());
     super.dispose();
   }
 
@@ -1569,6 +1575,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 _KeyValueList(rows: statistics.summaryRows),
+                if (statistics.operationalMetricRows.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Operational metrics',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  _KeyValueList(rows: statistics.operationalMetricRows),
+                ],
                 if (statistics.maintenanceHints.isNotEmpty) ...<Widget>[
                   const SizedBox(height: 12),
                   Text(
@@ -1625,6 +1640,70 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
+  Future<void> _openWebConsole() async {
+    final databasePath = widget.controller.databasePath;
+    if (databasePath == null || databasePath.trim().isEmpty) {
+      await _showPlaceholderNotice(
+        'Open Web Console',
+        'Open a DecentDB database first.',
+      );
+      return;
+    }
+    try {
+      final session = await _webConsoleService.launch(
+        databasePath: databasePath,
+      );
+      if (!mounted) {
+        return;
+      }
+      await _showWebConsoleSessionDialog(session);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      await _showPlaceholderNotice('Open Web Console', error.toString());
+    }
+  }
+
+  Future<void> _showWebConsoleSessionDialog(DecentDbWebConsoleSession session) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) {
+        final endpoint = session.consoleUri?.toString() ?? 'Starting';
+        return AlertDialog(
+          title: const Text('Web Console'),
+          content: SizedBox(
+            width: 520,
+            child: _KeyValueList(
+              rows: <MapEntry<String, String>>[
+                MapEntry('Database', session.databasePath),
+                MapEntry('Endpoint', endpoint),
+                MapEntry('Process', p.basename(session.cliPath)),
+                if (session.consolePort != null)
+                  MapEntry('Port', '${session.consolePort}'),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () async {
+                await _webConsoleService.shutdown();
+                if (context.mounted) {
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text('Stop'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<DatabaseStatistics> _buildDatabaseStatistics() async {
     final databasePath = widget.controller.databasePath;
     final databaseFileBytes = await _fileSize(databasePath);
@@ -1634,6 +1713,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final shmFileBytes = await _fileSize(
       databasePath == null ? null : '$databasePath-shm',
     );
+    final operationalMetrics = await widget.controller.loadOperationalMetrics();
     return buildDatabaseStatistics(
       schema: widget.controller.schema,
       branchState: widget.controller.branchState,
@@ -1641,6 +1721,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       databaseFileBytes: databaseFileBytes,
       walFileBytes: walFileBytes,
       shmFileBytes: shmFileBytes,
+      operationalMetrics: operationalMetrics,
     );
   }
 
@@ -2898,6 +2979,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           label: 'Database Statistics',
           icon: Icons.monitor_heart_outlined,
           onInvoke: _showDatabaseStatisticsDashboard,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_open_web_console',
+          label: 'Open Web Console',
+          icon: Icons.open_in_browser_outlined,
+          onInvoke: _openWebConsole,
           enabled: controller.hasOpenDatabase,
         ),
         command(

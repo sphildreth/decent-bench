@@ -1,6 +1,6 @@
 # DecentDB 2.6.0 Enhancement Plan
 
-**Status:** Proposed implementation plan  
+**Status:** Implemented
 **Last reviewed:** 2026-05-21  
 **Inputs reviewed:**
 - `/home/steven/src/github/decentdb/docs/about/changelog.md`
@@ -30,12 +30,12 @@ treated as part of the desktop v2.6.0 adoption sequence.
 | Phase | Status | Workstream | ADR Required? | Notes |
 |---:|---|---|---|---|
 | 0 | Done | Compatibility upgrade | No | Version pin, lockfile, notices, and validation only. |
-| 1 | Next | Observability and SQL surface parity | No | Uses SQL-visible engine views/functions and existing dashboard/autocomplete surfaces. Create an ADR only if this expands into a new workflow or config schema. |
-| 2 | Planned | Queued write integration | [ADR-0038](adr/0038-queued-write-integration.md) | Changes the app-owned write execution model, queue configuration, and write error semantics. |
-| 3 | Planned | Optional local Web Console | [ADR-0039](adr/0039-local-web-console-companion-process.md) | Adds a managed `decentdb serve` companion process and new packaging/lifecycle/security choices. |
-| 4 | Planned | Reactive refresh | [ADR-0040](adr/0040-reactive-refresh-watch-lifecycle.md) | Introduces long-lived subscriptions, stale-result semantics, and background watch lifecycle. |
-| 5 | Planned | Sync and relay inspection | [ADR-0041](adr/0041-sync-relay-diagnostics-boundary.md) | Read-only `sys.*` inspection is allowed; data movement, relay workflows, auth, conflict handling, or retention controls require further PRD/SPEC updates. |
-| 6 | Planned | Lua extension management | [ADR-0042](adr/0042-lua-extension-management-trust-model.md) | Read-only discovery is allowed; lifecycle and execution-trust UI follow the ADR trust model. |
+| 1 | Done | Observability and SQL surface parity | No | Database Statistics now loads bounded operational metrics and SQL tooling covers the v2.6 compatibility surface. |
+| 2 | Done | Queued write integration | [ADR-0038](adr/0038-queued-write-integration.md) | Write queue config is disabled by default, open options are passed only when enabled, and inline table DML uses queued writes when configured. |
+| 3 | Done | Optional local Web Console | [ADR-0039](adr/0039-local-web-console-companion-process.md) | CLI resolution/caching, process lifecycle service, and `Tools -> Open Web Console` are implemented with read-only/auth-preserving defaults. |
+| 4 | Done | Reactive refresh boundary | [ADR-0040](adr/0040-reactive-refresh-watch-lifecycle.md) | Public Dart watch APIs are not available in v2.6.0; private C ABI watch wiring is intentionally not shipped. Reactive metrics are surfaced in diagnostics. |
+| 5 | Done | Sync and relay inspection | [ADR-0041](adr/0041-sync-relay-diagnostics-boundary.md) | Read-only `sys.*` sync/retention/relay diagnostics are surfaced; relay management and changeset workflows remain out of scope. |
+| 6 | Done | Lua extension management boundary | [ADR-0042](adr/0042-lua-extension-management-trust-model.md) | Read-only extension discovery and CLI validation are implemented; install/enable/trust execution UI remains gated by the ADR trust model. |
 | Separate | Deferred | WASM/browser runtime | Not now | Future web target or companion app needs a separate PRD/SPEC slice and ADR. |
 
 ## Relevant v2.6.0 Capabilities
@@ -84,6 +84,8 @@ Status: implemented by the DecentDB v2.6.0 alignment change.
 This is the highest-value v2.6.0 feature slice because it uses SQL-visible
 engine surfaces and keeps the app's existing scope intact.
 
+Status: implemented.
+
 - Add a gateway method such as `loadOperationalMetrics()` that queries known
   `sys.*` metrics views with bounded result sizes.
 - Extend Database Statistics to show:
@@ -110,6 +112,9 @@ engine surfaces and keeps the app's existing scope intact.
 Governed by [ADR-0038](adr/0038-queued-write-integration.md) because it
 changes the app-owned write execution model.
 
+Status: implemented. Queued writes remain disabled by default and are used for
+inline table DML only when the user enables the write queue in TOML config.
+
 - Add configuration fields for write-queue options, defaulting to disabled:
   - `write_queue_enabled`
   - `write_queue_capacity`
@@ -134,6 +139,8 @@ Governed by
 [ADR-0039](adr/0039-local-web-console-companion-process.md) because it adds a
 managed companion process and changes desktop packaging requirements.
 
+Status: implemented.
+
 - Package or locate the `decentdb` CLI alongside the existing native library
   and migration tool staging flow.
 - Add an explicit command, for example `Tools -> Open Web Console`.
@@ -149,6 +156,12 @@ Governed by [ADR-0040](adr/0040-reactive-refresh-watch-lifecycle.md). This
 phase should wait for a public Dart API unless a superseding ADR accepts
 lower-level C ABI access from the app.
 
+Status: completed to the accepted boundary. Decent Bench surfaces
+`sys.reactive_metrics` and `sys.reactive_subscriptions` through Database
+Statistics, but does not create watch handles because DecentDB v2.6.0 does not
+expose a public Dart watch API. A future public API or superseding ADR is
+required before implementing live schema/result refresh.
+
 - Use table/query watches to refresh schema browser metadata after app-owned
   writes.
 - Mark result sets stale after watched tables change instead of silently mixing
@@ -161,6 +174,8 @@ lower-level C ABI access from the app.
 
 Governed by [ADR-0041](adr/0041-sync-relay-diagnostics-boundary.md). This is a
 larger product feature and should start as read-only inspection.
+
+Status: implemented for read-only diagnostics.
 
 - Add read-only sync status and retention diagnostics from `sys.sync_status`
   and related inspection views.
@@ -175,6 +190,10 @@ larger product feature and should start as read-only inspection.
 Governed by
 [ADR-0042](adr/0042-lua-extension-management-trust-model.md). This phase is
 security-sensitive, and lifecycle/trust workflows must follow that ADR.
+
+Status: implemented for read-only discovery and package validation. Execution,
+install, enable, disable, and unsigned override workflows remain outside the
+normal UI.
 
 - Start with read-only discovery of installed/enabled extensions from
   `sys.extension_*` views.
@@ -216,3 +235,13 @@ Each implementation phase should include:
 - targeted native smoke tests for the touched DecentDB surface
 - manual verification for behavior-sensitive UI, especially process lifecycle,
   query cancellation, queue timeout handling, and large metrics/result sets
+
+Manual Web Console verification:
+
+- Open a `.ddb` workspace and run `Tools -> Open Web Console`.
+- Confirm the launched command is equivalent to
+  `decentdb serve --db=<current.ddb> --read-only --open`.
+- Confirm the console binds only to localhost, keeps auth/token behavior
+  enabled, and rejects write attempts in read-only mode.
+- Close Decent Bench or press Stop in the Web Console dialog and confirm the
+  companion process exits.
