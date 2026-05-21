@@ -11,6 +11,9 @@ This file records notable project changes. It follows the
 - Added a DecentDB v2.6.0 enhancement adoption plan covering queued writes,
   operational `sys.*` metrics, SQL/PRAGMA compatibility, local web console,
   reactive streams, sync/relay, Lua extensions, and WASM/browser boundaries.
+- Added ADRs for DecentDB v2.6.0 queued writes, local Web Console companion
+  process handling, reactive refresh lifecycle, sync/relay diagnostics scope,
+  and Lua extension trust management.
 - Added DecentDB v2.6.0 alignment, including pinned binding/runtime metadata,
   native asset resolution hardening, and a v2.x fixture smoke path.
 - Added DecentDB tooling metadata and query-contract bridge support for schema

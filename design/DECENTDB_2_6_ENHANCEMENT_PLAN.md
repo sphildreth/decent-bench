@@ -21,6 +21,23 @@ way that strengthens the existing desktop workbench without turning Decent Bench
 into a general-purpose database admin server, browser app, or sync management
 suite by default.
 
+## Phase Map
+
+The actionable roadmap is Phase 1 through Phase 6. Phase 0 is the completed
+dependency alignment, and WASM/browser work is tracked separately rather than
+treated as part of the desktop v2.6.0 adoption sequence.
+
+| Phase | Status | Workstream | ADR Required? | Notes |
+|---:|---|---|---|---|
+| 0 | Done | Compatibility upgrade | No | Version pin, lockfile, notices, and validation only. |
+| 1 | Next | Observability and SQL surface parity | No | Uses SQL-visible engine views/functions and existing dashboard/autocomplete surfaces. Create an ADR only if this expands into a new workflow or config schema. |
+| 2 | Planned | Queued write integration | [ADR-0038](adr/0038-queued-write-integration.md) | Changes the app-owned write execution model, queue configuration, and write error semantics. |
+| 3 | Planned | Optional local Web Console | [ADR-0039](adr/0039-local-web-console-companion-process.md) | Adds a managed `decentdb serve` companion process and new packaging/lifecycle/security choices. |
+| 4 | Planned | Reactive refresh | [ADR-0040](adr/0040-reactive-refresh-watch-lifecycle.md) | Introduces long-lived subscriptions, stale-result semantics, and background watch lifecycle. |
+| 5 | Planned | Sync and relay inspection | [ADR-0041](adr/0041-sync-relay-diagnostics-boundary.md) | Read-only `sys.*` inspection is allowed; data movement, relay workflows, auth, conflict handling, or retention controls require further PRD/SPEC updates. |
+| 6 | Planned | Lua extension management | [ADR-0042](adr/0042-lua-extension-management-trust-model.md) | Read-only discovery is allowed; lifecycle and execution-trust UI follow the ADR trust model. |
+| Separate | Deferred | WASM/browser runtime | Not now | Future web target or companion app needs a separate PRD/SPEC slice and ADR. |
+
 ## Relevant v2.6.0 Capabilities
 
 | Capability | DecentDB v2.6.0 surface | Decent Bench fit |
@@ -90,7 +107,8 @@ engine surfaces and keeps the app's existing scope intact.
 
 ### Phase 2 - Queued Write Integration
 
-This phase needs an ADR because it changes the app-owned write execution model.
+Governed by [ADR-0038](adr/0038-queued-write-integration.md) because it
+changes the app-owned write execution model.
 
 - Add configuration fields for write-queue options, defaulting to disabled:
   - `write_queue_enabled`
@@ -112,8 +130,9 @@ This phase needs an ADR because it changes the app-owned write execution model.
 
 ### Phase 3 - Optional Local Web Console
 
-This phase needs an ADR because it adds a managed companion process and changes
-desktop packaging requirements.
+Governed by
+[ADR-0039](adr/0039-local-web-console-companion-process.md) because it adds a
+managed companion process and changes desktop packaging requirements.
 
 - Package or locate the `decentdb` CLI alongside the existing native library
   and migration tool staging flow.
@@ -126,8 +145,9 @@ desktop packaging requirements.
 
 ### Phase 4 - Reactive Refresh
 
-This phase should wait for a public Dart API unless an ADR accepts lower-level C
-ABI access from the app.
+Governed by [ADR-0040](adr/0040-reactive-refresh-watch-lifecycle.md). This
+phase should wait for a public Dart API unless a superseding ADR accepts
+lower-level C ABI access from the app.
 
 - Use table/query watches to refresh schema browser metadata after app-owned
   writes.
@@ -139,7 +159,8 @@ ABI access from the app.
 
 ### Phase 5 - Sync and Relay Inspection
 
-This is a larger product feature and should start as read-only inspection.
+Governed by [ADR-0041](adr/0041-sync-relay-diagnostics-boundary.md). This is a
+larger product feature and should start as read-only inspection.
 
 - Add read-only sync status and retention diagnostics from `sys.sync_status`
   and related inspection views.
@@ -151,7 +172,9 @@ This is a larger product feature and should start as read-only inspection.
 
 ### Phase 6 - Lua Extension Management
 
-This phase is security-sensitive and requires an ADR before implementation.
+Governed by
+[ADR-0042](adr/0042-lua-extension-management-trust-model.md). This phase is
+security-sensitive, and lifecycle/trust workflows must follow that ADR.
 
 - Start with read-only discovery of installed/enabled extensions from
   `sys.extension_*` views.
@@ -162,7 +185,7 @@ This phase is security-sensitive and requires an ADR before implementation.
 - Extend autocomplete only for trusted/enabled extension functions surfaced by
   engine metadata.
 
-### Phase 7 - WASM and Browser Runtime
+### Tracked Separately - WASM and Browser Runtime
 
 No desktop implementation is planned for the v2.6.0 desktop upgrade.
 
@@ -193,4 +216,3 @@ Each implementation phase should include:
 - targeted native smoke tests for the touched DecentDB surface
 - manual verification for behavior-sensitive UI, especially process lifecycle,
   query cancellation, queue timeout handling, and large metrics/result sets
-
