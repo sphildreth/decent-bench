@@ -492,6 +492,132 @@ class WorkspaceController extends ChangeNotifier {
     _safeNotify();
   }
 
+  Future<void> saveWorkspace() async {
+    if (!hasOpenDatabase) {
+      _setWorkspaceError('No open database to save.');
+      return;
+    }
+
+    workspaceMessage = 'Persisting workspace, query library, and config...';
+    workspaceError = null;
+    _safeNotify();
+
+    await _persistWorkspaceStateNow();
+    await _persistSavedQueryLibrary();
+    await _persistConfig(
+      'Workspace, query library, and configuration persisted; data writes are already durable.',
+    );
+  }
+
+  Future<void> saveWorkspaceAs(String destinationPath) async {
+    final sourcePath = databasePath;
+    if (sourcePath == null) {
+      _setWorkspaceError('No open database to save.');
+      return;
+    }
+
+    final normalizedDestination = p.normalize(destinationPath.trim());
+    if (normalizedDestination.isEmpty) {
+      _setWorkspaceError('Choose a destination file first.');
+      return;
+    }
+
+    if (normalizedDestination == sourcePath) {
+      await saveWorkspace();
+      return;
+    }
+
+    workspaceMessage = 'Saving workspace as copy...';
+    workspaceError = null;
+    _safeNotify();
+
+    try {
+      await _persistWorkspaceStateNow();
+      await _persistSavedQueryLibrary();
+
+      final destinationFile = File(normalizedDestination);
+      await destinationFile.parent.create(recursive: true);
+      if (await destinationFile.exists()) {
+        await destinationFile.delete();
+      }
+
+      await File(sourcePath).copy(normalizedDestination);
+      await _copyDatabaseSidecars(
+        sourcePath: sourcePath,
+        destinationPath: normalizedDestination,
+      );
+
+      await _persistWorkspaceStateNow(databasePath: normalizedDestination);
+      await _savedQueryLibraryStore.save(
+        normalizedDestination,
+        savedQueryLibrary,
+      );
+
+      await openDatabase(normalizedDestination, createIfMissing: false);
+      workspaceMessage =
+          'Saved workspace as ${p.basename(normalizedDestination)} and opened it.';
+    } catch (error) {
+      _setWorkspaceError(error.toString());
+    }
+  }
+
+  Future<void> _copyDatabaseSidecars({
+    required String sourcePath,
+    required String destinationPath,
+  }) async {
+    for (final suffix in const <String>['-wal', '-shm']) {
+      final sourceSidecar = File('$sourcePath$suffix');
+      final destinationSidecar = File('$destinationPath$suffix');
+      if (await destinationSidecar.exists()) {
+        await destinationSidecar.delete();
+      }
+      if (await sourceSidecar.exists()) {
+        await sourceSidecar.copy(destinationSidecar.path);
+      }
+    }
+  }
+
+  Future<void> closeWorkspace() async {
+    if (!hasOpenDatabase) {
+      _setWorkspaceError('No open workspace to close.');
+      return;
+    }
+
+    workspaceMessage = 'Saving workspace state before close...';
+    workspaceError = null;
+    _safeNotify();
+
+    _workspaceSaveDebounce?.cancel();
+    await _persistWorkspaceStateNow();
+    await _persistSavedQueryLibrary();
+    await _persistConfig('Closed workspace; database writes are durable.');
+
+    await _cancelAllOpenCursors();
+    await _excelImportSubscription?.cancel();
+    await _sqlDumpImportSubscription?.cancel();
+    await _sqliteImportSubscription?.cancel();
+
+    _excelImportSubscription = null;
+    _sqlDumpImportSubscription = null;
+    _sqliteImportSubscription = null;
+    excelImportSession = null;
+    sqlDumpImportSession = null;
+    sqliteImportSession = null;
+    databasePath = null;
+    engineVersion = null;
+    schema = SchemaSnapshot.empty();
+    toolingMetadata = null;
+    branchState = WorkspaceBranchState.unavailable(
+      nativeBranchApiUnavailableReason,
+    );
+    lastBranchDiff = null;
+    savedQueryLibrary = SavedQueryLibrary.empty;
+    workspaceMessage = 'Workspace closed.';
+    workspaceError = null;
+    _resetTabs(notify: false, resetCounters: true);
+    _safeNotify();
+  }
+
   Future<void> exportWorkspaceProject(String projectPath) async {
     final currentDatabasePath = databasePath;
     if (currentDatabasePath == null) {
@@ -1242,6 +1368,266 @@ class WorkspaceController extends ChangeNotifier {
     sqlBufferStartOffset: bufferStartOffset,
     sqlOverrideDescription: description,
   );
+
+  Future<void> runSqlOnNewBranch(
+    String sql, {
+    int bufferStartOffset = 0,
+    String description = 'selected SQL',
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    final tabId = activeTabId;
+    final tab = tabById(tabId);
+    if (tab == null || !canRunTab(tabId)) {
+      return;
+    }
+    if (!hasOpenDatabase) {
+      _setTabError(
+        tabId,
+        QueryErrorDetails(
+          stage: QueryErrorStage.validation,
+          message: 'Open or create a DecentDB file before running SQL.',
+        ),
+      );
+      return;
+    }
+    if (!canUseNativeBranchWorkflow) {
+      _setBranchWorkflowUnavailable(
+        branchState.nativeBranchApiUnavailableReason,
+      );
+      _setTabError(
+        tabId,
+        QueryErrorDetails(
+          stage: QueryErrorStage.validation,
+          message: branchState.nativeBranchApiUnavailableReason,
+        ),
+      );
+      return;
+    }
+
+    final trimmedSql = sql.trim();
+    final effectiveBufferStartOffset =
+        bufferStartOffset + sql.length - sql.trimLeft().length;
+    if (trimmedSql.isEmpty) {
+      _setTabError(
+        tabId,
+        QueryErrorDetails(
+          stage: QueryErrorStage.validation,
+          message: 'Enter SQL before pressing Run.',
+        ),
+      );
+      return;
+    }
+
+    final params = _parseParameters(tabId, tab.parameterJson);
+    if (params == null) {
+      return;
+    }
+
+    final startedAt = DateTime.now();
+    final generation = tab.executionGeneration + 1;
+    final previousCursor = tab.cursorId;
+    final sourceRef = branchState.currentBranch.trim().isEmpty
+        ? 'main'
+        : branchState.currentBranch;
+    final branchName = 'safe_run_${_branchWorkflowTimestamp()}';
+
+    _mutateTab(
+      tabId,
+      (current) => current.copyWith(
+        phase: QueryPhase.opening,
+        resultColumns: const <String>[],
+        resultRows: const <Map<String, Object?>>[],
+        cursorId: null,
+        error: null,
+        statusMessage: 'Executing $description on branch $branchName...',
+        lastSql: trimmedSql,
+        lastParameterJson: tab.parameterJson,
+        lastParams: params,
+        lastRunStartedAt: startedAt,
+        rowsAffected: null,
+        elapsed: null,
+        hasMoreRows: false,
+        isResultPartial: false,
+        executionGeneration: generation,
+        executionPlan: const QueryExecutionPlanState.idle().copyWith(
+          errorMessage:
+              'Execution plan is not loaded for branch-scoped SQL runs.',
+        ),
+        queryContract: null,
+        messageHistory: _appendMessage(
+          current.messageHistory,
+          QueryMessageLevel.info,
+          'Executing $description on branch $branchName...',
+          timestamp: startedAt,
+        ),
+      ),
+      notify: false,
+    );
+    _safeNotify();
+    _logInfo(
+      'run_query_on_branch',
+      'Executing $description on a new branch.',
+      category: 'query',
+      databasePath: databasePath,
+      sql: trimmedSql,
+      details: <String, Object?>{
+        'tab_id': tabId,
+        'source_ref': sourceRef,
+        'branch_name': branchName,
+        'parameter_count': params.length,
+      },
+    );
+
+    if (previousCursor != null) {
+      unawaited(_gateway.cancelQuery(previousCursor));
+    }
+
+    var branchCreated = false;
+    try {
+      final queryContract = await _gateway.describeQueryContract(trimmedSql);
+      if (!_isCurrentGeneration(tabId, generation)) {
+        return;
+      }
+      _mutateTab(
+        tabId,
+        (current) => current.copyWith(queryContract: queryContract),
+        notify: false,
+      );
+      if (!_validateQueryContractParameters(
+        tabId: tabId,
+        contract: queryContract,
+        parameterValues: params,
+      )) {
+        return;
+      }
+
+      final branch = await _gateway.createBranch(
+        branchName: branchName,
+        fromRef: sourceRef,
+      );
+      branchCreated = true;
+      final page = await _gateway.runQueryOnBranch(
+        sql: trimmedSql,
+        branchName: branch.name,
+        params: params,
+        pageSize: config.defaultPageSize,
+      );
+      if (!_isCurrentGeneration(tabId, generation)) {
+        return;
+      }
+
+      _mutateTab(tabId, (current) {
+        final statusMessage = page.rowsAffected != null
+            ? 'Statement completed on branch ${branch.name} with '
+                  '${page.rowsAffected} affected rows.'
+            : 'Loaded ${page.rows.length} rows from branch ${branch.name}.';
+        final updated = _applyFirstPage(
+          current,
+          page,
+          queryContract: queryContract,
+          statusMessage: statusMessage,
+        );
+        final withPlan = updated.copyWith(
+          executionPlan: const QueryExecutionPlanState.idle().copyWith(
+            errorMessage:
+                'Execution plan is not loaded for branch-scoped SQL runs.',
+          ),
+        );
+        final withMessage = withPlan.copyWith(
+          messageHistory: _appendMessage(
+            withPlan.messageHistory,
+            QueryMessageLevel.info,
+            statusMessage,
+          ),
+        );
+        _logger.logQueryTiming(
+          databasePath: databasePath ?? '',
+          sql: trimmedSql,
+          rowCount: withMessage.resultRows.length,
+          rowsAffected: withMessage.rowsAffected,
+          elapsedNanos: _durationToNanos(withMessage.elapsed ?? page.elapsed),
+          operation: 'query.branch',
+          details: <String, Object?>{
+            'tab_id': tabId,
+            'branch_name': branch.name,
+          },
+        );
+        return withMessage.copyWith(
+          queryHistory: _appendQueryHistory(
+            withMessage.queryHistory,
+            _buildQueryHistoryEntry(
+              withMessage,
+              outcome: QueryHistoryOutcome.completed,
+              rowsLoaded: withMessage.resultRows.length,
+              rowsAffected: withMessage.rowsAffected,
+              elapsed: withMessage.elapsed,
+            ),
+          ),
+        );
+      }, notify: false);
+      await refreshBranchState(showLoadingState: false);
+    } catch (error) {
+      if (_isCurrentGeneration(tabId, generation)) {
+        _mutateTab(tabId, (current) {
+          final failure = QueryErrorDetails.fromError(
+            error,
+            stage: QueryErrorStage.opening,
+            executedSql: trimmedSql,
+            bufferText: tab.sql,
+            bufferStartOffset: effectiveBufferStartOffset,
+          );
+          final updated = current.copyWith(
+            phase: QueryPhase.failed,
+            error: failure,
+            statusMessage: null,
+            cursorId: null,
+            hasMoreRows: false,
+            executionPlan: current.executionPlan.copyWith(
+              isLoading: false,
+              errorMessage:
+                  'Execution plan unavailable because the branch run did not complete.',
+            ),
+            messageHistory: _appendMessage(
+              current.messageHistory,
+              QueryMessageLevel.error,
+              '${failure.stageLabel}: ${failure.message}',
+            ),
+          );
+          return updated.copyWith(
+            queryHistory: _appendQueryHistory(
+              updated.queryHistory,
+              _buildQueryHistoryEntry(
+                updated,
+                outcome: QueryHistoryOutcome.failed,
+                errorMessage: failure.message,
+                rowsLoaded: updated.resultRows.length,
+                rowsAffected: updated.rowsAffected,
+                elapsed: updated.elapsed,
+              ),
+            ),
+          );
+        }, notify: false);
+        _logError(
+          'run_query_on_branch',
+          'Branch query execution failed.',
+          category: 'query',
+          databasePath: databasePath,
+          sql: trimmedSql,
+          elapsedNanos: _durationToNanos(stopwatch.elapsed),
+          error: error,
+          details: <String, Object?>{
+            'tab_id': tabId,
+            'branch_name': branchName,
+          },
+        );
+      }
+      if (branchCreated) {
+        await refreshBranchState(showLoadingState: false);
+      }
+    } finally {
+      _safeNotify();
+    }
+  }
 
   Future<void> runTab(
     String tabId, {
@@ -3908,6 +4294,9 @@ class WorkspaceController extends ChangeNotifier {
 
   String createSqliteImportJobId() =>
       'sqlite-import-${DateTime.now().microsecondsSinceEpoch}';
+
+  String _branchWorkflowTimestamp() =>
+      DateTime.now().toUtc().microsecondsSinceEpoch.toString();
 
   String suggestExportPath([String? tabId]) {
     final tab = tabId == null ? activeTab : tabById(tabId) ?? activeTab;

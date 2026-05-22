@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:decent_bench/features/workspace/application/workspace_controller.dart';
 import 'package:decent_bench/features/workspace/domain/app_config.dart';
 import 'package:decent_bench/features/workspace/domain/excel_import_models.dart';
+import 'package:decent_bench/features/workspace/domain/saved_query_models.dart';
 import 'package:decent_bench/features/workspace/domain/sql_dump_import_models.dart';
 import 'package:decent_bench/features/workspace/domain/sqlite_import_models.dart';
 import 'package:decent_bench/features/workspace/domain/workspace_models.dart';
@@ -26,6 +27,40 @@ WorkspaceController _createController({
         savedQueryLibraryStore ?? InMemorySavedQueryLibraryStore(),
     logger: logger,
   );
+}
+
+class _TrackingConfigStore extends InMemoryConfigStore {
+  int saveCallCount = 0;
+
+  @override
+  Future<void> save(AppConfig config) async {
+    saveCallCount += 1;
+    await super.save(config);
+  }
+}
+
+class _TrackingWorkspaceStateStore extends InMemoryWorkspaceStateStore {
+  int saveCallCount = 0;
+  final List<String> savedPaths = <String>[];
+
+  @override
+  Future<void> save(String databasePath, PersistedWorkspaceState state) async {
+    saveCallCount += 1;
+    savedPaths.add(databasePath);
+    await super.save(databasePath, state);
+  }
+}
+
+class _TrackingSavedQueryLibraryStore extends InMemorySavedQueryLibraryStore {
+  int saveCallCount = 0;
+  final List<String> savedPaths = <String>[];
+
+  @override
+  Future<void> save(String databasePath, SavedQueryLibrary library) async {
+    saveCallCount += 1;
+    savedPaths.add(databasePath);
+    await super.save(databasePath, library);
+  }
 }
 
 String _tempDbPath() {
@@ -478,6 +513,115 @@ void main() {
     );
   });
 
+  group('File lifecycle commands', () {
+    test('save persists workspace state, saved queries, and config', () async {
+      final dbPath = _tempDbPath();
+      final configStore = _TrackingConfigStore();
+      final workspaceStateStore = _TrackingWorkspaceStateStore();
+      final savedQueryLibraryStore = _TrackingSavedQueryLibraryStore();
+      final controller = _createController(
+        configStore: configStore,
+        workspaceStateStore: workspaceStateStore,
+        savedQueryLibraryStore: savedQueryLibraryStore,
+      );
+
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+
+      await controller.saveActiveQuery(name: 'Recent tasks');
+      final configSaveCountBefore = configStore.saveCallCount;
+
+      await controller.saveWorkspace();
+
+      expect(configStore.saveCallCount, greaterThan(configSaveCountBefore));
+      expect(workspaceStateStore.savedPaths, contains(dbPath));
+      expect(savedQueryLibraryStore.savedPaths, contains(dbPath));
+      expect(
+        (await savedQueryLibraryStore.load(dbPath)).queries.single.name,
+        'Recent tasks',
+      );
+      expect(
+        controller.workspaceMessage,
+        contains('data writes are already durable'),
+      );
+    });
+
+    test(
+      'saveAs duplicates current database and sidecars and opens the copy',
+      () async {
+        final sourcePath = _tempDbPath();
+        final targetPath =
+            '${Directory.systemTemp.path}/phase3-saveas-${DateTime.now().microsecondsSinceEpoch}.ddb';
+        final configStore = _TrackingConfigStore();
+        final workspaceStateStore = _TrackingWorkspaceStateStore();
+        final savedQueryLibraryStore = _TrackingSavedQueryLibraryStore();
+        final controller = _createController(
+          configStore: configStore,
+          workspaceStateStore: workspaceStateStore,
+          savedQueryLibraryStore: savedQueryLibraryStore,
+        );
+        addTearDown(() async {
+          for (final path in <String>[
+            sourcePath,
+            '$sourcePath-wal',
+            '$sourcePath-shm',
+            targetPath,
+            '$targetPath-wal',
+            '$targetPath-shm',
+          ]) {
+            final file = File(path);
+            if (await file.exists()) {
+              await file.delete();
+            }
+          }
+        });
+
+        await controller.initialize();
+        await controller.openDatabase(sourcePath, createIfMissing: true);
+        await controller.saveActiveQuery(name: 'Recent tasks');
+        await File('$sourcePath-wal').writeAsString('wal bytes');
+        await File('$sourcePath-shm').writeAsString('shm bytes');
+
+        await controller.saveWorkspaceAs(targetPath);
+
+        final targetState = await workspaceStateStore.load(targetPath);
+        final targetLibrary = await savedQueryLibraryStore.load(targetPath);
+        expect(controller.databasePath, targetPath);
+        expect(await File(targetPath).exists(), isTrue);
+        expect(await File('$targetPath-wal').readAsString(), 'wal bytes');
+        expect(await File('$targetPath-shm').readAsString(), 'shm bytes');
+        expect(targetState, isNotNull);
+        expect(targetLibrary.queries.single.name, 'Recent tasks');
+        expect(controller.workspaceMessage, contains('Saved workspace as'));
+      },
+    );
+
+    test('close persists state and returns to an empty shell', () async {
+      final dbPath = _tempDbPath();
+      final workspaceStateStore = _TrackingWorkspaceStateStore();
+      final savedQueryLibraryStore = _TrackingSavedQueryLibraryStore();
+      final controller = _createController(
+        workspaceStateStore: workspaceStateStore,
+        savedQueryLibraryStore: savedQueryLibraryStore,
+      );
+
+      await controller.initialize();
+      await controller.openDatabase(dbPath, createIfMissing: true);
+      controller.createTab(sql: 'SELECT id, title FROM tasks ORDER BY id;');
+
+      await controller.closeWorkspace();
+
+      expect(controller.hasOpenDatabase, isFalse);
+      expect(controller.databasePath, isNull);
+      expect(controller.engineVersion, isNull);
+      expect(controller.schema.tables, isEmpty);
+      expect(controller.tabs, hasLength(1));
+      expect(controller.workspaceMessage, 'Workspace closed.');
+      expect(workspaceStateStore.savedPaths, contains(dbPath));
+      expect(savedQueryLibraryStore.savedPaths, contains(dbPath));
+    });
+  });
+
   group('Branch and snapshot workflow', () {
     test(
       'openDatabase records unavailable native branch APIs without failing the workspace',
@@ -573,6 +717,48 @@ void main() {
       expect(gateway.lastMergeDryRun, isTrue);
       expect(controller.lastBranchDiff?.totalChanges, 1);
     });
+
+    test(
+      'runSqlOnNewBranch creates a scratch branch and executes SQL there',
+      () async {
+        final dbPath = _tempDbPath();
+        final gateway = FakeWorkspaceGateway()
+          ..branchApiAvailable = true
+          ..branches = const <WorkspaceBranchInfo>[
+            WorkspaceBranchInfo(name: 'main', isCurrent: true),
+          ];
+        final controller = _createController(gateway: gateway);
+
+        await controller.initialize();
+        await controller.openDatabase(dbPath, createIfMissing: true);
+        controller.updateActiveSql('DELETE FROM tasks WHERE id = 1');
+
+        await controller.runSqlOnNewBranch(controller.activeTab.sql);
+
+        expect(gateway.lastCreatedBranchName, startsWith('safe_run_'));
+        expect(gateway.lastCreatedBranchFromRef, 'main');
+        expect(
+          gateway.lastBranchQueryBranchName,
+          gateway.lastCreatedBranchName,
+        );
+        expect(gateway.lastBranchQuerySql, 'DELETE FROM tasks WHERE id = 1');
+        expect(controller.activeTab.phase, QueryPhase.completed);
+        expect(controller.activeTab.rowsAffected, 1);
+        expect(
+          controller.activeTab.statusMessage,
+          'Statement completed on branch ${gateway.lastCreatedBranchName} '
+          'with 1 affected rows.',
+        );
+        expect(
+          controller.activeTab.executionPlan.errorMessage,
+          'Execution plan is not loaded for branch-scoped SQL runs.',
+        );
+        expect(
+          controller.activeTab.queryHistory.single.outcome,
+          QueryHistoryOutcome.completed,
+        );
+      },
+    );
   });
 
   group('Configuration', () {

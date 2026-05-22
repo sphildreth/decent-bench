@@ -1158,24 +1158,135 @@ ORDER BY dept
     );
 
     test(
-      'collapses unavailable v2.6 sys inspection metrics into one binding note',
+      'loads DecentDB sys inspection metrics through prepared paging',
       skip: skipReason,
       () async {
         final metrics = await bridge.loadOperationalMetrics();
 
         expect(metrics.view('native.write_queue_metrics'), isNotNull);
-        final boundary = metrics.view('decentdb.sys_inspection_views');
-        if (boundary != null) {
-          expect(boundary.available, isFalse);
-          expect(
-            boundary.error,
-            contains('Dart prepared-statement paging path'),
-          );
-          expect(
-            metrics.views.where((view) => view.name.startsWith('sys.')),
-            isEmpty,
-          );
+        for (final name in <String>[
+          'sys.wal_metrics',
+          'sys.storage_metrics',
+          'sys.write_queue_metrics',
+          'sys.sync_status',
+          'sys.sync_retention',
+          'sys.sync_peer_lag',
+          'sys.sync_relay_status',
+          'sys.reactive_metrics',
+          'sys.reactive_subscriptions',
+          'sys.extensions',
+          'sys.extension_functions',
+          'sys.extension_collations',
+          'sys.extension_dependencies',
+          'sys.extension_validation',
+        ]) {
+          final view = metrics.view(name);
+          expect(view, isNotNull, reason: name);
+          expect(view!.available, isTrue, reason: name);
+          expect(view.error, isNull, reason: name);
+          expect(view.columns, isNotEmpty, reason: name);
         }
+        expect(metrics.view('decentdb.sys_inspection_views'), isNull);
+      },
+    );
+
+    test(
+      'supports native branch and snapshot workflow',
+      skip: skipReason,
+      () async {
+        await exec(
+          'CREATE TABLE branch_items (id INTEGER PRIMARY KEY, label TEXT NOT NULL)',
+        );
+        await exec("INSERT INTO branch_items VALUES (1, 'main')");
+
+        final snapshot = await bridge.createSnapshot(name: 'baseline');
+        expect(snapshot.name, 'baseline');
+        expect(snapshot.ref, 'snapshot:baseline');
+
+        final branch = await bridge.createBranch(
+          branchName: 'experiment',
+          fromRef: snapshot.ref,
+        );
+        expect(branch.name, 'experiment');
+
+        await bridge.runQueryOnBranch(
+          sql: "INSERT INTO branch_items VALUES (2, 'branch')",
+          branchName: 'experiment',
+          params: const <Object?>[],
+          pageSize: 64,
+        );
+        final branchPage = await bridge.runQueryOnBranch(
+          sql: 'SELECT label FROM branch_items ORDER BY id',
+          branchName: 'experiment',
+          params: const <Object?>[],
+          pageSize: 64,
+        );
+        expect(
+          branchPage.rows.map((row) => row['label']),
+          orderedEquals(<Object?>['main', 'branch']),
+        );
+
+        final branches = await bridge.listBranches();
+        expect(branches.map((item) => item.name), contains('experiment'));
+        expect(
+          branches.firstWhere((item) => item.name == 'main').isCurrent,
+          isTrue,
+        );
+
+        final snapshots = await bridge.listSnapshots();
+        expect(
+          snapshots.map((item) => item.ref),
+          contains('snapshot:baseline'),
+        );
+
+        final diff = await bridge.branchDiff(
+          leftRef: 'main',
+          rightRef: 'experiment',
+        );
+        expect(diff.addedRows, 1);
+        expect(diff.rows.single.tableName, 'branch_items');
+        expect(diff.rows.single.operation, 'added');
+        expect(diff.rows.single.primaryKey, '2');
+
+        final restorePreview = await bridge.restoreBranch(
+          branchName: 'experiment',
+          targetRef: snapshot.ref,
+          dryRun: true,
+        );
+        expect(restorePreview.totalChanges, greaterThanOrEqualTo(1));
+
+        final mergePreview = await bridge.mergeBranch(
+          sourceBranch: 'experiment',
+          targetBranch: 'main',
+          dryRun: true,
+        );
+        expect(mergePreview.totalChanges, 1);
+
+        final mergeResult = await bridge.mergeBranch(
+          sourceBranch: 'experiment',
+          targetBranch: 'main',
+          dryRun: false,
+        );
+        expect(mergeResult.totalChanges, 1);
+
+        final mainRows = await queryAllRows(
+          'SELECT label FROM branch_items ORDER BY id',
+        );
+        expect(
+          mainRows.map((row) => row['label']),
+          orderedEquals(<Object?>['main', 'branch']),
+        );
+
+        await bridge.deleteBranch(branchName: 'experiment');
+        await bridge.deleteSnapshot(ref: snapshot.ref);
+        expect(
+          (await bridge.listBranches()).map((item) => item.name),
+          isNot(contains('experiment')),
+        );
+        expect(
+          (await bridge.listSnapshots()).map((item) => item.ref),
+          isNot(contains(snapshot.ref)),
+        );
       },
     );
 

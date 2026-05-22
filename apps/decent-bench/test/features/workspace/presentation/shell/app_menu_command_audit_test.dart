@@ -1,0 +1,250 @@
+import 'package:decent_bench/app/theme.dart';
+import 'package:decent_bench/app/theme_system/theme_presets.dart';
+import 'package:decent_bench/features/workspace/presentation/shell/app_menu_bar.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'menu_command_contract.dart';
+
+Widget _buildHost({
+  required bool native,
+  required bool hasOpenDatabase,
+  required List<String> invokeLog,
+}) {
+  final registry = buildAuditedMenuCommandRegistry(
+    hasOpenDatabase: hasOpenDatabase,
+    invokeLog: invokeLog,
+  );
+  final child = Scaffold(body: const SizedBox.shrink());
+  final host = native
+      ? NativeAppMenuHost(
+          registry: registry,
+          recentFiles: const <String>[],
+          onOpenRecent: (_) {},
+          child: child,
+        )
+      : Scaffold(
+          body: AppMenuBar(
+            registry: registry,
+            recentFiles: const <String>[],
+            onOpenRecent: (_) {},
+          ),
+        );
+  return MaterialApp(
+    theme: buildDecentBenchTheme(buildEmergencyTheme()),
+    home: host,
+  );
+}
+
+void _collectPlatformCommands(
+  Object node,
+  Map<String, PlatformMenuItem> collector,
+) {
+  if (node is PlatformMenu) {
+    for (final item in node.menus) {
+      _collectPlatformCommands(item, collector);
+    }
+    return;
+  }
+  if (node is PlatformMenuItemGroup) {
+    for (final item in node.members) {
+      _collectPlatformCommands(item, collector);
+    }
+    return;
+  }
+  if (node is PlatformMenuItem) {
+    if (node.label.isEmpty) {
+      return;
+    }
+    collector[node.label] = node;
+    return;
+  }
+}
+
+bool entryEnabledState(MenuContractEntry entry, bool hasOpenDatabase) {
+  return entry.enabledForDatabaseState(hasOpenDatabase: hasOpenDatabase);
+}
+
+SubmenuButton _submenuForLabel(WidgetTester tester, String label) {
+  return tester.widget<SubmenuButton>(
+    find.byWidgetPredicate((Widget widget) {
+      return widget is SubmenuButton &&
+          widget.child is Text &&
+          (widget.child as Text).data == label;
+    }, description: 'SubmenuButton with label "$label"'),
+  );
+}
+
+MenuItemButton? _menuItemFromSubmenu(SubmenuButton submenu, String label) {
+  final menuItemButtons = submenu.menuChildren.whereType<MenuItemButton>();
+  for (final item in menuItemButtons) {
+    final widget = item.child;
+    if (widget is Text && widget.data == label) {
+      return item;
+    }
+  }
+  return null;
+}
+
+void main() {
+  for (final hasOpenDatabase in <bool>[false, true]) {
+    group('AppMenuBar command audit (dbOpen=$hasOpenDatabase)', () {
+      testWidgets('renders every contract command in the right menu', (
+        tester,
+      ) async {
+        final invokeLog = <String>[];
+        for (final menuLabel in kMenuTopLevelOrder) {
+          await tester.pumpWidget(
+            _buildHost(
+              native: false,
+              hasOpenDatabase: hasOpenDatabase,
+              invokeLog: invokeLog,
+            ),
+          );
+
+          final submenu = _submenuForLabel(tester, menuLabel);
+          expect(
+            _menuItemFromSubmenu(submenu, 'Missing'),
+            isNull,
+            reason:
+                'AppMenuBar must not render fallback Missing entries in "$menuLabel".',
+          );
+
+          for (final command in commandEntriesForTopLevel(menuLabel)) {
+            final button = _menuItemFromSubmenu(submenu, command.label);
+            expect(button, isNotNull);
+            expect(
+              button!.onPressed != null,
+              entryEnabledState(command, hasOpenDatabase),
+              reason:
+                  'AppMenuBar "${command.label}" should match enabled contract in "$menuLabel".',
+            );
+          }
+        }
+      });
+    });
+
+    group('NativeAppMenuHost command audit (dbOpen=$hasOpenDatabase)', () {
+      testWidgets('renders every contract command in the right menu', (
+        tester,
+      ) async {
+        final invokeLog = <String>[];
+        await tester.pumpWidget(
+          _buildHost(
+            native: true,
+            hasOpenDatabase: hasOpenDatabase,
+            invokeLog: invokeLog,
+          ),
+        );
+
+        final menuBar = tester.widget<PlatformMenuBar>(
+          find.byType(PlatformMenuBar),
+        );
+        final menus = menuBar.menus.whereType<PlatformMenu>().toList();
+        for (final section in kMenuTopLevelOrder) {
+          final menu = menus.firstWhere(
+            (PlatformMenu item) => item.label == section,
+            orElse: () =>
+                throw StateError('Missing top-level platform menu "$section".'),
+          );
+          final commands = <String, PlatformMenuItem>{};
+          _collectPlatformCommands(menu, commands);
+          expect(
+            commands.containsKey('Missing'),
+            isFalse,
+            reason:
+                'NativeAppMenuHost must not render fallback Missing entries in "$section".',
+          );
+          final commandEntries = commandEntriesForTopLevel(section).toList();
+          final renderedByLabel = <String, PlatformMenuItem>{...commands};
+          for (final contractEntry in commandEntries) {
+            expect(
+              renderedByLabel.containsKey(contractEntry.label),
+              isTrue,
+              reason:
+                  'Missing native command "${contractEntry.label}" in section "$section".',
+            );
+            expect(
+              renderedByLabel[contractEntry.label]!.onSelected != null,
+              entryEnabledState(contractEntry, hasOpenDatabase),
+              reason:
+                  'Native command "${contractEntry.label}" should match enabled contract in "$section".',
+            );
+          }
+        }
+      });
+    });
+  }
+
+  testWidgets('command palette and web console state is enforced by contract', (
+    tester,
+  ) async {
+    for (final hasOpenDatabase in <bool>[false, true]) {
+      final invokeLog = <String>[];
+      await tester.pumpWidget(
+        _buildHost(
+          native: false,
+          hasOpenDatabase: hasOpenDatabase,
+          invokeLog: invokeLog,
+        ),
+      );
+
+      final viewSubmenu = _submenuForLabel(tester, 'View');
+      final commandPaletteItem = _menuItemFromSubmenu(
+        viewSubmenu,
+        'Command Palette...',
+      );
+      expect(commandPaletteItem, isNotNull);
+      expect(
+        commandPaletteItem!.onPressed,
+        isNotNull,
+        reason:
+            'Command Palette must remain enabled when command registry is active.',
+      );
+
+      final toolsSubmenu = _submenuForLabel(tester, 'Tools');
+      final webConsoleItem = _menuItemFromSubmenu(
+        toolsSubmenu,
+        'Open Web Console',
+      );
+      expect(webConsoleItem, isNotNull);
+      if (hasOpenDatabase) {
+        expect(webConsoleItem!.onPressed, isNotNull);
+      } else {
+        expect(webConsoleItem!.onPressed, isNull);
+      }
+    }
+  });
+
+  testWidgets('deferred commands stay explicitly marked as disabled', (
+    tester,
+  ) async {
+    final openDbCases = <bool>[false, true];
+    for (final hasOpenDatabase in openDbCases) {
+      final invokeLog = <String>[];
+      await tester.pumpWidget(
+        _buildHost(
+          native: false,
+          hasOpenDatabase: hasOpenDatabase,
+          invokeLog: invokeLog,
+        ),
+      );
+      for (final section in kMenuTopLevelOrder) {
+        final submenu = _submenuForLabel(tester, section);
+        for (final command in commandEntriesForTopLevel(section)) {
+          if (!command.isDeferred) {
+            continue;
+          }
+          final menuItem = _menuItemFromSubmenu(submenu, command.label);
+          expect(menuItem, isNotNull);
+          expect(
+            menuItem!.onPressed,
+            isNull,
+            reason:
+                'Deferred command "${command.label}" must stay disabled until implemented.',
+          );
+        }
+      }
+    }
+  });
+}

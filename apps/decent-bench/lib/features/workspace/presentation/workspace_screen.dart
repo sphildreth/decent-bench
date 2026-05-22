@@ -59,6 +59,8 @@ import 'shell/workspace_layout_shell.dart';
 import 'sql_dump_import_dialog.dart';
 import 'sqlite_import_dialog.dart';
 
+enum _RiskySqlDecision { cancel, currentDatabase, newBranch }
+
 class WorkspaceScreen extends StatefulWidget {
   const WorkspaceScreen({
     super.key,
@@ -95,6 +97,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   static const _excelExportTypeGroup = XTypeGroup(
     label: 'Excel',
     extensions: <String>['xlsx'],
+  );
+  static const _schemaExportTypeGroup = XTypeGroup(
+    label: 'Schema SQL',
+    extensions: <String>['sql'],
   );
   static const _projectTypeGroup = XTypeGroup(
     label: 'Decent Bench Project',
@@ -2659,19 +2665,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           id: 'file_save',
           label: 'Save',
           icon: Icons.save_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Save',
-            'Workspace state already persists automatically. Database save commands will be wired when file lifecycle behavior is defined.',
-          ),
+          onInvoke: widget.controller.saveWorkspace,
+          enabled: controller.hasOpenDatabase,
         ),
         command(
           id: 'file_save_as',
           label: 'Save As...',
           icon: Icons.save_as_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Save As',
-            'Database duplication is not wired in this prerelease build yet.',
-          ),
+          onInvoke: _saveWorkspaceAs,
+          enabled: controller.hasOpenDatabase,
         ),
         command(
           id: 'file_export_project',
@@ -2684,10 +2686,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           id: 'file_close',
           label: 'Close',
           icon: Icons.close_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Close Workspace',
-            'Open another workspace or use Exit. Close semantics are still being defined.',
-          ),
+          onInvoke: widget.controller.closeWorkspace,
+          enabled: controller.hasOpenDatabase,
         ),
         command(
           id: 'file_exit',
@@ -2773,19 +2773,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           id: 'import_from_database',
           label: 'Import From Database...',
           icon: Icons.cloud_sync_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Import From Database',
-            'External live database imports are represented in the shell but not wired in this prerelease build yet.',
-          ),
+          onInvoke: () async {},
+          enabled: false,
         ),
         command(
           id: 'import_rerun_last',
           label: 'Re-run Last Import',
           icon: Icons.restart_alt_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Re-run Last Import',
-            'Recent import recipes are a follow-up workflow.',
-          ),
+          onInvoke: () async {},
+          enabled: false,
         ),
         command(
           id: 'import_open_wizard',
@@ -2812,6 +2808,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           label: 'Export Results as Parquet...',
           icon: Icons.view_column_outlined,
           onInvoke: _showParquetExportUnavailableDialog,
+          enabled: false,
         ),
         command(
           id: 'export_results_excel',
@@ -2824,28 +2821,22 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           id: 'export_table',
           label: 'Export Table...',
           icon: Icons.table_rows_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Export Table',
-            'Table-level export workflows will reuse the results/export pipeline.',
-          ),
+          onInvoke: _showExportTableDialog,
+          enabled: controller.hasOpenDatabase,
         ),
         command(
           id: 'export_schema',
           label: 'Export Schema...',
           icon: Icons.schema_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Export Schema',
-            'Schema export is not implemented yet.',
-          ),
+          onInvoke: _showExportSchemaDialog,
+          enabled: controller.hasOpenDatabase,
         ),
         command(
           id: 'export_rerun_last',
           label: 'Re-run Last Export',
           icon: Icons.replay_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Re-run Last Export',
-            'Reusable export recipes are a follow-up workflow.',
-          ),
+          onInvoke: () async {},
+          enabled: false,
         ),
         command(
           id: 'view_reset_layout',
@@ -3048,10 +3039,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           id: 'tools_manage_connections',
           label: 'Manage Connections',
           icon: Icons.settings_ethernet_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Manage Connections',
-            'Live connection management is a placeholder in this DecentDB-first shell.',
-          ),
+          onInvoke: () async {},
+          enabled: false,
         ),
         command(
           id: 'tools_options',
@@ -3100,6 +3089,24 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return;
     }
     await _openDatabaseWithMigrationOffer(file.path);
+  }
+
+  Future<void> _saveWorkspaceAs() async {
+    final currentPath = widget.controller.databasePath;
+    if (currentPath == null) {
+      return;
+    }
+
+    final defaultDirectory = p.dirname(currentPath);
+    final result = await getSaveLocation(
+      suggestedName: p.basename(currentPath),
+      initialDirectory: defaultDirectory,
+      acceptedTypeGroups: const <XTypeGroup>[_decentDbTypeGroup],
+    );
+    if (result == null) {
+      return;
+    }
+    await widget.controller.saveWorkspaceAs(result.path);
   }
 
   Future<void> _openDatabaseWithMigrationOffer(
@@ -3560,11 +3567,148 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
+  Future<void> _showExportTableDialog() async {
+    final controller = widget.controller;
+    final tableName = _selectedTableNameForExport(controller);
+    if (tableName == null) {
+      await _showInfoDialog(
+        'Export Table',
+        'Select a table in the schema explorer before exporting table data.',
+      );
+      return;
+    }
+    final previousTabId = controller.activeTabId;
+    final query = 'SELECT *\nFROM ${_quoteIdentifier(tableName)}';
+    controller.createTab(sql: query);
+    final exportTabId = controller.activeTabId;
+    try {
+      await controller.runActiveTab();
+      if (controller.tabById(exportTabId)?.canExport != true) {
+        await _showInfoDialog(
+          'Export Table',
+          'No exportable result rows were returned from "$tableName".',
+        );
+        return;
+      }
+      await _showCsvExportDialog();
+    } finally {
+      if (controller.tabById(previousTabId) != null) {
+        controller.selectTab(previousTabId);
+      }
+      if (controller.tabById(exportTabId) != null &&
+          exportTabId != previousTabId) {
+        await controller.closeTab(exportTabId);
+      }
+    }
+  }
+
+  Future<void> _showExportSchemaDialog() async {
+    final controller = widget.controller;
+    final result = await getSaveLocation(
+      suggestedName:
+          'schema_export_${p.basenameWithoutExtension(controller.databasePath ?? 'sample.decentdb')}.sql',
+      acceptedTypeGroups: const <XTypeGroup>[_schemaExportTypeGroup],
+    );
+    if (result == null) {
+      return;
+    }
+    final contents = _schemaExportContents(controller);
+    try {
+      await File(result.path).writeAsString(contents);
+    } catch (error) {
+      await _showInfoDialog(
+        'Export Schema',
+        'Unable to write schema export file to ${result.path}.\n\n$error',
+      );
+      return;
+    }
+    await _showInfoDialog(
+      'Export Schema',
+      'Schema export written to:\n${result.path}',
+    );
+  }
+
   Future<void> _showParquetExportUnavailableDialog() {
     return _showPlaceholderNotice(
       'Export Parquet',
       'Parquet export remains blocked until a maintained Apache-compatible Dart or FFI writer is selected and validated for desktop builds. Excel export is available now.',
     );
+  }
+
+  String _schemaExportContents(WorkspaceController controller) {
+    final snapshot = controller.schema;
+    final objects = snapshot.objects.toList()
+      ..sort((left, right) => left.name.compareTo(right.name));
+    final buffer = StringBuffer()
+      ..writeln('-- Decent Bench schema export')
+      ..writeln('-- Database: ${controller.databasePath ?? 'sample.decentdb'}')
+      ..writeln('-- Exported: ${DateTime.now().toUtc().toIso8601String()}')
+      ..writeln('--')
+      ..writeln(
+        '-- Objects: ${snapshot.objects.length} | '
+        'Tables: ${snapshot.tables.length} | '
+        'Views: ${snapshot.views.length}',
+      )
+      ..writeln();
+
+    for (final object in objects) {
+      final indexes = snapshot.indexesForObject(object.name).toList()
+        ..sort((left, right) => left.name.compareTo(right.name));
+      final triggers = snapshot.triggersForObject(object.name).toList()
+        ..sort((left, right) => left.name.compareTo(right.name));
+      buffer
+        ..writeln(
+          '-- === ${object.kind.name.toUpperCase()}: ${object.name} ===',
+        )
+        ..writeln('-- Temporary: ${object.temporary}');
+      if (object.ddl == null || object.ddl!.trim().isEmpty) {
+        buffer.writeln(
+          '-- DDL unavailable for ${object.kind.name} ${object.name}.',
+        );
+      } else {
+        final ddl = object.ddl!.trim();
+        buffer.writeln(ddl.endsWith(';') ? ddl : '$ddl;');
+      }
+      if (object.columns.isNotEmpty) {
+        buffer.writeln(
+          '-- Columns (${object.columns.length}): ${object.columns.map((column) => column.name).join(', ')}',
+        );
+      }
+      if (indexes.isNotEmpty) {
+        buffer.writeln('-- Indexes');
+        for (final index in indexes) {
+          if (index.ddl == null || index.ddl!.trim().isEmpty) {
+            buffer.writeln('-- Index ${index.name} has no DDL.');
+          } else {
+            final ddl = index.ddl!.trim();
+            buffer.writeln(ddl.endsWith(';') ? ddl : '$ddl;');
+          }
+        }
+      }
+      if (triggers.isNotEmpty) {
+        buffer.writeln('-- Triggers');
+        for (final trigger in triggers) {
+          final ddl = trigger.ddl.trim();
+          buffer.writeln(ddl.endsWith(';') ? ddl : '$ddl;');
+        }
+      }
+      buffer.writeln();
+    }
+
+    return buffer.toString();
+  }
+
+  String? _selectedTableNameForExport(WorkspaceController controller) {
+    final nodeId = _selectedSchemaNodeId ?? _fallbackSchemaNodeId(controller);
+    if (!nodeId.startsWith('table:')) {
+      return null;
+    }
+    final tableName = nodeId.substring('table:'.length);
+    final object = controller.schema.objectNamed(tableName);
+    if (object == null || object.kind != SchemaObjectKind.table) {
+      return null;
+    }
+    return tableName;
   }
 
   Future<void> _handleIncomingFiles(Iterable<String> rawPaths) async {
@@ -3993,7 +4137,20 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   Future<void> _runPrimarySqlTarget() async {
     final executionTarget = _sqlExecutionTarget();
     if (!executionTarget.isBufferTarget) {
-      if (!await _confirmRiskySqlIfNeeded(executionTarget.sql)) {
+      final decision = await _confirmRiskySqlIfNeeded(executionTarget.sql);
+      if (decision == _RiskySqlDecision.cancel) {
+        return;
+      }
+      if (decision == _RiskySqlDecision.newBranch) {
+        await widget.controller.runSqlOnNewBranch(
+          executionTarget.sql,
+          bufferStartOffset: executionTarget.startOffset,
+          description: switch (executionTarget.kind) {
+            SqlExecutionTargetKind.selection => 'selected SQL',
+            SqlExecutionTargetKind.statement => 'statement',
+            SqlExecutionTargetKind.buffer => 'SQL',
+          },
+        );
         return;
       }
       await widget.controller.runActiveSql(
@@ -4007,26 +4164,47 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       );
       return;
     }
-    if (!await _confirmRiskySqlIfNeeded(widget.controller.activeTab.sql)) {
+    final decision = await _confirmRiskySqlIfNeeded(
+      widget.controller.activeTab.sql,
+    );
+    if (decision == _RiskySqlDecision.cancel) {
+      return;
+    }
+    if (decision == _RiskySqlDecision.newBranch) {
+      await widget.controller.runSqlOnNewBranch(
+        widget.controller.activeTab.sql,
+        description: 'SQL buffer',
+      );
       return;
     }
     await widget.controller.runActiveTab();
   }
 
   Future<void> _runEntireSqlBuffer() async {
-    if (!await _confirmRiskySqlIfNeeded(widget.controller.activeTab.sql)) {
+    final decision = await _confirmRiskySqlIfNeeded(
+      widget.controller.activeTab.sql,
+    );
+    if (decision == _RiskySqlDecision.cancel) {
+      return;
+    }
+    if (decision == _RiskySqlDecision.newBranch) {
+      await widget.controller.runSqlOnNewBranch(
+        widget.controller.activeTab.sql,
+        description: 'SQL buffer',
+      );
       return;
     }
     await widget.controller.runActiveTab();
   }
 
-  Future<bool> _confirmRiskySqlIfNeeded(String sql) async {
+  Future<_RiskySqlDecision> _confirmRiskySqlIfNeeded(String sql) async {
     final assessment = assessSqlRisk(sql);
     if (!assessment.requiresConfirmation) {
-      return true;
+      return _RiskySqlDecision.currentDatabase;
     }
     final branchState = widget.controller.branchState;
-    final result = await showDialog<bool>(
+    final canUseNativeBranch = widget.controller.canUseNativeBranchWorkflow;
+    final result = await showDialog<_RiskySqlDecision>(
       context: context,
       builder: (context) {
         return AlertDialog(
@@ -4037,29 +4215,31 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           ),
           content: Text(
             '${assessment.reason}\n\n'
-            '${branchState.nativeBranchApiUnavailableReason}\n\n'
-            'Run on New Branch is disabled until the public Dart binding '
-            'exposes native branch execution.',
+            '${canUseNativeBranch ? 'Run on New Branch creates a temporary DecentDB branch and executes this SQL there first.' : branchState.nativeBranchApiUnavailableReason}',
           ),
           actions: <Widget>[
             TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed: () =>
+                  Navigator.of(context).pop(_RiskySqlDecision.cancel),
               child: const Text('Cancel'),
             ),
             OutlinedButton.icon(
-              onPressed: null,
+              onPressed: canUseNativeBranch
+                  ? () => Navigator.of(context).pop(_RiskySqlDecision.newBranch)
+                  : null,
               icon: const Icon(Icons.account_tree_outlined),
               label: const Text('Run on New Branch'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed: () =>
+                  Navigator.of(context).pop(_RiskySqlDecision.currentDatabase),
               child: const Text('Run on Current Database'),
             ),
           ],
         );
       },
     );
-    return result ?? false;
+    return result ?? _RiskySqlDecision.cancel;
   }
 
   void _insertSnippet(SqlSnippet snippet) {
@@ -4813,9 +4993,20 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   Future<void> _showDocumentationDialog() {
-    return _showPlaceholderNotice(
+    return _showInfoDialog(
       'Documentation',
-      'Decent Bench emphasizes import, query, and export workflows. Use the menu bar, keyboard shortcuts, and draggable panes to work through the desktop layout.',
+      'Decent Bench documentation is bundled with the project.\n\n'
+          'Primary documents:\n'
+          '- README.md: setup and desktop launch workflow\n'
+          '- design/PRD.md: product requirements\n'
+          '- design/SPEC.md: implementation scope\n'
+          '- design/adr/: accepted architecture decisions\n\n'
+          'Common workflows:\n'
+          '- File > Open opens an existing DecentDB database.\n'
+          '- Import opens the supported file import wizards.\n'
+          '- Export writes query results, selected tables, schema SQL, or ERD images.\n'
+          '- Tools > Branch & Snapshots manages native DecentDB branch workflows when supported by the binding.\n'
+          '- Tools > Options / Preferences edits TOML-backed app settings.',
     );
   }
 
@@ -4889,6 +5080,27 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       ],
     );
     return Future<void>.value();
+  }
+
+  Future<void> _showInfoDialog(String title, String message) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(child: SelectableText(message)),
+          ),
+          actions: <Widget>[
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _showPlaceholderNotice(String title, String message) {

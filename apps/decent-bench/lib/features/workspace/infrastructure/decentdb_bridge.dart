@@ -523,44 +523,57 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   }
 
   @override
-  Future<List<WorkspaceBranchInfo>>
-  listBranches() async => throw const BranchWorkflowUnavailable(
-    'Native branch APIs are not publicly exposed by the current Dart binding.',
-  );
+  Future<List<WorkspaceBranchInfo>> listBranches() async {
+    final data = await _request('listBranches');
+    return _bridgeMapList(
+      data['branches'],
+    ).map(WorkspaceBranchInfo.fromMap).toList(growable: false);
+  }
 
   @override
   Future<WorkspaceBranchInfo> createBranch({
     required String branchName,
     required String fromRef,
-  }) async => throw const BranchWorkflowUnavailable(
-    'Native branch APIs are not publicly exposed by the current Dart binding.',
-  );
-
-  @override
-  Future<void> deleteBranch({required String branchName}) async {
-    throw const BranchWorkflowUnavailable(
-      'Native branch APIs are not publicly exposed by the current Dart binding.',
+  }) async {
+    final data = await _request('createBranch', <String, Object?>{
+      'branchName': branchName,
+      'fromRef': fromRef,
+    });
+    return WorkspaceBranchInfo.fromMap(
+      (data['branch']! as Map<Object?, Object?>).map(
+        (key, value) => MapEntry(key as String, value),
+      ),
     );
   }
 
   @override
-  Future<List<WorkspaceSnapshotInfo>>
-  listSnapshots() async => throw const BranchWorkflowUnavailable(
-    'Native branch APIs are not publicly exposed by the current Dart binding.',
-  );
+  Future<void> deleteBranch({required String branchName}) async {
+    await _request('deleteBranch', <String, Object?>{'branchName': branchName});
+  }
 
   @override
-  Future<WorkspaceSnapshotInfo> createSnapshot({
-    required String name,
-  }) async => throw const BranchWorkflowUnavailable(
-    'Native branch APIs are not publicly exposed by the current Dart binding.',
-  );
+  Future<List<WorkspaceSnapshotInfo>> listSnapshots() async {
+    final data = await _request('listSnapshots');
+    return _bridgeMapList(
+      data['snapshots'],
+    ).map(WorkspaceSnapshotInfo.fromMap).toList(growable: false);
+  }
+
+  @override
+  Future<WorkspaceSnapshotInfo> createSnapshot({required String name}) async {
+    final data = await _request('createSnapshot', <String, Object?>{
+      'name': name,
+    });
+    return WorkspaceSnapshotInfo.fromMap(
+      (data['snapshot']! as Map<Object?, Object?>).map(
+        (key, value) => MapEntry(key as String, value),
+      ),
+    );
+  }
 
   @override
   Future<void> deleteSnapshot({required String ref}) async {
-    throw const BranchWorkflowUnavailable(
-      'Native branch APIs are not publicly exposed by the current Dart binding.',
-    );
+    await _request('deleteSnapshot', <String, Object?>{'ref': ref});
   }
 
   @override
@@ -569,35 +582,55 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
     required String branchName,
     required List<Object?> params,
     required int pageSize,
-  }) async => throw const BranchWorkflowUnavailable(
-    'Native branch APIs are not publicly exposed by the current Dart binding.',
-  );
+  }) async {
+    final data = await _request('runQueryOnBranch', <String, Object?>{
+      'sql': sql,
+      'branchName': branchName,
+      'params': params,
+      'pageSize': pageSize,
+    });
+    return QueryResultPage.fromMap(data);
+  }
 
   @override
   Future<WorkspaceBranchDiff> branchDiff({
     required String leftRef,
     required String rightRef,
-  }) async => throw const BranchWorkflowUnavailable(
-    'Native branch APIs are not publicly exposed by the current Dart binding.',
-  );
+  }) async {
+    final data = await _request('branchDiff', <String, Object?>{
+      'leftRef': leftRef,
+      'rightRef': rightRef,
+    });
+    return WorkspaceBranchDiff.fromMap(data);
+  }
 
   @override
   Future<WorkspaceBranchDiff> restoreBranch({
     required String branchName,
     required String targetRef,
     required bool dryRun,
-  }) async => throw const BranchWorkflowUnavailable(
-    'Native branch APIs are not publicly exposed by the current Dart binding.',
-  );
+  }) async {
+    final data = await _request('restoreBranch', <String, Object?>{
+      'branchName': branchName,
+      'targetRef': targetRef,
+      'dryRun': dryRun,
+    });
+    return WorkspaceBranchDiff.fromMap(data);
+  }
 
   @override
   Future<WorkspaceBranchDiff> mergeBranch({
     required String sourceBranch,
     required String targetBranch,
     required bool dryRun,
-  }) async => throw const BranchWorkflowUnavailable(
-    'Native branch APIs are not publicly exposed by the current Dart binding.',
-  );
+  }) async {
+    final data = await _request('mergeBranch', <String, Object?>{
+      'sourceBranch': sourceBranch,
+      'targetBranch': targetBranch,
+      'dryRun': dryRun,
+    });
+    return WorkspaceBranchDiff.fromMap(data);
+  }
 
   Future<Map<String, Object?>> _request(
     String action, [
@@ -934,6 +967,26 @@ class _BridgeWorkerState {
         return _handleCancelQuery(payload);
       case 'executeQueuedWrite':
         return _handleExecuteQueuedWrite(payload);
+      case 'listBranches':
+        return _handleListBranches();
+      case 'createBranch':
+        return _handleCreateBranch(payload);
+      case 'deleteBranch':
+        return _handleDeleteBranch(payload);
+      case 'listSnapshots':
+        return _handleListSnapshots();
+      case 'createSnapshot':
+        return _handleCreateSnapshot(payload);
+      case 'deleteSnapshot':
+        return _handleDeleteSnapshot(payload);
+      case 'runQueryOnBranch':
+        return _handleRunQueryOnBranch(payload);
+      case 'branchDiff':
+        return _handleBranchDiff(payload);
+      case 'restoreBranch':
+        return _handleRestoreBranch(payload);
+      case 'mergeBranch':
+        return _handleMergeBranch(payload);
       case 'exportCsv':
         return _handleExportCsv(payload);
       case 'exportJson':
@@ -1324,6 +1377,140 @@ class _BridgeWorkerState {
     final queuedSql = _inlineQueuedWriteParameters(sql, params);
     final rowsAffected = db.executeQueued(queuedSql, timeoutMs: timeoutMs);
     return <String, Object?>{'rowsAffected': rowsAffected};
+  }
+
+  Future<Map<String, Object?>> _handleListBranches() async {
+    final workflow = _requireDatabase().branchWorkflow;
+    final branches = workflow.listBranches();
+    return <String, Object?>{
+      'branches': <Map<String, Object?>>[
+        for (final branch in branches) _serializeBranchInfo(branch),
+      ],
+    };
+  }
+
+  Future<Map<String, Object?>> _handleCreateBranch(
+    Map<String, Object?> payload,
+  ) async {
+    final workflow = _requireDatabase().branchWorkflow;
+    final branch = workflow.createBranch(
+      payload['branchName']! as String,
+      from: _nativeBranchRef(payload['fromRef'] as String?),
+    );
+    return <String, Object?>{'branch': _serializeBranchInfo(branch)};
+  }
+
+  Future<Map<String, Object?>> _handleDeleteBranch(
+    Map<String, Object?> payload,
+  ) async {
+    final workflow = _requireDatabase().branchWorkflow;
+    workflow.deleteBranch(payload['branchName']! as String);
+    return const <String, Object?>{};
+  }
+
+  Future<Map<String, Object?>> _handleListSnapshots() async {
+    final workflow = _requireDatabase().branchWorkflow;
+    final branchNamesById = <String, String>{
+      for (final branch in workflow.listBranches())
+        branch.branchId: branch.name,
+    };
+    final snapshots = workflow.listSnapshots();
+    return <String, Object?>{
+      'snapshots': <Map<String, Object?>>[
+        for (final snapshot in snapshots)
+          _serializeSnapshotInfo(
+            snapshot,
+            branchName: branchNamesById[snapshot.branchId],
+          ),
+      ],
+    };
+  }
+
+  Future<Map<String, Object?>> _handleCreateSnapshot(
+    Map<String, Object?> payload,
+  ) async {
+    final workflow = _requireDatabase().branchWorkflow;
+    final snapshot = workflow.createSnapshot(payload['name']! as String);
+    return <String, Object?>{
+      'snapshot': _serializeSnapshotInfo(snapshot, branchName: 'main'),
+    };
+  }
+
+  Future<Map<String, Object?>> _handleDeleteSnapshot(
+    Map<String, Object?> payload,
+  ) async {
+    final workflow = _requireDatabase().branchWorkflow;
+    workflow.deleteSnapshot(_snapshotNameFromRef(payload['ref']! as String));
+    return const <String, Object?>{};
+  }
+
+  Future<Map<String, Object?>> _handleRunQueryOnBranch(
+    Map<String, Object?> payload,
+  ) async {
+    final workflow = _requireDatabase().branchWorkflow;
+    final sql = payload['sql']! as String;
+    final branchName = payload['branchName']! as String;
+    final params = ((payload['params'] as List?) ?? const <Object?>[])
+        .cast<Object?>();
+    final pageSize = payload['pageSize']! as int;
+    final stopwatch = Stopwatch()..start();
+    final result = workflow.executeSql(branchName, sql, params);
+    final page = result.firstPage(pageSize);
+    if (!page.isLast) {
+      throw BridgeFailure(
+        'Branch-scoped SQL returned more than $pageSize rows. Add a LIMIT '
+        'clause before running large branch result sets.',
+      );
+    }
+    return _serializePage(
+      page,
+      cursorId: null,
+      rowsAffected: result.returnsRows ? null : result.affectedRows,
+      elapsed: stopwatch.elapsed,
+    );
+  }
+
+  Future<Map<String, Object?>> _handleBranchDiff(
+    Map<String, Object?> payload,
+  ) async {
+    final workflow = _requireDatabase().branchWorkflow;
+    final diff = workflow.diff(
+      _nativeBranchRef(payload['leftRef']! as String)!,
+      _nativeBranchRef(payload['rightRef']! as String)!,
+    );
+    return _serializeBranchDiffReport(diff);
+  }
+
+  Future<Map<String, Object?>> _handleRestoreBranch(
+    Map<String, Object?> payload,
+  ) async {
+    final workflow = _requireDatabase().branchWorkflow;
+    final report = workflow.restore(
+      payload['branchName']! as String,
+      _nativeBranchRef(payload['targetRef']! as String)!,
+      dryRun: payload['dryRun'] as bool? ?? true,
+    );
+    return _serializeBranchRestoreReport(report);
+  }
+
+  Future<Map<String, Object?>> _handleMergeBranch(
+    Map<String, Object?> payload,
+  ) async {
+    final workflow = _requireDatabase().branchWorkflow;
+    final sourceBranch = payload['sourceBranch']! as String;
+    final targetBranch = payload['targetBranch']! as String;
+    final dryRun = payload['dryRun'] as bool? ?? true;
+    final report = workflow.merge(sourceBranch, targetBranch, dryRun: dryRun);
+    if (dryRun) {
+      final diff = _serializeBranchDiffReport(
+        workflow.diff(targetBranch, sourceBranch),
+      );
+      if (report.conflicts.isEmpty) {
+        return diff;
+      }
+      return _appendBranchMergeConflicts(diff, report.conflicts);
+    }
+    return _serializeBranchMergeReport(report);
   }
 
   Future<Map<String, Object?>> _handleExportCsv(
@@ -1719,6 +1906,14 @@ BridgeFailure _bridgeFailureFromError(Object error) {
   return BridgeFailure(message);
 }
 
+List<Map<String, Object?>> _bridgeMapList(Object? value) {
+  final rawItems = (value as List?) ?? const <Object?>[];
+  return <Map<String, Object?>>[
+    for (final item in rawItems)
+      if (item is Map) item.map((key, value) => MapEntry(key as String, value)),
+  ];
+}
+
 String _decentDbErrorCodeName(DecentDbException error) {
   return _nativeStatusName(error.code.code) ??
       'DDB_ERR_${error.code.name.toUpperCase()}';
@@ -1741,6 +1936,182 @@ String? _nativeStatusName(int? code) {
     13 => 'DDB_ERR_QUEUE_CLOSED',
     _ => null,
   };
+}
+
+Map<String, Object?> _serializeBranchInfo(BranchInfo branch) {
+  return <String, Object?>{
+    'name': branch.name,
+    'isCurrent': branch.isMain,
+    if (branch.baseHeadId != null) 'parentRef': branch.baseHeadId,
+    'createdAt': branch.createdAt.toIso8601String(),
+  };
+}
+
+Map<String, Object?> _serializeSnapshotInfo(
+  NamedSnapshot snapshot, {
+  String? branchName,
+}) {
+  return <String, Object?>{
+    'name': snapshot.name,
+    'ref': 'snapshot:${snapshot.name}',
+    'branch': ?branchName,
+    'createdAt': snapshot.createdAt.toIso8601String(),
+  };
+}
+
+Map<String, Object?> _serializeBranchDiffReport(BranchDiffReport diff) {
+  return <String, Object?>{
+    'leftRef': diff.leftRef,
+    'rightRef': diff.rightRef,
+    'rows': <Map<String, Object?>>[
+      for (final table in diff.tables) ...<Map<String, Object?>>[
+        ..._serializeBranchDiffRows(table.table, 'added', table.added),
+        ..._serializeBranchDiffRows(table.table, 'modified', table.updated),
+        ..._serializeBranchDiffRows(table.table, 'removed', table.deleted),
+      ],
+    ],
+    'addedRows': diff.addedRowCount,
+    'modifiedRows': diff.updatedRowCount,
+    'removedRows': diff.deletedRowCount,
+  };
+}
+
+Map<String, Object?> _serializeBranchRestoreReport(BranchRestoreReport report) {
+  return <String, Object?>{
+    'leftRef': report.previousHeadId ?? report.branch,
+    'rightRef': report.targetRef,
+    'rows': const <Map<String, Object?>>[],
+    'addedRows': report.addedRowCount,
+    'modifiedRows': report.updatedRowCount,
+    'removedRows': report.deletedRowCount,
+  };
+}
+
+Map<String, Object?> _serializeBranchMergeReport(BranchMergeReport report) {
+  var addedRows = 0;
+  var modifiedRows = 0;
+  var removedRows = 0;
+  final rows = <Map<String, Object?>>[];
+  for (final change in report.applied) {
+    final operation = _workspaceMergeOperation(change.operation);
+    if (operation == 'added') {
+      addedRows++;
+    } else if (operation == 'removed') {
+      removedRows++;
+    } else {
+      modifiedRows++;
+    }
+    rows.add(
+      _serializeWorkspaceBranchDiffRow(
+        tableName: change.table,
+        operation: operation,
+        primaryKey: change.primaryKey,
+      ),
+    );
+  }
+  for (final conflict in report.conflicts) {
+    modifiedRows++;
+    rows.add(
+      _serializeWorkspaceBranchDiffRow(
+        tableName: conflict.table,
+        operation: 'conflict:${conflict.conflictType}',
+        primaryKey: conflict.primaryKey,
+        after: <String, Object?>{'message': conflict.message},
+      ),
+    );
+  }
+  return <String, Object?>{
+    'leftRef': report.source,
+    'rightRef': report.target,
+    'rows': rows,
+    'addedRows': addedRows,
+    'modifiedRows': modifiedRows,
+    'removedRows': removedRows,
+  };
+}
+
+Map<String, Object?> _appendBranchMergeConflicts(
+  Map<String, Object?> diff,
+  List<BranchMergeConflict> conflicts,
+) {
+  final rows = <Map<String, Object?>>[
+    ..._bridgeMapList(diff['rows']),
+    for (final conflict in conflicts)
+      _serializeWorkspaceBranchDiffRow(
+        tableName: conflict.table,
+        operation: 'conflict:${conflict.conflictType}',
+        primaryKey: conflict.primaryKey,
+        after: <String, Object?>{'message': conflict.message},
+      ),
+  ];
+  return <String, Object?>{
+    ...diff,
+    'rows': rows,
+    'modifiedRows': (diff['modifiedRows'] as int? ?? 0) + conflicts.length,
+  };
+}
+
+List<Map<String, Object?>> _serializeBranchDiffRows(
+  String tableName,
+  String operation,
+  List<BranchRowDiff> rows,
+) {
+  return <Map<String, Object?>>[
+    for (final row in rows)
+      _serializeWorkspaceBranchDiffRow(
+        tableName: tableName,
+        operation: operation,
+        primaryKey: row.primaryKey,
+        before: _branchRowValues(row.before),
+        after: _branchRowValues(row.after),
+      ),
+  ];
+}
+
+Map<String, Object?> _serializeWorkspaceBranchDiffRow({
+  required String tableName,
+  required String operation,
+  required List<String> primaryKey,
+  Map<String, Object?>? before,
+  Map<String, Object?>? after,
+}) {
+  return <String, Object?>{
+    'tableName': tableName,
+    'operation': operation,
+    if (primaryKey.isNotEmpty) 'primaryKey': primaryKey.join(', '),
+    'before': ?before,
+    'after': ?after,
+  };
+}
+
+Map<String, Object?>? _branchRowValues(List<String>? values) {
+  if (values == null) {
+    return null;
+  }
+  return <String, Object?>{'values': values};
+}
+
+String _workspaceMergeOperation(String operation) {
+  return switch (operation.toLowerCase()) {
+    'insert' || 'added' || 'add' => 'added',
+    'delete' || 'deleted' || 'remove' || 'removed' => 'removed',
+    _ => 'modified',
+  };
+}
+
+String? _nativeBranchRef(String? ref) {
+  final trimmed = ref?.trim();
+  if (trimmed == null || trimmed.isEmpty) {
+    return null;
+  }
+  if (trimmed.startsWith('snapshot:')) {
+    return trimmed.substring('snapshot:'.length);
+  }
+  return trimmed;
+}
+
+String _snapshotNameFromRef(String ref) {
+  return _nativeBranchRef(ref) ?? ref;
 }
 
 Map<String, Object?> _nativeWriteQueueMetricsView(Database db) {

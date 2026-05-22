@@ -85,7 +85,8 @@ Future<void> main(List<String> args) async {
   final sourceFile = File(
     sourcePath?.isNotEmpty == true
         ? sourcePath!
-        : await resolveReleaseAsset().ensureAvailable(),
+        : _localDecentDbPathDependencyArtifact(resolver.libraryFileName) ??
+              await resolveReleaseAsset().ensureAvailable(),
   );
   if (!sourceFile.existsSync()) {
     stderr.writeln(
@@ -102,7 +103,10 @@ Future<void> main(List<String> args) async {
   final migrationToolSourceFile = File(
     migrationToolSourcePath?.isNotEmpty == true
         ? migrationToolSourcePath!
-        : await resolveReleaseAsset().ensureMigrationToolAvailable(),
+        : _localDecentDbPathDependencyArtifact(
+                resolver.migrationToolFileName,
+              ) ??
+              await resolveReleaseAsset().ensureMigrationToolAvailable(),
   );
   if (!migrationToolSourceFile.existsSync()) {
     stderr.writeln(
@@ -127,7 +131,8 @@ Future<void> main(List<String> args) async {
   final cliSourceFile = File(
     cliSourcePath?.isNotEmpty == true
         ? cliSourcePath!
-        : await resolveReleaseAsset().ensureCliToolAvailable(),
+        : _localDecentDbPathDependencyArtifact(resolver.cliToolFileName) ??
+              await resolveReleaseAsset().ensureCliToolAvailable(),
   );
   if (!cliSourceFile.existsSync()) {
     stderr.writeln(
@@ -143,6 +148,100 @@ Future<void> main(List<String> args) async {
     await Process.run('chmod', <String>['755', cliDestinationFile.path]);
   }
   stdout.writeln('Staged ${cliSourceFile.path} -> ${cliDestinationFile.path}');
+}
+
+String? _localDecentDbPathDependencyArtifact(String fileName) {
+  final projectDirectory = _findProjectDirectory(Directory.current.path);
+  if (projectDirectory == null) {
+    return null;
+  }
+  final lockFile = File(p.join(projectDirectory, 'pubspec.lock'));
+  if (!lockFile.existsSync()) {
+    return null;
+  }
+  final dependencyPath = _parseDecentDbPathDependency(
+    lockFile.readAsStringSync(),
+  );
+  if (dependencyPath == null || dependencyPath.trim().isEmpty) {
+    return null;
+  }
+
+  var dependencyDirectory = Directory(
+    p.isAbsolute(dependencyPath)
+        ? dependencyPath
+        : p.join(projectDirectory, dependencyPath),
+  ).absolute;
+
+  for (var depth = 0; depth < 8; depth++) {
+    for (final candidate in <String>[
+      p.join(dependencyDirectory.path, 'target', 'release', fileName),
+      p.join(dependencyDirectory.path, 'target', 'debug', fileName),
+      p.join(dependencyDirectory.path, 'build', fileName),
+      p.join(dependencyDirectory.path, 'native', fileName),
+      p.join(dependencyDirectory.path, 'native', 'bin', fileName),
+      p.join(dependencyDirectory.path, 'native', 'lib', fileName),
+    ]) {
+      if (File(candidate).existsSync()) {
+        return candidate;
+      }
+    }
+    final parent = dependencyDirectory.parent;
+    if (parent.path == dependencyDirectory.path) {
+      break;
+    }
+    dependencyDirectory = parent;
+  }
+  return null;
+}
+
+String? _findProjectDirectory(String startPath) {
+  var current = Directory(startPath).absolute;
+  while (true) {
+    if (File(p.join(current.path, 'pubspec.lock')).existsSync()) {
+      return current.path;
+    }
+    final parent = current.parent;
+    if (parent.path == current.path) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
+String? _parseDecentDbPathDependency(String contents) {
+  var insideDecentDb = false;
+  var insideDescription = false;
+  for (final line in contents.split('\n')) {
+    if (line.startsWith('  decentdb:')) {
+      insideDecentDb = true;
+      insideDescription = false;
+      continue;
+    }
+    if (insideDecentDb && line.startsWith('  ') && !line.startsWith('    ')) {
+      break;
+    }
+    if (!insideDecentDb) {
+      continue;
+    }
+    final trimmed = line.trimLeft();
+    if (trimmed.startsWith('description:')) {
+      insideDescription = true;
+      continue;
+    }
+    if (insideDescription && trimmed.startsWith('path: ')) {
+      return _unquote(trimmed.substring(6).trim());
+    }
+  }
+  return null;
+}
+
+String _unquote(String value) {
+  if (value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'")))) {
+    return value.substring(1, value.length - 1);
+  }
+  return value;
 }
 
 Map<String, String?> _parseArgs(List<String> args) {

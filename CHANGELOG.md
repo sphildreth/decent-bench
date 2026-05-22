@@ -62,12 +62,27 @@ This file records notable project changes. It follows the
 - Added safe-run SQL risk prompts for mutating and destructive statements, with
   branch execution clearly disabled until the Dart binding exposes public branch
   APIs.
+- Added native DecentDB branch and snapshot workflow integration for listing,
+  creating, deleting, diffing, restoring, merging, and branch-scoped SQL
+  execution through the public Dart binding.
 - Added Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) with fuzzy-search for all
   registered commands. Searchable overlay shows command labels, icons, keyboard
   shortcuts, and disabled state. Navigate with arrow keys, execute with Enter,
   dismiss with Escape or click outside. Palette consumes the existing
   `MenuCommandRegistry`, so all menu commands appear automatically.
 - Added `view_command_palette` (`Ctrl+Shift+P`) to default shortcut bindings.
+- Added test-level menu-command contract coverage across in-app and native menu
+  implementations and surfaced `Command Palette...` / `Open Web Console` in both.
+- Added file-lifecycle menu behavior for workspace shell operations: `Save`
+  now persists workspace state, query-library metadata, and config with clear
+  durability messaging; `Save As...` duplicates the active `.ddb` and sidecars
+  into a new copy and opens it; `Close` persists metadata, cancels active work,
+  and returns the shell to an empty workspace state.
+- Added menu-backed table and schema export workflows: selected tables route
+  through the existing paged result export flow, and schema export writes SQL
+  DDL from the loaded schema snapshot.
+- Added a real Help > Documentation dialog that points to bundled docs and
+  summarizes core desktop workflows.
 
 ### Changed
 
@@ -75,9 +90,11 @@ This file records notable project changes. It follows the
   v2.6.0.
 - Updated the desktop runtime/app icons to use the Decent Bench logo instead
   of the default Flutter logo.
-- Updated DecentDB v2.6 operational metrics display to collapse current Dart
-  binding `sys.*` inspection-view limits into one note instead of repeating the
-  same unavailable error for every metric view.
+- Updated DecentDB v2.6 operational metrics display to keep a single
+  compatibility note only when older runtimes still reject `sys.*` inspection
+  views.
+- Updated DecentDB operational metrics to read canonical `sys.*` inspection
+  views through prepared paging now that the engine supports that path.
 - Updated the TOML configuration version for write-queue settings while keeping
   the DecentDB write queue disabled by default.
 - Updated roadmap, README, and ADR documentation to treat completed v2.x,
@@ -88,6 +105,12 @@ This file records notable project changes. It follows the
   DecentDB v2.x query contracts, native types, and branch safety.
 - Revised charting, Excel/Parquet export, and import-transform ADRs to match
   the implemented dependency and execution choices.
+- Updated deferred menu commands for live database import, connection
+  management, rerun import/export, and Parquet export so they remain visible
+  but disabled until their accepted product/dependency contracts exist.
+- Updated native staging to prefer built artifacts from the local DecentDB path
+  dependency before downloading release assets, so integration builds work
+  against unpublished local DecentDB versions.
 - Refactored `DecentDbBridge` worker isolate into a `_BridgeWorkerState` class
   with dedicated handler methods for each operation (openDatabase, loadSchema,
   runQuery, fetchNextPage, cancelQuery, exportCsv).

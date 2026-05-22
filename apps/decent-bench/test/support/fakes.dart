@@ -214,6 +214,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   String? lastCreatedBranchName;
   String? lastCreatedBranchFromRef;
   String? lastCreatedSnapshotName;
+  String? lastBranchQueryBranchName;
   String? lastBranchDiffLeftRef;
   String? lastBranchDiffRightRef;
   String? lastRestoreBranchName;
@@ -504,6 +505,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   }) async {
     _ensureBranchApiAvailable();
     lastBranchQuerySql = sql;
+    lastBranchQueryBranchName = branchName;
     return runQuery(sql: sql, params: params, pageSize: pageSize);
   }
 

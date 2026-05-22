@@ -1,8 +1,15 @@
 import 'dart:io';
 
+import 'package:decent_bench/features/workspace/infrastructure/decentdb_native_release_asset.dart';
 import 'package:decent_bench/features/workspace/infrastructure/native_library_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+
+String _currentPinnedTag() {
+  return DecentDbNativeReleaseAsset.parsePinnedTagFromPubspecLock(
+    File('pubspec.lock').readAsStringSync(),
+  )!;
+}
 
 void main() {
   test('runtime resolution checks bundled library locations first', () async {
@@ -24,12 +31,13 @@ void main() {
     'packaging resolution prefers the cached pinned release asset',
     () async {
       final appDir = Directory.current.path;
+      final pinnedTag = _currentPinnedTag();
       final cachedLibraryPath = p.join(
         appDir,
         '.dart_tool',
         'decentdb',
         'native',
-        'v2.6.0',
+        pinnedTag,
         'Linux-x64',
         'libdecentdb.so',
       );
@@ -121,6 +129,7 @@ void main() {
 
   test('failure includes checked candidates', () async {
     final appDir = Directory.current.path;
+    final pinnedTag = _currentPinnedTag();
     final resolver = NativeLibraryResolver(
       currentDirectoryPath: appDir,
       scriptDirectoryPath: p.join(appDir, 'tool'),
@@ -143,7 +152,7 @@ void main() {
                 '.dart_tool',
                 'decentdb',
                 'native',
-                'v2.6.0',
+                pinnedTag,
                 'Linux-x64',
                 'libdecentdb.so',
               ),
