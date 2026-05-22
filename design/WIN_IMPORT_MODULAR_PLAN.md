@@ -97,7 +97,7 @@ This Future Win is complete only when all of these are true:
   - XZ wrapper,
   - clipboard table capture,
   - PDF tables,
-  - all future candidates accepted from `docs/IMPORT_FORMATS.md`.
+  - all future candidates accepted from `design/IMPORT_FORMATS.md`.
 - `ImportFormatRegistry` is generated from or loaded from module manifests
   rather than being the hand-maintained source of truth for format metadata.
 - Drag-and-drop, file picker, headless import, archive candidate detection, and
@@ -114,7 +114,7 @@ This Future Win is complete only when all of these are true:
 - The canonical import handoff model is DecentDB typed schema plus typed
   preview/import batches.
 - Built-in module documentation can be validated against
-  `docs/IMPORT_FORMATS.md` and bundled Help Center pages.
+  `design/IMPORT_FORMATS.md` and bundled Help Center pages.
 - Every module has declared fixtures or an explicit reason fixtures are not
   applicable.
 - Tests prove module loading, manifest validation, detection, routing, adapter
@@ -1011,7 +1011,7 @@ metadata.
 
 Required documentation updates:
 
-- `docs/IMPORT_FORMATS.md` must say the module catalog is the source of truth
+- `design/IMPORT_FORMATS.md` must say the module catalog is the source of truth
   once conversion is complete.
 - Complete and partial modules must appear in "Fully implemented now" or
   "Partial support now".
@@ -1435,7 +1435,7 @@ Implementation tasks:
 
 1. Add a docs validation command or test.
 2. Validate that every complete and partial module appears in
-   `docs/IMPORT_FORMATS.md`.
+   `design/IMPORT_FORMATS.md`.
 3. Validate that every planned/investigate/deferred/candidate module appears in
    the future table or is intentionally hidden with a manifest flag.
 4. Validate bundled help docs mention complete and partial import families.
@@ -1447,7 +1447,7 @@ Implementation tasks:
    - Type Fidelity,
    - Limitations,
    - Fixtures.
-7. Update `docs/IMPORT_FORMATS.md` to say the module catalog is the source of
+7. Update `design/IMPORT_FORMATS.md` to say the module catalog is the source of
    truth.
 8. Update `apps/decent-bench/assets/help/importing-data.md`.
 9. Update `apps/decent-bench/assets/help/getting-started.md` only if visible
@@ -1615,7 +1615,7 @@ Implementation tasks:
 5. Verify headless import where supported.
 6. Verify unsupported recognized formats show correct unavailable messaging.
 7. Verify unknown files show correct unknown messaging.
-8. Verify help docs and `docs/IMPORT_FORMATS.md` match module catalog.
+8. Verify help docs and `design/IMPORT_FORMATS.md` match module catalog.
 
 Acceptance criteria:
 
@@ -1684,7 +1684,7 @@ Manual verification:
 
 After the current registry is converted, every new future import idea should be
 tracked as a module candidate instead of only as prose in
-`docs/IMPORT_FORMATS.md`.
+`design/IMPORT_FORMATS.md`.
 
 Candidate modules may have:
 
@@ -1743,7 +1743,7 @@ Before and after module conversion, assert the same values for:
 
 Required:
 
-- complete/partial modules documented in `docs/IMPORT_FORMATS.md`,
+- complete/partial modules documented in `design/IMPORT_FORMATS.md`,
 - future modules documented in future table or intentionally hidden,
 - module README required sections,
 - bundled help docs mention supported import families.
@@ -1754,7 +1754,7 @@ Update these files as part of the relevant slices:
 
 - `design/FUTURE_WINS.md`
 - `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`
-- `docs/IMPORT_FORMATS.md`
+- `design/IMPORT_FORMATS.md`
 - `design/IMPORT_SUPPORT_PLAN.md`
 - `apps/decent-bench/assets/help/importing-data.md`
 - `apps/decent-bench/assets/help/getting-started.md`
@@ -1790,6 +1790,6 @@ This Future Win is complete when:
 - Hardcoded duplicate format metadata is removed or intentionally adapter-local.
 - `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md` uses module promotion as the
   first step for new formats.
-- `docs/IMPORT_FORMATS.md` reflects module catalog status.
+- `design/IMPORT_FORMATS.md` reflects module catalog status.
 - `flutter analyze` passes.
 - `flutter test` passes.

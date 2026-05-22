@@ -30,7 +30,7 @@ Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
   `design/SPEC.md`: common MariaDB/MySQL-style `CREATE TABLE` plus
   `INSERT ... VALUES`, with unsupported statements surfaced as warnings rather
   than hard failures when possible
-- `docs/IMPORT_FORMATS.md` summarizes the currently implemented, partial, and
+- `design/IMPORT_FORMATS.md` summarizes the currently implemented, partial, and
   recognized-but-unimplemented import formats
 - `CHANGELOG.md` records shipped releases starting with `1.0.0`
 - native-library resolution uses bundled app location first, then system

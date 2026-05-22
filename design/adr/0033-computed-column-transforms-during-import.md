@@ -83,5 +83,5 @@ investigate, deferred, or backlog depending on dependency/product fit.
 - ADR-0007 Excel Import Parser And Legacy Workbook Handling
 - ADR-0008 SQL Dump Import MVP Parser And Warning Contract
 - `design/IMPORT_SUPPORT_PLAN.md`
-- `docs/IMPORT_FORMATS.md`
+- `design/IMPORT_FORMATS.md`
 - `design/FUTURE_WINS.md`

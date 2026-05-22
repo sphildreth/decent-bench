@@ -252,7 +252,7 @@ desktop UI:
   using inferred defaults
 - `dbench --in <source-path> --out <target.ddb> --plan <plan.json>` runs
   a headless import with explicit import options from a versioned JSON plan
-  file (see `docs/HEADLESS_IMPORT_PLAN_DETAILS.md`)
+  file (see `design/HEADLESS_IMPORT_PLAN_DETAILS.md`)
 - `dbench --silent` suppresses non-error console output in headless mode
 
 This mode is governed by ADR-0022 and is intended for scripting and batch

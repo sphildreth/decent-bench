@@ -3,7 +3,7 @@
 **Status:** Planning document  
 **Last reviewed:** 2026-05-22  
 **Source roadmap item:** `design/FUTURE_WINS.md` rank 15, `P1`
-**Current implementation index:** `docs/IMPORT_FORMATS.md`
+**Current implementation index:** `design/IMPORT_FORMATS.md`
 **Current registry source of truth:** `apps/decent-bench/lib/features/import/infrastructure/import_format_registry.dart`
 **Target registry source of truth:** `design/WIN_IMPORT_MODULAR_PLAN.md`
 
@@ -20,7 +20,7 @@ UX, validation, docs, and test behavior.
 
 This plan covers:
 
-- recognized-but-not-implemented formats already listed in `docs/IMPORT_FORMATS.md`,
+- recognized-but-not-implemented formats already listed in `design/IMPORT_FORMATS.md`,
 - additional import formats from `design/IMPORT_SUPPORT_PLAN.md`,
 - future user-requested formats,
 - the process for moving a format from request to shipped support,
@@ -54,7 +54,7 @@ Every import format must fit the same user promise:
 
 Use these documents for different purposes:
 
-- `docs/IMPORT_FORMATS.md`: current user/developer inventory of what the build
+- `design/IMPORT_FORMATS.md`: current user/developer inventory of what the build
   can import now, what is partial, and what is recognized but unavailable.
 - `design/IMPORT_SUPPORT_PLAN.md`: broad product landscape for possible import
   families and format statuses.
@@ -355,7 +355,7 @@ checked in.
 
 When a format changes status, update:
 
-- `docs/IMPORT_FORMATS.md`,
+- `design/IMPORT_FORMATS.md`,
 - `design/IMPORT_SUPPORT_PLAN.md`,
 - `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md` if priority/status changes,
 - `README.md`,
@@ -921,7 +921,7 @@ Wrapper formats additionally require:
 When any import format changes status, update:
 
 - [ ] `ImportFormatRegistry`
-- [ ] `docs/IMPORT_FORMATS.md`
+- [ ] `design/IMPORT_FORMATS.md`
 - [ ] `design/IMPORT_SUPPORT_PLAN.md`
 - [ ] this plan, if priority/status changed
 - [ ] `design/FUTURE_WINS.md`, if roadmap rank/scope changed
@@ -952,7 +952,7 @@ For a single format to be complete:
 
 For the import expansion program to be healthy:
 
-- `docs/IMPORT_FORMATS.md` matches the registry,
+- `design/IMPORT_FORMATS.md` matches the registry,
 - user-requested formats are triaged through this plan,
 - recognized unavailable formats stay visible but are not oversold,
 - no import path silently materializes large data on the UI thread,

@@ -1793,7 +1793,7 @@ Files:
 - Add `apps/decent-bench/assets/help/data-quality.md`.
 - Update help manifest.
 - Update importing/results help pages.
-- Update `docs/HEADLESS_IMPORT_PLAN_DETAILS.md` or add a new CLI doc if CLI
+- Update `design/HEADLESS_IMPORT_PLAN_DETAILS.md` or add a new CLI doc if CLI
   documentation lives elsewhere.
 - Update `design/FUTURE_WINS.md` if status changes.
 

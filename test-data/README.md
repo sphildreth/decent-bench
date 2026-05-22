@@ -11,7 +11,7 @@ structured documents, Excel workbooks, SQLite, and SQL dump scenarios.
 ## Coverage intent
 
 This pack is aligned with the current import support baseline in
-`docs/IMPORT_FORMATS.md`.
+`design/IMPORT_FORMATS.md`.
 
 - Positive-path fixtures cover formats that are implemented now or partially
   supported now, including CSV/TSV/PSV, JSON, NDJSON, XML, HTML tables, GZip

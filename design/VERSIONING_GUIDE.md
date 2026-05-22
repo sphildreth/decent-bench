@@ -141,7 +141,7 @@ These files reference versions but are not part of the release version surface:
   ADRs to update version references.
 - **Test fixtures** — Test TOML/JSON files may contain example `version` or
   `min_decent_bench_version` fields. These are test data, not release metadata.
-- **`docs/THEME_CATALOG.md`** — Contains example theme metadata. Update only if
+- **`design/THEME_CATALOG.md`** — Contains example theme metadata. Update only if
   the theme file format version changes, not on every app version bump.
 - **`.github/workflows/flutter-build.yml`** — Resolves the DecentDB engine
   version from `pubspec.lock` at runtime. No hard-coded app version.

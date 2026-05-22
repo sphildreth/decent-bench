@@ -54,4 +54,4 @@ user experience for the new formats and the legacy wizards remain stable.
 - `design/SPEC.md` (Section 7: Import specifications)
 - `design/adr/0019-import-format-registry-and-generic-wizard.md`
 - `apps/decent-bench/lib/features/import/infrastructure/import_format_registry.dart`
-- `docs/IMPORT_FORMATS.md`
+- `design/IMPORT_FORMATS.md`
