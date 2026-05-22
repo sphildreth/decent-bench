@@ -106,13 +106,15 @@ void main() {
       expect(find.text('Export CSV'), findsNothing);
       expect(tester.getSize(find.byType(StatusBar)).width, 1600);
       expect(
-        find.widgetWithText(OutlinedButton, 'Import SQLite...'),
+        find.byKey(const ValueKey<String>('command_toolbar.import_menu')),
         findsOneWidget,
       );
       expect(
-        find.widgetWithText(OutlinedButton, 'New Query Tab'),
+        find.byKey(const ValueKey<String>('command_toolbar.file_open')),
         findsOneWidget,
       );
+      expect(find.text('Import Excel...'), findsNothing);
+      expect(find.text('Run Buffer'), findsNothing);
       expect(find.widgetWithText(OutlinedButton, 'Manage'), findsNothing);
 
       await tester.tap(find.text('Tools'));
@@ -217,7 +219,11 @@ void main() {
       await _pumpShell(tester, controller);
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(OutlinedButton, 'Import SQLite...'));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('command_toolbar.import_menu')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Import SQLite...'));
       await tester.pumpAndSettle();
 
       expect(find.text('SQLite Import Wizard'), findsOneWidget);

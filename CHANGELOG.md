@@ -111,6 +111,9 @@ This file records notable project changes. It follows the
 - Updated deferred menu commands for live database import, connection
   management, rerun import/export, and Parquet export so they remain visible
   but disabled until their accepted product/dependency contracts exist.
+- Simplified the top command toolbar into a compact quick-action bar with New,
+  Open, Import, and Commands entries while leaving full command access in the
+  application menus and command palette.
 - Updated native staging to prefer built artifacts from the local DecentDB path
   dependency before downloading release assets, so integration builds work
   against unpublished local DecentDB versions.
