@@ -73,6 +73,8 @@ This file records notable project changes. It follows the
 - Added `view_command_palette` (`Ctrl+Shift+P`) to default shortcut bindings.
 - Added test-level menu-command contract coverage across in-app and native menu
   implementations and surfaced `Command Palette...` / `Open Web Console` in both.
+- Added shortcut contract coverage for every default application-menu keybinding
+  plus a production-shell smoke test for global shortcut dispatch.
 - Added file-lifecycle menu behavior for workspace shell operations: `Save`
   now persists workspace state, query-library metadata, and config with clear
   durability messaging; `Save As...` duplicates the active `.ddb` and sidecars

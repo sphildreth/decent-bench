@@ -1,5 +1,8 @@
 import 'package:decent_bench/app/theme.dart';
 import 'package:decent_bench/app/theme_system/theme_presets.dart';
+import 'package:decent_bench/features/workspace/application/menu_command_registry.dart';
+import 'package:decent_bench/features/workspace/domain/app_config.dart';
+import 'package:decent_bench/features/workspace/infrastructure/shortcut_config_service.dart';
 import 'package:decent_bench/features/workspace/presentation/shell/app_menu_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -87,6 +90,95 @@ MenuItemButton? _menuItemFromSubmenu(SubmenuButton submenu, String label) {
 }
 
 void main() {
+  test('default application shortcuts target menu-contract commands', () {
+    final entriesById = <String, MenuContractEntry>{
+      for (final entry in kMenuCommandContract) entry.commandId: entry,
+    };
+    final shortcuts = const ShortcutConfigService().load(AppConfig.defaults());
+    final activators = <ShortcutActivator, String>{};
+
+    expect(
+      shortcuts.keys,
+      unorderedEquals(AppConfig.defaultShortcutBindings().keys),
+    );
+    for (final binding in shortcuts.values) {
+      final contractEntry = entriesById[binding.commandId];
+      expect(
+        contractEntry,
+        isNotNull,
+        reason:
+            'Default shortcut "${binding.rawValue}" points at missing command "${binding.commandId}".',
+      );
+      expect(
+        contractEntry!.isDeferred,
+        isFalse,
+        reason:
+            'Deferred command "${binding.commandId}" must not advertise an active shortcut.',
+      );
+      expect(
+        activators.putIfAbsent(binding.activator, () => binding.commandId),
+        binding.commandId,
+        reason:
+            'Shortcut "${binding.displayLabel}" is assigned to both "${activators[binding.activator]}" and "${binding.commandId}".',
+      );
+    }
+  });
+
+  for (final hasOpenDatabase in <bool>[false, true]) {
+    test(
+      'default shortcuts invoke enabled commands (dbOpen=$hasOpenDatabase)',
+      () async {
+        final shortcuts = const ShortcutConfigService().load(
+          AppConfig.defaults(),
+        );
+        final invokeLog = <String>[];
+        final registry = buildAuditedMenuCommandRegistry(
+          hasOpenDatabase: hasOpenDatabase,
+          invokeLog: invokeLog,
+          shortcuts: shortcuts,
+        );
+        final shortcutMap = registry.buildShortcutMap();
+
+        for (final binding in shortcuts.values) {
+          final contractEntry = kMenuCommandContract.firstWhere(
+            (entry) => entry.commandId == binding.commandId,
+          );
+          final expectedEnabled = contractEntry.enabledForDatabaseState(
+            hasOpenDatabase: hasOpenDatabase,
+          );
+          final intent = shortcutMap[binding.activator];
+          if (!expectedEnabled) {
+            expect(
+              intent,
+              isNull,
+              reason:
+                  'Disabled command "${binding.commandId}" must not be invokable through "${binding.displayLabel}".',
+            );
+            continue;
+          }
+
+          expect(
+            intent,
+            isA<MenuCommandIntent>(),
+            reason:
+                'Enabled command "${binding.commandId}" must be mapped from "${binding.displayLabel}".',
+          );
+          final menuIntent = intent! as MenuCommandIntent;
+          expect(menuIntent.commandId, binding.commandId);
+
+          final previousLength = invokeLog.length;
+          await registry.invoke(menuIntent.commandId);
+          expect(
+            invokeLog.sublist(previousLength),
+            <String>[binding.commandId],
+            reason:
+                'Shortcut "${binding.displayLabel}" must invoke "${binding.commandId}".',
+          );
+        }
+      },
+    );
+  }
+
   for (final hasOpenDatabase in <bool>[false, true]) {
     group('AppMenuBar command audit (dbOpen=$hasOpenDatabase)', () {
       testWidgets('renders every contract command in the right menu', (

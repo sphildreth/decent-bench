@@ -8,11 +8,13 @@ import 'package:decent_bench/features/workspace/domain/workspace_shell_preferenc
 import 'package:decent_bench/features/workspace/infrastructure/app_lifecycle_service.dart';
 import 'package:decent_bench/features/workspace/infrastructure/shortcut_config_service.dart';
 import 'package:decent_bench/features/workspace/presentation/preferences_dialog.dart';
+import 'package:decent_bench/features/workspace/presentation/shell/command_palette.dart';
 import 'package:decent_bench/features/workspace/presentation/shell/results_pane.dart';
 import 'package:decent_bench/features/workspace/presentation/shell/schema_explorer_pane.dart';
 import 'package:decent_bench/features/workspace/presentation/shell/status_bar.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fakes.dart';
@@ -58,6 +60,31 @@ Future<void> _pumpShell(
           appLifecycleService ?? const FlutterAppLifecycleService(),
     ),
   );
+}
+
+Future<void> _pressShortcut(
+  WidgetTester tester,
+  LogicalKeyboardKey key, {
+  bool control = false,
+  bool shift = false,
+  bool alt = false,
+  bool meta = false,
+}) async {
+  final modifiers = <LogicalKeyboardKey>[
+    if (control) LogicalKeyboardKey.controlLeft,
+    if (shift) LogicalKeyboardKey.shiftLeft,
+    if (alt) LogicalKeyboardKey.altLeft,
+    if (meta) LogicalKeyboardKey.metaLeft,
+  ];
+  for (final modifier in modifiers) {
+    await tester.sendKeyDownEvent(modifier);
+  }
+  await tester.sendKeyDownEvent(key);
+  await tester.sendKeyUpEvent(key);
+  for (final modifier in modifiers.reversed) {
+    await tester.sendKeyUpEvent(modifier);
+  }
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -129,6 +156,40 @@ void main() {
       await tester.tap(find.text('Exit'));
       await tester.pumpAndSettle();
 
+      expect(lifecycle.requestedExit, isTrue);
+    });
+
+    testWidgets('global shortcut layer invokes shell menu commands', (
+      tester,
+    ) async {
+      final lifecycle = FakeAppLifecycleService();
+      final controller = _createController();
+      await _pumpShell(tester, controller, appLifecycleService: lifecycle);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(EditableText).first);
+      await tester.pumpAndSettle();
+
+      await _pressShortcut(
+        tester,
+        LogicalKeyboardKey.keyP,
+        control: true,
+        shift: true,
+      );
+      expect(find.byType(CommandPalette), findsOneWidget);
+
+      await _pressShortcut(tester, LogicalKeyboardKey.escape);
+      expect(find.byType(CommandPalette), findsNothing);
+
+      await _pressShortcut(tester, LogicalKeyboardKey.f1);
+      expect(find.text('Documentation'), findsOneWidget);
+      expect(
+        find.textContaining('Decent Bench documentation is bundled'),
+        findsOneWidget,
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Close').last);
+      await tester.pumpAndSettle();
+
+      await _pressShortcut(tester, LogicalKeyboardKey.keyQ, control: true);
       expect(lifecycle.requestedExit, isTrue);
     });
 

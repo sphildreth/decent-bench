@@ -1,4 +1,5 @@
 import 'package:decent_bench/features/workspace/application/menu_command_registry.dart';
+import 'package:decent_bench/features/workspace/infrastructure/shortcut_config_service.dart';
 import 'package:flutter/material.dart';
 
 const List<String> kMenuTopLevelOrder = <String>[
@@ -611,6 +612,7 @@ Iterable<MenuContractEntry> commandEntriesForTopLevel(String topLevelMenu) {
 MenuCommandRegistry buildAuditedMenuCommandRegistry({
   required bool hasOpenDatabase,
   required List<String> invokeLog,
+  Map<String, ShortcutBinding> shortcuts = const <String, ShortcutBinding>{},
 }) {
   return MenuCommandRegistry(
     commands: <MenuCommand>[
@@ -622,6 +624,7 @@ MenuCommandRegistry buildAuditedMenuCommandRegistry({
           enabled: entry.enabledForDatabaseState(
             hasOpenDatabase: hasOpenDatabase,
           ),
+          shortcut: shortcuts[entry.commandId],
           onInvoke: () async {
             invokeLog.add(entry.commandId);
           },

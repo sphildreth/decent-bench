@@ -452,6 +452,11 @@ relevant product-decision phases.
   state-sensitive checks for `Command Palette...` and `Open Web Console`.
 - Added fallback-entry checks so missing command IDs cannot silently render as
   `Missing` menu items.
+- Added shortcut audit coverage so every default application-menu keybinding
+  targets a non-deferred command, has no duplicate accelerator assignment, and
+  invokes the expected command through the registry.
+- Added a production-shell shortcut smoke test for global dispatch through the
+  Flutter `Shortcuts`/`Actions` layer.
 - Updated `CHANGELOG.md` with the final menu cleanup summary.
 - Desktop checklist recorded for this implementation:
   - Linux in-app menu: covered by widget menu audit.
