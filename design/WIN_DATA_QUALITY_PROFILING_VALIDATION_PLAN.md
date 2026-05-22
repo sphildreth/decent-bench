@@ -2,7 +2,7 @@
 
 **Status:** Planning document  
 **Last reviewed:** 2026-05-22  
-**Source roadmap item:** `design/FUTURE_WINS.md` rank 1, `P0`  
+**Source roadmap item:** `design/FUTURE_WINS.md` rank 2, `P0`
 **Target outcome:** 100% completion of the Data Quality, Profiling, and
 Validation Suite through explicit implementation slices.
 
@@ -1115,7 +1115,7 @@ Goal: create required decision records and update references before code.
 Implementation steps:
 
 1. Confirm ADR A, ADR B, and ADR C described in this plan are accepted.
-2. Update `design/FUTURE_WINS.md` so rank 1 links to this plan.
+2. Update `design/FUTURE_WINS.md` so rank 2 links to this plan.
 3. Update `design/SPEC.md` "Next" or post-MVP section to reference this plan
    as accepted future scope if implementation is about to begin.
 4. Confirm no ADR conflicts with:

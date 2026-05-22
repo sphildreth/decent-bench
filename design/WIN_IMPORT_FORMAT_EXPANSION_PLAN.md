@@ -2,9 +2,10 @@
 
 **Status:** Planning document  
 **Last reviewed:** 2026-05-22  
-**Source roadmap item:** `design/FUTURE_WINS.md` rank 14, `P1`  
-**Current implementation index:** `docs/IMPORT_FORMATS.md`  
-**Registry source of truth:** `apps/decent-bench/lib/features/import/infrastructure/import_format_registry.dart`
+**Source roadmap item:** `design/FUTURE_WINS.md` rank 15, `P1`
+**Current implementation index:** `docs/IMPORT_FORMATS.md`
+**Current registry source of truth:** `apps/decent-bench/lib/features/import/infrastructure/import_format_registry.dart`
+**Target registry source of truth:** `design/WIN_IMPORT_MODULAR_PLAN.md`
 
 ## Purpose
 
@@ -26,6 +27,11 @@ This plan covers:
 - required implementation slices,
 - required tests and documentation,
 - ADR and dependency gates.
+
+Format expansion should build on
+`design/WIN_IMPORT_MODULAR_PLAN.md`. New formats should first be represented as
+module manifests with documentation, fixture expectations, type-fidelity notes,
+and adapter bindings before parser/import code is added.
 
 ## Product Goal
 
@@ -52,12 +58,18 @@ Use these documents for different purposes:
   can import now, what is partial, and what is recognized but unavailable.
 - `design/IMPORT_SUPPORT_PLAN.md`: broad product landscape for possible import
   families and format statuses.
-- `design/FUTURE_WINS.md`: ranked roadmap index. Connector expansion stays as
-  one Future Win there.
+- `design/FUTURE_WINS.md`: ranked roadmap index. Modular import architecture is
+  the prerequisite Future Win, and connector expansion stays as a separate
+  downstream Future Win there.
+- `design/WIN_IMPORT_MODULAR_PLAN.md`: module manifest, catalog, adapter,
+  fixture, and docs-sync architecture that future formats should use.
 - This document: implementation and governance plan for continually adding
   import formats.
 
-When a format ships, update all four places if applicable.
+When a format ships, update all applicable docs and module manifests.
+After the modular import plan is complete, the module catalog should become the
+source of truth and these documents should be validated against it instead of
+hand-synchronized.
 
 ## Current Supported Baseline
 
@@ -946,4 +958,3 @@ For the import expansion program to be healthy:
 - no import path silently materializes large data on the UI thread,
 - no new dependency enters without license review,
 - wrappers never pretend unsupported inner files are importable.
-

@@ -193,8 +193,9 @@ dbench generate-sdk --project <workspace.dbench-project.toml> \
 ### Connector Expansion
 
 The import registry remains the source of truth for supported and recognized
-formats. Future connector work should prioritize broad value, streaming
-behavior, and Apache-compatible distribution.
+formats today. The planned modular import catalog should become that source of
+truth before large new connector waves. Future connector work should prioritize
+broad value, streaming behavior, and Apache-compatible distribution.
 
 ### Query-Plan And Performance Diagnostics
 
@@ -206,41 +207,42 @@ profiling, historical plan tracking, and query performance advisories.
 
 | Rank | Priority | Status | Enhancement | Consolidated Scope | Why This Rank | ADR Gate |
 |---:|---|---|---|---|---|---|
-| 1 | `P0` | `TODO` | Data quality, profiling, and validation suite | Profiling dashboard, validation rules, anomaly/outlier detection, duplicate summaries, reconciliation reports, exportable quality reports | Highest trust-builder after import; helps users decide whether imported data can be queried or exported safely | ADR before implementation |
-| 2 | `P0` | `TODO` | Import/export recipe rerun and profile reuse | Re-run last import/export, saved recipe/profile library, shareable TOML recipes, GUI and CLI reruns | Directly supports repeatable local workflows and completes existing deferred menu commands | Existing ADR; update ADR before implementation if recipe contract changes |
-| 3 | `P0` | `BACKLOG` | Clipboard table import | Paste TSV/CSV/HTML table/JSON table data into import wizard with preview and type inference | High-frequency convenience feature for spreadsheet, browser, and portal workflows | ADR before implementation if clipboard formats or persistent profile contract changes |
-| 4 | `P0` | `BACKLOG` | Safe import preview and branch-backed sandbox | Dry-run import preview, schema/data diff before commit, import on branch, merge/discard, rejected-row repair loop | Strong DecentDB-specific safety story for messy imports and table edits | Existing ADR for branch model; update ADR before implementation |
-| 5 | `P0` | `TODO` | Multi-file batch import | Drop/import multiple files, folder/archive selection, shared or per-file wizard settings, dependency ordering | Extends the front-door workflow and removes repeated wizard friction | ADR before implementation |
-| 6 | `P1` | `TODO` | Schema, data, database, branch, and query diff tools | Compare tables, query results, databases, branches, snapshots; show row, schema, type, and count deltas; optional migration SQL | Broad validation and debugging value after imports, edits, and query refactors | ADR before implementation |
-| 7 | `P1` | `TODO` | Headless query/export automation | `dbench query`, headless export, streaming export, scheduled import/export/query jobs, watch folders | Strong for power users and scripting; reuses CLI posture | ADR before implementation |
-| 8 | `P1` | `TODO` | Results grid power tools | Cell context menu, filter/exclude by value, copy as WHERE/INSERT/JSON/Markdown, local page filter/sort, find, column widths, conditional formatting | High daily-touch value with limited product-scope risk if kept page-aware | ADR only if persistence or mutation semantics change |
-| 9 | `P1` | `TODO` | Query parameter sets and dashboard forms | Saved parameter sets, defaults, validation, query form/dashboard panel, quick switching for saved reports | Makes existing typed query contracts much more reusable | ADR before implementation if project-file contract changes |
-| 10 | `P1` | `TODO` | Smarter import inference and reusable type profiles | ISO dates, currency, UUID, enum, geo inference, column-name patterns, reusable type-coercion profiles, import recommendations | Reduces manual override work in common imports | ADR before implementation if inference/profile formats persist |
-| 11 | `P1` | `BACKLOG` | Query performance diagnostics suite | EXPLAIN ANALYZE, runtime profiling, slow-query history, plan comparison, index/advisor hints, regression tracking | Fits the "Bench" identity and helps developers optimize local datasets | ADR before implementation |
-| 12 | `P1` | `TODO` | Provenance, lineage, and audit metadata | Source path/hash, import profile, transform plan, warnings, row counts, timestamps, query/table impact analysis, mutation/import audit trail | Helps users reproduce, trust, and debug data shaping workflows | ADR before implementation |
-| 13 | `P1` | `TODO` | Global database search | Search values across selected tables/views with paged results and quick navigation | Common discovery workflow for unfamiliar imported data | ADR only if index/persistence strategy is added |
-| 14 | `P1` | `BACKLOG` | Parquet, DuckDB, ODS, fixed-width, and other connector expansion | Prioritized import formats from `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`; Parquet import tracked separately from Parquet export | Expands the "front door into DecentDB" with high-value source families | ADR/dependency review before each major connector |
-| 15 | `P2` | `BACKLOG` | Incremental sync and merge/upsert import modes | Append, replace, ignore, upsert/merge by key, conflict handling, recurring refresh support | Valuable for recurring imports but changes import semantics materially | ADR before implementation |
-| 16 | `P2` | `BACKLOG` | Advanced transform library | Regex extraction, split/merge columns, lookup joins, value mapping, date parsing presets, reusable transform presets | Useful once base import workflows and profiles are stable | ADR before implementation |
-| 17 | `P2` | `TODO` | Query contract tests and regression harness | Saved queries as assertions for columns, types, row counts, sample values, performance baselines; CLI test runner | Strong developer/CI value and builds on query contracts | ADR before implementation |
-| 18 | `P2` | `TODO` | Workspace organization and portability | Tab sessions, bookmarks, annotations, query collections, workspace templates, portable workspace snapshots | Improves daily organization without changing the database engine model | ADR before implementation if project-file format changes |
-| 19 | `P2` | `BACKLOG` | Notebooks, dashboards, and structured reports | Markdown plus SQL notebooks, pinned query/chart dashboards, report packs, HTML/PDF export | High analyst/reporting value but larger product surface | ADR before implementation |
-| 20 | `P2` | `BACKLOG` | Pivot tables and richer visualization | Pivot/crosstab builder, histograms, box plots, heatmaps, area charts, chart templates | Useful for exploration and reporting after query results exist | ADR only if new dependency or persistent chart contract changes |
-| 21 | `P2` | `TODO` | Data masking and anonymized export | Redact, hash, pseudonymize, shuffle, or partially mask columns during export | Strong privacy fit for safe sharing and test datasets | ADR before implementation |
-| 22 | `P2` | `TODO` | Accessibility and high-contrast audit | Screen reader results grid support, keyboard-only coverage, focus indicators, high-contrast mode, WCAG audit | Important product quality and broad usability work | ADR only if theme/config contract changes |
-| 23 | `P2` | `TODO` | Database maintenance and workspace health panel | VACUUM, ANALYZE, integrity check, database size, native library/config/CLI doctor, stale sidecar checks | Practical support surface for local files and packaging issues | ADR before implementation if destructive operations or new diagnostics contracts are added |
-| 24 | `P2` | `TODO` | SQL linting and static analysis | Warnings for missing WHERE on mutations, SELECT star, implicit coercion, wide scans, unindexed joins | Useful guardrail before execution and complements safe-run | ADR only if lint rules become persistent/project-enforced |
-| 25 | `P2` | `TODO` | Documentation and onboarding in-app | Offline DecentDB SQL reference, sample datasets, guided tutorials, query explanation mode, shortcut trainer | Helps users complete the first import/query/export loop faster | None for backlog |
-| 26 | `P3` | `BACKLOG` | Cross-DB and multi-workspace querying | Attach multiple `.ddb` files, cross-workspace execution, multi-file workspace panels | Useful, but conflicts with previous multi-workspace non-goal and needs scope decision | Likely PRD/SPEC update and ADR before implementation |
-| 27 | `P3` | `INVESTIGATE` | Geospatial result view | Map/table dual view, WKT/WKB/GeoJSON copy/export, offline-capable rendering defaults | Strong value for spatial users, narrower audience and dependency-sensitive | ADR/dependency review before implementation |
-| 28 | `P3` | `BACKLOG` | Extension, plugin, and scripting system | Custom importers/exporters/visualizers, Lua lifecycle UI, extension marketplace, trusted script execution | Strategic extensibility with high security and compatibility cost | Likely PRD/SPEC update and ADR before implementation |
-| 29 | `P3` | `BACKLOG` | Local REST/API/mock server and polyglot SDKs | Local HTTP/IPC server, mock backend bundle, Python/Rust/Dart SDK generation | Useful developer expansion, but not core import/query/export UX | ADR before implementation |
-| 30 | `P3` | `BACKLOG` | Live read-only source imports with secure credentials | PostgreSQL/MySQL/SQL Server imports, URL/S3 pulls, SSH tunnels, OS credential storage | Valuable source expansion but high security/support burden | Existing ADR notes deferral; new ADR before implementation |
-| 31 | `P3` | `INVESTIGATE` | SQL editor power-user layer | SQL refactoring assists, Vim/modal mode, keyboard macros, advanced snippets | Valuable for some power users, lower broad impact than import/data trust | ADR only if editor architecture or persistence changes |
-| 32 | `P4` | `DEFER` | AI and natural-language query assistant | Natural language to SQL, explain results, query error repair, optimization suggestions | Potentially useful, but privacy, dependency, cost, and product-positioning risks are high | Likely PRD/SPEC update and ADR before implementation |
-| 33 | `P4` | `DEFER` | Collaboration and approval workflows | Real-time collaboration, query review, RBAC, shared workspaces, presence, permissions | Explicitly outside local-first single-user center today | PRD/SPEC update required |
-| 34 | `P4` | `DEFER` | External integration hub and companion apps | BI connectors, webhooks, Zapier/Make, mobile companion, cloud publish, IDE plugins | Expansionary and lower fit for near-term local workbench roadmap | PRD/SPEC update required |
-| 35 | `P4` | `DEFER` | UI customization marketplace and theme extensions | Toolbar customization, theme marketplace, UI extension packs | Nice-to-have but low core workflow impact | ADR only if extension/config contracts change |
+| 1 | `P0` | `TODO` | Modular import architecture and module catalog | Convert current import formats into declarative built-in modules with TOML manifests, docs, fixtures, capability declarations, adapter bindings, and docs validation | Highest leverage prerequisite for broad, high-fidelity import growth; prevents dozens of future formats from becoming hardcoded one-offs | Existing ADRs for plan; update ADRs if implementation changes the contract |
+| 2 | `P0` | `TODO` | Data quality, profiling, and validation suite | Profiling dashboard, validation rules, anomaly/outlier detection, duplicate summaries, reconciliation reports, exportable quality reports | Highest trust-builder after import; helps users decide whether imported data can be queried or exported safely | Existing ADRs for plan; implementation follows accepted ADRs |
+| 3 | `P0` | `TODO` | Import/export recipe rerun and profile reuse | Re-run last import/export, saved recipe/profile library, shareable TOML recipes, GUI and CLI reruns | Directly supports repeatable local workflows and completes existing deferred menu commands | Existing ADR; update ADR before implementation if recipe contract changes |
+| 4 | `P0` | `BACKLOG` | Clipboard table import | Paste TSV/CSV/HTML table/JSON table data into import wizard with preview and type inference | High-frequency convenience feature for spreadsheet, browser, and portal workflows | ADR before implementation if clipboard formats or persistent profile contract changes |
+| 5 | `P0` | `BACKLOG` | Safe import preview and branch-backed sandbox | Dry-run import preview, schema/data diff before commit, import on branch, merge/discard, rejected-row repair loop | Strong DecentDB-specific safety story for messy imports and table edits | Existing ADR for branch model; update ADR before implementation |
+| 6 | `P0` | `TODO` | Multi-file batch import | Drop/import multiple files, folder/archive selection, shared or per-file wizard settings, dependency ordering | Extends the front-door workflow and removes repeated wizard friction | ADR before implementation |
+| 7 | `P1` | `TODO` | Schema, data, database, branch, and query diff tools | Compare tables, query results, databases, branches, snapshots; show row, schema, type, and count deltas; optional migration SQL | Broad validation and debugging value after imports, edits, and query refactors | ADR before implementation |
+| 8 | `P1` | `TODO` | Headless query/export automation | `dbench query`, headless export, streaming export, scheduled import/export/query jobs, watch folders | Strong for power users and scripting; reuses CLI posture | ADR before implementation |
+| 9 | `P1` | `TODO` | Results grid power tools | Cell context menu, filter/exclude by value, copy as WHERE/INSERT/JSON/Markdown, local page filter/sort, find, column widths, conditional formatting | High daily-touch value with limited product-scope risk if kept page-aware | ADR only if persistence or mutation semantics change |
+| 10 | `P1` | `TODO` | Query parameter sets and dashboard forms | Saved parameter sets, defaults, validation, query form/dashboard panel, quick switching for saved reports | Makes existing typed query contracts much more reusable | ADR before implementation if project-file contract changes |
+| 11 | `P1` | `TODO` | Smarter import inference and reusable type profiles | ISO dates, currency, UUID, enum, geo inference, column-name patterns, reusable type-coercion profiles, import recommendations | Reduces manual override work in common imports | ADR before implementation if inference/profile formats persist |
+| 12 | `P1` | `BACKLOG` | Query performance diagnostics suite | EXPLAIN ANALYZE, runtime profiling, slow-query history, plan comparison, index/advisor hints, regression tracking | Fits the "Bench" identity and helps developers optimize local datasets | ADR before implementation |
+| 13 | `P1` | `TODO` | Provenance, lineage, and audit metadata | Source path/hash, import profile, transform plan, warnings, row counts, timestamps, query/table impact analysis, mutation/import audit trail | Helps users reproduce, trust, and debug data shaping workflows | ADR before implementation |
+| 14 | `P1` | `TODO` | Global database search | Search values across selected tables/views with paged results and quick navigation | Common discovery workflow for unfamiliar imported data | ADR only if index/persistence strategy is added |
+| 15 | `P1` | `BACKLOG` | Parquet, DuckDB, ODS, fixed-width, and other connector expansion | Prioritized import formats from `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`; Parquet import tracked separately from Parquet export | Expands the "front door into DecentDB" with high-value source families; should build on the module catalog | ADR/dependency review before each major connector |
+| 16 | `P2` | `BACKLOG` | Incremental sync and merge/upsert import modes | Append, replace, ignore, upsert/merge by key, conflict handling, recurring refresh support | Valuable for recurring imports but changes import semantics materially | ADR before implementation |
+| 17 | `P2` | `BACKLOG` | Advanced transform library | Regex extraction, split/merge columns, lookup joins, value mapping, date parsing presets, reusable transform presets | Useful once base import workflows and profiles are stable | ADR before implementation |
+| 18 | `P2` | `TODO` | Query contract tests and regression harness | Saved queries as assertions for columns, types, row counts, sample values, performance baselines; CLI test runner | Strong developer/CI value and builds on query contracts | ADR before implementation |
+| 19 | `P2` | `TODO` | Workspace organization and portability | Tab sessions, bookmarks, annotations, query collections, workspace templates, portable workspace snapshots | Improves daily organization without changing the database engine model | ADR before implementation if project-file format changes |
+| 20 | `P2` | `BACKLOG` | Notebooks, dashboards, and structured reports | Markdown plus SQL notebooks, pinned query/chart dashboards, report packs, HTML/PDF export | High analyst/reporting value but larger product surface | ADR before implementation |
+| 21 | `P2` | `BACKLOG` | Pivot tables and richer visualization | Pivot/crosstab builder, histograms, box plots, heatmaps, area charts, chart templates | Useful for exploration and reporting after query results exist | ADR only if new dependency or persistent chart contract changes |
+| 22 | `P2` | `TODO` | Data masking and anonymized export | Redact, hash, pseudonymize, shuffle, or partially mask columns during export | Strong privacy fit for safe sharing and test datasets | ADR before implementation |
+| 23 | `P2` | `TODO` | Accessibility and high-contrast audit | Screen reader results grid support, keyboard-only coverage, focus indicators, high-contrast mode, WCAG audit | Important product quality and broad usability work | ADR only if theme/config contract changes |
+| 24 | `P2` | `TODO` | Database maintenance and workspace health panel | VACUUM, ANALYZE, integrity check, database size, native library/config/CLI doctor, stale sidecar checks | Practical support surface for local files and packaging issues | ADR before implementation if destructive operations or new diagnostics contracts are added |
+| 25 | `P2` | `TODO` | SQL linting and static analysis | Warnings for missing WHERE on mutations, SELECT star, implicit coercion, wide scans, unindexed joins | Useful guardrail before execution and complements safe-run | ADR only if lint rules become persistent/project-enforced |
+| 26 | `P2` | `TODO` | Documentation and onboarding in-app | Offline DecentDB SQL reference, sample datasets, guided tutorials, query explanation mode, shortcut trainer | Helps users complete the first import/query/export loop faster | None for backlog |
+| 27 | `P3` | `BACKLOG` | Cross-DB and multi-workspace querying | Attach multiple `.ddb` files, cross-workspace execution, multi-file workspace panels | Useful, but conflicts with previous multi-workspace non-goal and needs scope decision | Likely PRD/SPEC update and ADR before implementation |
+| 28 | `P3` | `INVESTIGATE` | Geospatial result view | Map/table dual view, WKT/WKB/GeoJSON copy/export, offline-capable rendering defaults | Strong value for spatial users, narrower audience and dependency-sensitive | ADR/dependency review before implementation |
+| 29 | `P3` | `BACKLOG` | Extension, plugin, and scripting system | Custom importers/exporters/visualizers, Lua lifecycle UI, extension marketplace, trusted script execution | Strategic extensibility with high security and compatibility cost | Likely PRD/SPEC update and ADR before implementation |
+| 30 | `P3` | `BACKLOG` | Local REST/API/mock server and polyglot SDKs | Local HTTP/IPC server, mock backend bundle, Python/Rust/Dart SDK generation | Useful developer expansion, but not core import/query/export UX | ADR before implementation |
+| 31 | `P3` | `BACKLOG` | Live read-only source imports with secure credentials | PostgreSQL/MySQL/SQL Server imports, URL/S3 pulls, SSH tunnels, OS credential storage | Valuable source expansion but high security/support burden | Existing ADR notes deferral; new ADR before implementation |
+| 32 | `P3` | `INVESTIGATE` | SQL editor power-user layer | SQL refactoring assists, Vim/modal mode, keyboard macros, advanced snippets | Valuable for some power users, lower broad impact than import/data trust | ADR only if editor architecture or persistence changes |
+| 33 | `P4` | `DEFER` | AI and natural-language query assistant | Natural language to SQL, explain results, query error repair, optimization suggestions | Potentially useful, but privacy, dependency, cost, and product-positioning risks are high | Likely PRD/SPEC update and ADR before implementation |
+| 34 | `P4` | `DEFER` | Collaboration and approval workflows | Real-time collaboration, query review, RBAC, shared workspaces, presence, permissions | Explicitly outside local-first single-user center today | PRD/SPEC update required |
+| 35 | `P4` | `DEFER` | External integration hub and companion apps | BI connectors, webhooks, Zapier/Make, mobile companion, cloud publish, IDE plugins | Expansionary and lower fit for near-term local workbench roadmap | PRD/SPEC update required |
+| 36 | `P4` | `DEFER` | UI customization marketplace and theme extensions | Toolbar customization, theme marketplace, UI extension packs | Nice-to-have but low core workflow impact | ADR only if extension/config contracts change |
 
 ## P0 Detailed Candidates
 
@@ -248,7 +250,86 @@ The `P0` group should be considered the highest-value backlog set. These items
 reinforce Decent Bench's strongest identity: import into DecentDB, verify what
 happened, query safely, and rerun or export the result.
 
-### 1. Data Quality, Profiling, And Validation Suite
+### 1. Modular Import Architecture And Module Catalog
+
+**Detailed plan:** `design/WIN_IMPORT_MODULAR_PLAN.md`
+
+**Consolidates suggestions named:**
+
+- modular import engine,
+- import modules,
+- format module manifests,
+- import adapter catalog,
+- pluggable import architecture,
+- import format registry expansion foundation,
+- Python-backed import worker foundation,
+- typed import batch protocol,
+- source-format capability catalog.
+
+**User job:**
+
+Users should be able to drag or pick a growing variety of files and get one
+coherent Decent Bench import experience. The app should not become brittle as
+new formats are added.
+
+**Core scope:**
+
+- Add a built-in import module catalog with one module directory per source
+  format or wrapper.
+- Use declarative TOML manifests for:
+  - source id,
+  - display name,
+  - status,
+  - priority,
+  - detection rules,
+  - extensions,
+  - capabilities,
+  - adapter binding,
+  - supported actions,
+  - options,
+  - type-fidelity notes,
+  - limitations,
+  - module-specific quality checks,
+  - fixtures,
+  - documentation links.
+- Convert all current registry entries into built-in modules.
+- Keep executable behavior behind reviewed Dart adapters or reviewed
+  worker-backed adapters.
+- Treat SQLite as a source module, not as the canonical staging layer.
+- Make DecentDB typed schema and typed batches the canonical import target.
+- Make module metadata drive drag/drop detection, file picker routing,
+  unsupported-format messaging, help text, and docs validation.
+- Keep external third-party modules out of scope until a separate trust model
+  is accepted.
+
+**First useful slice:**
+
+Create the manifest schema, built-in module directory layout, parser,
+validator, and compatibility layer that derives the existing
+`ImportFormatRegistry` metadata from module manifests without changing runtime
+import behavior.
+
+**Design constraints:**
+
+- TOML manifests are declarative metadata only.
+- Manifests must not contain scripts, shell commands, dynamic library paths, or
+  executable import logic.
+- Every long-running inspect/preview/import action must remain off the UI
+  thread.
+- All existing supported formats must continue to work while the conversion is
+  underway.
+- Module conversion must not imply support for external plugins.
+- New high-fidelity formats should use a typed DecentDB handoff, not temporary
+  SQLite staging.
+
+**ADR need:**
+
+ADR-0049, ADR-0050, ADR-0051, and ADR-0052 cover the built-in module manifest
+contract, adapter/typed-batch contract, worker-backed module protocol, and
+external module trust boundary. Update or supersede them before implementation
+if the contract changes.
+
+### 2. Data Quality, Profiling, And Validation Suite
 
 **Consolidates suggestions named:**
 
@@ -322,7 +403,7 @@ type/coercion warnings from import metadata.
 Create an ADR before implementation because this establishes validation report
 contracts, profile storage behavior, and possibly persistent rule formats.
 
-### 2. Import/Export Recipe Rerun And Profile Reuse
+### 3. Import/Export Recipe Rerun And Profile Reuse
 
 **Consolidates suggestions named:**
 
@@ -392,7 +473,7 @@ ADR-0044 already identifies recipe persistence as the gate for rerun commands.
 Update or create a focused ADR before implementation to define the durable
 recipe format and validation behavior.
 
-### 3. Clipboard Table Import
+### 4. Clipboard Table Import
 
 **Consolidates suggestions named:**
 
@@ -441,7 +522,7 @@ through the generic delimited import preview/type inference flow.
 Create an ADR before implementation if clipboard source metadata becomes a
 persistent recipe source or if HTML sanitization rules are accepted.
 
-### 4. Safe Import Preview And Branch-Backed Sandbox
+### 5. Safe Import Preview And Branch-Backed Sandbox
 
 **Consolidates suggestions named:**
 
@@ -503,7 +584,7 @@ ADR-0032 covers the native branch/snapshot safety model. Update it or create a
 focused import-sandbox ADR before implementation, especially for staging table
 lifecycle and merge/discard semantics.
 
-### 5. Multi-File Batch Import
+### 6. Multi-File Batch Import
 
 **Consolidates suggestions named:**
 
@@ -558,7 +639,7 @@ single-file import boundary and introduces batch job semantics.
 
 ## P1 Detailed Candidates
 
-### 6. Schema, Data, Database, Branch, And Query Diff Tools
+### 7. Schema, Data, Database, Branch, And Query Diff Tools
 
 **Consolidates:**
 
@@ -589,7 +670,7 @@ query refactor: "What changed?"
 - Make approximate or sampled comparisons explicit.
 - Keep migration generation separate from read-only diff until the UX is safe.
 
-### 7. Headless Query/Export Automation
+### 8. Headless Query/Export Automation
 
 **Consolidates:**
 
@@ -623,7 +704,7 @@ automation environments without opening the desktop UI.
   model is accepted.
 - Remote destinations require credential and retry policies.
 
-### 8. Results Grid Power Tools
+### 9. Results Grid Power Tools
 
 **Consolidates:**
 
@@ -662,7 +743,7 @@ improvements here reduce friction every day.
 - Persistence should use workspace/project state intentionally, not ad hoc
   local storage.
 
-### 9. Query Parameter Sets And Dashboard Forms
+### 10. Query Parameter Sets And Dashboard Forms
 
 **Consolidates:**
 
@@ -693,7 +774,7 @@ parameter values and run them without editing SQL.
 - Persist parameter sets through the project manifest only after the format is
   accepted.
 
-### 10. Smarter Import Inference And Reusable Type Profiles
+### 11. Smarter Import Inference And Reusable Type Profiles
 
 **Consolidates:**
 
@@ -721,7 +802,7 @@ Better inference means less wizard correction and cleaner imported tables.
 - Inference should be deterministic for the same source sample.
 - Expensive inference should run off-thread and be sample-bounded.
 
-### 11. Query Performance Diagnostics Suite
+### 12. Query Performance Diagnostics Suite
 
 **Consolidates:**
 
@@ -754,7 +835,7 @@ over imported data.
 - Keep plan collection opt-in or bounded to avoid overhead.
 - Any persisted telemetry must stay local.
 
-### 12. Provenance, Lineage, And Audit Metadata
+### 13. Provenance, Lineage, And Audit Metadata
 
 **Consolidates:**
 
@@ -787,7 +868,7 @@ queries or exports depend on it.
   arbitrary external file mutations.
 - Use stable ids and schema fingerprints where possible.
 
-### 13. Global Database Search
+### 14. Global Database Search
 
 **Consolidates:**
 
@@ -813,7 +894,7 @@ start by searching for a known customer id, email, SKU, or term.
 - Do not build persistent indexes without an ADR.
 - Show which tables/columns are included.
 
-### 14. Connector Expansion
+### 15. Connector Expansion
 
 **Detailed plan:** `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`
 
@@ -833,27 +914,33 @@ start by searching for a known customer id, email, SKU, or term.
 **Value:**
 
 Connector expansion directly supports the "front door into DecentDB" product
-direction.
+direction. This item should now build on the modular import architecture rather
+than adding more hardcoded registry entries.
 
 **Recommended priority within this group:**
 
-1. Parquet import, because it is high-value for analytics users and separate
+1. Create or promote the module manifest for the target format.
+2. Add module docs, fixture plan, type-fidelity notes, and dependency notes.
+3. Implement the adapter only after the module contract is in place.
+4. Parquet import, because it is high-value for analytics users and separate
    from Parquet export writer constraints.
-2. DuckDB import, because it overlaps with local analytics workflows.
-3. ODS and fixed-width text, because they cover common spreadsheet/legacy data.
-4. PostgreSQL plain dump expansion, because plain SQL dumps are common.
-5. Markdown tables and log templates, because they are useful but narrower.
-6. Access/DBF and SQL Server live import after dependency/driver risk is clear.
+5. DuckDB import, because it overlaps with local analytics workflows.
+6. ODS and fixed-width text, because they cover common spreadsheet/legacy data.
+7. PostgreSQL plain dump expansion, because plain SQL dumps are common.
+8. Markdown tables and log templates, because they are useful but narrower.
+9. Access/DBF and SQL Server live import after dependency/driver risk is clear.
 
 **Constraints:**
 
 - Each major connector needs licensing review.
 - Each connector must preserve streaming behavior where possible.
 - Live sources need credential and cancellation contracts.
+- New connectors should not bypass the module manifest, fixture, and docs
+  validation workflow.
 
 ## P2 Detailed Candidates
 
-### 15. Incremental Sync And Merge/Upsert Import Modes
+### 16. Incremental Sync And Merge/Upsert Import Modes
 
 This would let users choose append, replace, ignore, or upsert/merge behavior
 when refreshing a table from a recurring source. It is valuable for repeatable
@@ -863,7 +950,7 @@ careful design.
 First useful slice: upsert into a single table using explicit user-selected key
 columns and a transaction-bound import job.
 
-### 16. Advanced Transform Library
+### 17. Advanced Transform Library
 
 This extends import transforms beyond the current row-local basics:
 
@@ -878,7 +965,7 @@ This extends import transforms beyond the current row-local basics:
 This should follow recipe/profile stabilization so advanced transforms can be
 saved, shared, and rerun consistently.
 
-### 17. Query Contract Tests And Regression Harness
+### 18. Query Contract Tests And Regression Harness
 
 Saved queries can become testable contracts:
 
@@ -892,7 +979,7 @@ Saved queries can become testable contracts:
 A future CLI such as `dbench test --project <project>` would make Decent Bench
 useful in CI for local DecentDB artifacts.
 
-### 18. Workspace Organization And Portability
+### 19. Workspace Organization And Portability
 
 This group includes:
 
@@ -908,7 +995,7 @@ This group includes:
 These features improve organization for power users, but they should be added
 only through the project/workspace manifest rather than scattered local state.
 
-### 19. Notebooks, Dashboards, And Structured Reports
+### 20. Notebooks, Dashboards, And Structured Reports
 
 This group includes:
 
@@ -924,7 +1011,7 @@ surface than the current workbench loop. A first slice should reuse saved
 queries and existing chart/result components rather than create a separate
 runtime.
 
-### 20. Pivot Tables And Richer Visualization
+### 21. Pivot Tables And Richer Visualization
 
 This group includes:
 
@@ -938,7 +1025,7 @@ This group includes:
 The first useful slice is a pivot builder over a loaded, bounded result set
 with clear row/column/value controls and export back to CSV/Excel.
 
-### 21. Data Masking And Anonymized Export
+### 22. Data Masking And Anonymized Export
 
 This feature applies export-time masking rules:
 
@@ -952,7 +1039,7 @@ This feature applies export-time masking rules:
 It fits the privacy-first product stance and is useful for test/dev datasets.
 It needs careful rule persistence and preview behavior before implementation.
 
-### 22. Accessibility And High-Contrast Audit
+### 23. Accessibility And High-Contrast Audit
 
 This group includes:
 
@@ -965,7 +1052,7 @@ This group includes:
 
 This should be treated as product quality work rather than optional polish.
 
-### 23. Database Maintenance And Workspace Health Panel
+### 24. Database Maintenance And Workspace Health Panel
 
 This group includes:
 
@@ -982,7 +1069,7 @@ This group includes:
 Destructive or long-running actions need confirmation, progress, cancellation,
 and clear status reporting.
 
-### 24. SQL Linting And Static Analysis
+### 25. SQL Linting And Static Analysis
 
 This would add warnings before execution:
 
@@ -996,7 +1083,7 @@ This would add warnings before execution:
 Linting should be actionable and suppressible. It should not block execution by
 default unless the existing safe-run policy says otherwise.
 
-### 25. Documentation And Onboarding In-App
+### 26. Documentation And Onboarding In-App
 
 This group includes:
 
@@ -1012,7 +1099,7 @@ training product.
 
 ## P3 Strategic Or ADR-Gated Candidates
 
-### 26. Cross-DB And Multi-Workspace Querying
+### 27. Cross-DB And Multi-Workspace Querying
 
 This group includes:
 
@@ -1024,7 +1111,7 @@ This group includes:
 This is useful, but it conflicts with prior non-goals around multi-workspace
 support. It needs PRD/SPEC alignment and an ADR before implementation.
 
-### 27. Geospatial Result View
+### 28. Geospatial Result View
 
 This would render spatial result data as a map/table dual view:
 
@@ -1038,7 +1125,7 @@ It is compelling for spatial users and aligns with DecentDB native type support,
 but dependency choice, offline map behavior, and large geometry rendering need
 an ADR.
 
-### 28. Extension, Plugin, And Scripting System
+### 29. Extension, Plugin, And Scripting System
 
 This group includes:
 
@@ -1052,7 +1139,7 @@ This group includes:
 This can future-proof niche needs, but it is security-sensitive and
 architecture-heavy. It must not be implemented as an ad hoc script runner.
 
-### 29. Local REST/API/Mock Server And Polyglot SDKs
+### 30. Local REST/API/Mock Server And Polyglot SDKs
 
 This group includes:
 
@@ -1065,7 +1152,7 @@ This group includes:
 This is a developer-facing expansion beyond the current workbench. It should
 reuse the SDK IR and query contracts rather than invent a separate model.
 
-### 30. Live Read-Only Source Imports With Secure Credentials
+### 31. Live Read-Only Source Imports With Secure Credentials
 
 This group includes:
 
@@ -1081,7 +1168,7 @@ ADR-0044 already defers live connection commands until the product contracts
 exist. Future work must remain import-only unless PRD/SPEC explicitly expand
 Decent Bench into live database browsing/querying.
 
-### 31. SQL Editor Power-User Layer
+### 32. SQL Editor Power-User Layer
 
 This group includes:
 
@@ -1098,7 +1185,7 @@ analysis to be safe.
 
 ## P4 Deferred Candidates
 
-### 32. AI And Natural-Language Query Assistant
+### 33. AI And Natural-Language Query Assistant
 
 This group includes:
 
@@ -1111,7 +1198,7 @@ This should be deferred because it introduces privacy, model dependency, cost,
 offline behavior, and product-positioning questions. It can be reconsidered if
 a local-first model strategy becomes part of product direction.
 
-### 33. Collaboration And Approval Workflows
+### 34. Collaboration And Approval Workflows
 
 This group includes:
 
@@ -1125,7 +1212,7 @@ This group includes:
 These conflict with the current local-first, single-user product center and
 should not be near-roadmap work.
 
-### 34. External Integration Hub And Companion Apps
+### 35. External Integration Hub And Companion Apps
 
 This group includes:
 
@@ -1139,7 +1226,7 @@ This group includes:
 These may be useful in a larger ecosystem strategy, but they are not central to
 the current import/query/export desktop workbench.
 
-### 35. UI Customization Marketplace And Theme Extensions
+### 36. UI Customization Marketplace And Theme Extensions
 
 This group includes:
 
@@ -1154,11 +1241,11 @@ extension economy is not a core backlog item.
 
 If only five new backlog items are promoted from this consolidation, use:
 
-1. Data quality, profiling, and validation suite.
-2. Import/export recipe rerun and profile reuse.
-3. Clipboard table import.
-4. Safe import preview and branch-backed sandbox.
-5. Multi-file batch import.
+1. Modular import architecture and module catalog.
+2. Data quality, profiling, and validation suite.
+3. Import/export recipe rerun and profile reuse.
+4. Clipboard table import.
+5. Safe import preview and branch-backed sandbox.
 
 These are ranked highest because they deepen Decent Bench's core promise rather
 than expanding into a different product category.
@@ -1171,6 +1258,9 @@ one ADR per idea now would over-specify features before discovery.
 
 Before implementation, create or update ADRs for at least these areas:
 
+- built-in import module manifest contract if ADR-0049 changes,
+- import adapter and typed batch contract if ADR-0050 changes,
+- worker-backed import module protocol if ADR-0051 changes,
 - data quality rule/report persistence,
 - recipe/profile persistence and validation,
 - multi-file batch import job semantics,
@@ -1189,6 +1279,9 @@ Before implementation, create or update ADRs for at least these areas:
 
 The following source ideas were intentionally merged:
 
+- **Import modules, module manifests, adapter catalog, typed import batches,
+  Python-backed importer foundation** -> Modular import architecture and module
+  catalog.
 - **Profiler, validation, duplicate detection, reconciliation, anomaly
   detection** -> Data quality, profiling, and validation suite.
 - **Re-run last import/export, profile sharing, import templates, recipe

@@ -1,12 +1,15 @@
 # Import Formats
 
-The implemented and partial sections mirror the code-level import registry in
+The implemented and partial sections currently mirror the code-level import registry in
 `apps/decent-bench/lib/features/import/infrastructure/import_format_registry.dart`.
 The future table combines registry-recognized unavailable formats with broader
 candidate formats that are worth tracking for future import work.
 
 Future import-format expansion is planned in
-`design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`.
+`design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`. The target architecture for
+scaling import support is the module catalog described in
+`design/WIN_IMPORT_MODULAR_PLAN.md`; once that work is complete, this document
+should be validated from module manifests instead of hand-maintained.
 
 ## Fully implemented now
 
@@ -109,7 +112,8 @@ Status values:
 ## Notes on the current architecture
 
 - `ImportFormatRegistry` is the source of truth for family, support state, and
-  implementation path.
+  implementation path today. `design/WIN_IMPORT_MODULAR_PLAN.md` defines the
+  planned move to module manifests as the source of truth.
 - `ImportDetectionService` is used for drag-and-drop, `--import`, and the file
   picker entry flow.
 - Delimited text, structured documents, and HTML tables use the generic

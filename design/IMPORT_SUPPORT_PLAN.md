@@ -5,8 +5,10 @@
 Decent Bench should be positioned as a **practical data intake and conversion workbench** for **DecentDB**.
 
 The long-running implementation plan for adding import formats over time is
-`design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`. This document remains the broader
-product landscape and status table for import source families.
+`design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`. The target architecture for
+scaling that work is the module catalog described in
+`design/WIN_IMPORT_MODULAR_PLAN.md`. This document remains the broader product
+landscape and status table for import source families.
 
 The product goal is not merely to be a SQL editor. Its larger value is:
 
