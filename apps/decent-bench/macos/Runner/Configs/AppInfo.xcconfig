@@ -11,7 +11,7 @@ PRODUCT_NAME = dbench
 APP_DISPLAY_NAME = Decent Bench
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.decentBench
+PRODUCT_BUNDLE_IDENTIFIER = com.decentdb.bench
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 Steven Hildreth. All rights reserved.

@@ -99,6 +99,8 @@ This file records notable project changes. It follows the
   of the default Flutter logo.
 - Updated the About dialog to use the Decent Bench logo, branded layout, and
   modern license/close actions.
+- Replaced desktop platform placeholder identifiers with the stable
+  `com.decentdb.bench` application identity documented in ADR-0053.
 - Updated DecentDB v2.6 operational metrics display to keep a single
   compatibility note only when older runtimes still reject `sys.*` inspection
   views.
