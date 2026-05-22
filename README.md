@@ -45,7 +45,7 @@
 - 🚀 **DecentDB-First:** A fully local-first workflow. Fast open/create,
   recent files, intuitive drag-and-drop support, and guided legacy `.ddb`
   migration through the official `decentdb-migrate` tool.
-- 📥 **Smart Import Wizards:** Import delimited text, JSON/NDJSON, XML, HTML tables, Excel, SQLite, SQL dumps, and wrapped archives (`.zip`, `.gz`, `.bz2`). Includes previews, rename/type-override transforms, row-local filters/defaults/computed columns/dedup plans for generic imports, progress reporting, and post-import summaries.
+- 📥 **Smart Import Wizards:** Import delimited text, JSON/NDJSON, XML, HTML tables, Excel, SQLite, SQL dumps, and wrapped archives (`.zip`, `.gz`, `.tgz`, `.bz2`, `.tbz2`). Includes previews, rename/type-override transforms, row-local filters/defaults/computed columns/dedup plans for generic imports, progress reporting, and post-import summaries.
 - 🛠️ **Modern SQL Workbench:** Iterate in a multi-tab editor with isolated per-tab results, schema-aware autocomplete, editable snippets, deterministic formatting, typed parameter fields, per-tab query history, and a searchable command palette.
 - ⚡ **Performance-Focused:** Background imports, paginated/streamed results grids, and best-effort query cancellation ensure the UI never freezes.
 - 🧭 **Rich Engine Metadata:** Schema browsing is powered by DecentDB's rich
@@ -221,7 +221,7 @@ Typical files under that root include:
 
 **Shipped through 2.0.0:**
 - ✅ Drag-and-drop open/import flows
-- ✅ Expansive import support: CSV, JSON, XML, HTML, SQLite, Excel, and SQL dumps
+- ✅ Expansive import support: delimited text, JSON/NDJSON, XML, HTML tables, SQLite, Excel, and SQL dumps
 - ✅ ZIP, GZip, and BZip2 wrapper routing for imports
 - ✅ Headless CLI import mode
 - ✅ DecentDB v2.6.0 binding alignment, native asset staging, CLI staging, and pinned runtime resolution

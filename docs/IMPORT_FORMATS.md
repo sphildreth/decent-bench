@@ -3,22 +3,21 @@
 This document mirrors the code-level import registry in
 `apps/decent-bench/lib/features/import/infrastructure/import_format_registry.dart`.
 It summarizes what the current build can import now, what is only partially
-supported, what is only partially supported, and what is recognized but not
-implemented yet.
+supported, and what is recognized but not implemented yet.
 
 ## Fully implemented now
 
 - DecentDB `.ddb` open path
 - CSV
 - TSV
-- generic delimited text (`.txt`, `.dat`, `.log`)
+- generic delimited text (`.txt`, `.dat`, `.log`, `.psv`)
 - JSON
 - NDJSON / JSONL
 - XML
 - HTML tables (`.html`, `.htm`)
-- ZIP wrapper routing to recognized inner files
-- GZip wrapper routing to recognized inner files
-- BZip2 wrapper routing to recognized inner files
+- ZIP wrapper routing to supported inner files
+- GZip wrapper routing to supported inner files (`.gz`, `.tgz`, `.tar.gz`)
+- BZip2 wrapper routing to supported inner files (`.bz2`, `.tbz2`, `.tar.bz2`)
 - Excel `.xlsx` via the existing workbook wizard
 - SQLite via the existing SQLite wizard
 - SQL dump via the existing MVP-lite SQL dump wizard
@@ -55,8 +54,9 @@ implemented yet.
   implementation path.
 - `ImportDetectionService` is used for drag-and-drop, `--import`, and the file
   picker entry flow.
-- Delimited text, structured documents, HTML tables, and wrappers use the
-  generic preview/execution pipeline.
+- Delimited text, structured documents, and HTML tables use the generic
+  preview/execution pipeline. Wrappers extract a supported inner file and then
+  route that file to the normal generic or dedicated import path.
 - Generic imports carry a serializable transform plan for row filters, default
   values, computed columns, deduplication, and column ordering.
 - Excel, SQLite, and SQL dump still use the existing dedicated wizards and

@@ -3,7 +3,7 @@
 Decent Bench is a local desktop workbench for DecentDB files. The usual flow is:
 
 1. Open or create a DecentDB database.
-2. Import data if you are starting from Excel, SQLite, or a SQL dump.
+2. Import data if you are starting from a supported source file.
 3. Inspect the schema.
 4. Write and run SQL.
 5. Export the shaped result.
@@ -24,9 +24,13 @@ Drag a supported file onto the window or use the **Import** menu.
 
 Supported import sources include:
 
-- Excel workbooks: `.xls` and `.xlsx`
+- Delimited text: `.csv`, `.tsv`, `.txt`, `.dat`, `.log`, and `.psv`
+- Structured documents: `.json`, `.ndjson`, `.jsonl`, and `.xml`
+- HTML tables: `.html` and `.htm`
+- Excel workbooks: `.xlsx`, with `.xls` available through the legacy warning path
 - SQLite databases: `.db`, `.sqlite`, and `.sqlite3`
 - SQL dumps: `.sql`
+- Archive wrappers: `.zip`, `.gz`, `.tgz`, `.bz2`, and `.tbz2` when they contain a supported inner file
 
 If the file type is not recognized, Decent Bench shows a clear message instead of guessing.
 

@@ -104,26 +104,26 @@ Use the following status values consistently:
 
 | Family | Format / Source | Typical Extensions | Why It Matters | Notes / Import Considerations | Status |
 |---|---|---|---|---|---|
-| Delimited / Text | CSV | `.csv` | One of the most common business and developer interchange formats | Header detection, delimiter options, quoting, encoding, malformed rows | Planned |
-| Delimited / Text | TSV | `.tsv` | Common where commas conflict with text payloads | Similar to CSV but simpler delimiter rules | Planned |
+| Delimited / Text | CSV | `.csv` | One of the most common business and developer interchange formats | Header detection, delimiter options, quoting, encoding, malformed rows | Complete |
+| Delimited / Text | TSV | `.tsv` | Common where commas conflict with text payloads | Similar to CSV but simpler delimiter rules | Complete |
 | Delimited / Text | Pipe-separated | `.psv`, `.txt` | Common in line-of-business exports | Detect and allow custom delimiter selection | Investigate |
 | Delimited / Text | Semicolon-separated | `.csv`, `.txt` | Common in some locales and enterprise exports | Locale-aware delimiter detection | Investigate |
 | Delimited / Text | Fixed-width text | `.txt`, `.dat` | Very common in legacy enterprise, banking, payroll, and batch systems | Needs column boundary definition, preview, and row validation | Planned |
-| Delimited / Text | Generic custom-delimited text | `.txt`, `.dat`, `.log` | Broadly useful because many “CSV-like” files are custom | Import wizard should support manual delimiter, quote, escape, newline handling | Planned |
-| Spreadsheet | Excel Open XML | `.xlsx` | Essential real-world business import source | Sheets, header detection, formulas, dates, merged cells, formatting noise | Planned |
-| Spreadsheet | Legacy Excel | `.xls` | Still appears in many old workflows | Legacy parser compatibility, formulas, mixed types | Planned |
+| Delimited / Text | Generic custom-delimited text | `.txt`, `.dat`, `.log`, `.psv` | Broadly useful because many “CSV-like” files are custom | Import wizard supports manual delimiter, quote, escape, newline handling | Complete |
+| Spreadsheet | Excel Open XML | `.xlsx` | Essential real-world business import source | Sheets, header detection, formulas, dates, merged cells, formatting noise | Complete |
+| Spreadsheet | Legacy Excel | `.xls` | Still appears in many old workflows | Legacy parser compatibility, formulas, mixed types; routed through the legacy conversion/normalization path and may surface warnings | Partial |
 | Spreadsheet | OpenDocument Spreadsheet | `.ods` | Important for LibreOffice/OpenOffice users | Multi-sheet import, formulas, data typing | Planned |
 | Spreadsheet | SpreadsheetML / XML Spreadsheet | `.xml` | Shows up in older Office-generated exports | XML-based parsing with spreadsheet semantics | Investigate |
-| Structured Document | JSON | `.json` | Extremely common for APIs, exports, and app data | Flattening nested objects, arrays, repeated structures, table mapping | Planned |
-| Structured Document | NDJSON / JSONL | `.ndjson`, `.jsonl` | Very common for logs, streaming exports, and data pipelines | Row-wise JSON import, schema drift detection, large-file streaming | Planned |
-| Structured Document | XML | `.xml` | Common in enterprise, reporting, integrations, and data exchange | Repeated element mapping, attributes vs elements, namespaces, flattening rules | Planned |
+| Structured Document | JSON | `.json` | Extremely common for APIs, exports, and app data | Flattening nested objects, arrays, repeated structures, table mapping | Complete |
+| Structured Document | NDJSON / JSONL | `.ndjson`, `.jsonl` | Very common for logs, streaming exports, and data pipelines | Row-wise JSON import, schema drift detection, large-file streaming | Complete |
+| Structured Document | XML | `.xml` | Common in enterprise, reporting, integrations, and data exchange | Repeated element mapping, attributes vs elements, namespaces, flattening rules | Complete |
 | Structured Document | YAML | `.yaml`, `.yml` | Common in technical workflows and config-driven data | Better for structured records than arbitrary configs; flattening may be required | Investigate |
 | Structured Document | TOML | `.toml` | Useful for config-like datasets and examples | Usually not tabular; best for niche structured import | Deferred |
 | Structured Document | INI / properties-like files | `.ini`, `.properties` | Occasionally useful in technical workflows | Usually key/value import, niche value | Deferred |
-| Web / Markup | HTML tables | `.html`, `.htm` | Very useful because many reports and copied datasets exist as HTML tables | Must detect one or more tables, choose table(s), infer headers, handle nested tables | Planned |
+| Web / Markup | HTML tables | `.html`, `.htm` | Very useful because many reports and copied datasets exist as HTML tables | Detect one or more tables, choose table(s), infer headers, handle nested tables conservatively | Complete |
 | Web / Markup | HTML fragments pasted from clipboard / source | pasted content, `.html` | Useful for users copying report tables from web apps and portals | Requires sanitization and table extraction UX | Investigate |
 | Web / Markup | Markdown tables | `.md` | Useful for documentation-driven datasets | Good niche support; simpler than HTML tables | Investigate |
-| Database / Embedded DB | SQLite | `.db`, `.sqlite`, `.sqlite3` | One of the highest-value import sources | Schema extraction, table selection, type mapping, views, indexes metadata | Planned |
+| Database / Embedded DB | SQLite | `.db`, `.sqlite`, `.sqlite3` | One of the highest-value import sources | Schema extraction, table selection, type mapping, views, indexes metadata | Complete |
 | Database / Embedded DB | DuckDB | `.duckdb`, `.db` | Increasingly common in modern local analytics | Similar positioning to DecentDB users; strong candidate | Planned |
 | Database / Embedded DB | Microsoft Access | `.mdb`, `.accdb` | Still heavily used in corporate legacy workflows | High value but potentially painful technically | Investigate |
 | Database / Embedded DB | dBase / FoxPro / DBF | `.dbf` | Still seen in GIS, government, and legacy systems | Valuable niche legacy support | Investigate |
@@ -133,8 +133,8 @@ Use the following status values consistently:
 | Database / Live Source | SQL Server live import | connection-based | Important in enterprise environments | Authentication complexity, type system nuances | Planned |
 | Database / Live Source | Oracle live import | connection-based | Important in some enterprise shops | Higher complexity, lower initial priority unless audience demands it | Investigate |
 | Database / Live Source | Generic ODBC / JDBC-like abstraction | connection-based | Broad compatibility play | Attractive long-term, but can become a support burden | Investigate |
-| Dump / Backup | Plain SQL dump | `.sql` | Broadly useful for migrations and one-off imports | Statement parsing, partial support messaging, import of DDL+DML | Planned |
-| Dump / Backup | MySQL / MariaDB dump | `.sql` | Very common in real-world handoffs | Shared with plain SQL support, but needs dialect handling | Planned |
+| Dump / Backup | Plain SQL dump | `.sql` | Broadly useful for migrations and one-off imports | MVP-lite statement parsing, partial support messaging, import of common DDL+DML patterns | Partial |
+| Dump / Backup | MySQL / MariaDB dump | `.sql` | Very common in real-world handoffs | Current wizard supports common MariaDB/MySQL-style `CREATE TABLE` plus `INSERT ... VALUES` patterns | Complete |
 | Dump / Backup | PostgreSQL plain SQL dump | `.sql` | Common for backup/export workflows | Dialect-specific parsing, sequences, COPY handling | Planned |
 | Dump / Backup | PostgreSQL custom / binary backup | `.backup`, `.dump`, `.tar` | Valuable but more complex than plain SQL | May require external tooling or staged conversion | Investigate |
 | Dump / Backup | SQL Server BCP / bulk export files | `.bcp`, `.txt`, `.fmt` | Useful in enterprise data pipelines | Often tied to format metadata | Investigate |
@@ -149,9 +149,9 @@ Use the following status values consistently:
 | Logs / Events | JSON log streams | `.jsonl`, `.ndjson`, `.log` | Strong fit for operational analysis | Often covered by NDJSON, but worth explicit workflow | Planned |
 | Logs / Events | Delimited log files | `.log`, `.txt` | Common in operational support cases | Custom parsing templates may be needed | Investigate |
 | Logs / Events | Apache / Nginx access logs | `.log` | Very common web operations data source | Could be implemented as a template-based structured text importer | Investigate |
-| Compressed / Archive | ZIP wrapper of supported formats | `.zip` | Very practical and high-value | Automatically detect importable files inside archive | Planned |
-| Compressed / Archive | GZip wrapper | `.gz` | Common for large CSV/JSON/NDJSON exports | Stream decompression to importer | Planned |
-| Compressed / Archive | BZip2 wrapper | `.bz2` | Less common, but still useful | Nice-to-have wrapper support | Investigate |
+| Compressed / Archive | ZIP wrapper of supported formats | `.zip` | Very practical and high-value | Automatically detect importable files inside archive | Complete |
+| Compressed / Archive | GZip wrapper | `.gz`, `.tgz` | Common for large CSV/JSON/NDJSON exports | Single-file gzip unwrap and tar+gzip archive inspection/extraction | Complete |
+| Compressed / Archive | BZip2 wrapper | `.bz2`, `.tbz2` | Less common, but still useful | Single-file bzip2 unwrap and tar+bzip2 archive inspection/extraction | Complete |
 | Compressed / Archive | XZ wrapper | `.xz` | Common in some Linux/data engineering contexts | Nice-to-have wrapper support | Investigate |
 | Web / Report Capture | Clipboard table paste | clipboard | Very practical for business users copying from apps/spreadsheets/websites | Could become a major convenience feature | Investigate |
 | Web / Report Capture | PDF extracted tables | `.pdf` | Attractive in concept, but accuracy can be poor | Only worth doing if extraction quality is acceptable | Deferred |
@@ -176,7 +176,7 @@ These formats should be prioritized first because they cover a huge percentage o
 - HTML tables
 - SQLite
 - plain SQL dump
-- ZIP / GZip wrappers for supported files
+- ZIP / GZip / BZip2 wrappers for supported files
 
 ### Tier 2 — strong expansion formats
 These extend Decent Bench into a broader and more valuable ingestion tool:

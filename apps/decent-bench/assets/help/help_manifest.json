@@ -21,8 +21,8 @@
       "id": "importing-data",
       "title": "Importing Data",
       "category": "Importing",
-      "summary": "Bring Excel, SQLite, and SQL dump data into a local DecentDB database.",
-      "tags": ["import", "excel", "sqlite", "sql dump", "wizard"],
+      "summary": "Bring delimited text, JSON, XML, HTML tables, Excel, SQLite, SQL dumps, and archive-wrapped sources into a local DecentDB database.",
+      "tags": ["import", "csv", "json", "xml", "html", "excel", "sqlite", "sql dump", "archive", "wizard"],
       "asset": "assets/help/importing-data.md"
     },
     {

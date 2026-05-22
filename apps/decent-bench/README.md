@@ -16,7 +16,8 @@ Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
 - SQLite, Excel, and SQL dump inspection plus import execution run off the UI
   thread
 - CSV, TSV, generic delimited text, JSON, NDJSON/JSONL, XML, HTML tables, and
-  ZIP/GZip wrapper routing now use the generic import preview/execution path
+  ZIP/GZip/BZip2 wrapper routing are implemented; wrappers extract supported
+  inner files and route them into the normal generic or dedicated import path
 - desktop runner folders (`linux/`, `macos/`, `windows/`) are checked in
 - the DecentDB Dart package is pinned from the upstream Git tag
   (`https://github.com/sphildreth/decentdb`), currently `v2.6.0`, and desktop
