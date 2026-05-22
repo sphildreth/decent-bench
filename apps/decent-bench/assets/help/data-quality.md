@@ -10,6 +10,10 @@ Click **Run** in the Quality dashboard to scan the current database. The default
 
 You do not have to create validation rules before using Quality. Custom profiles are optional and are useful when your business rules are stricter than the source schema.
 
+Import summaries also include **Run Quality Profile** after a successful import.
+That opens the imported DecentDB file and immediately runs the current/default
+quality profile, keeping import success separate from any quality findings.
+
 ## What a run includes
 
 A quality run can include:
@@ -41,6 +45,10 @@ Rule types include:
 - Near-duplicate rows
 
 Rules run in the background. SQL-backed rules use DecentDB aggregate/detail queries; rules that cannot be expressed portably in SQL use bounded app-side scans.
+
+Regex and near-duplicate checks run their non-SQL comparison work in background
+isolates over bounded inputs. Query-result targets are profiled by materializing
+the result into a temporary DecentDB table for the duration of the run.
 
 ## Full versus sampled mode
 

@@ -397,8 +397,9 @@ commands for opening the dashboard, running a profile, managing profiles, and
 exporting reports. The implementation includes schema-derived default profiles,
 custom validation profiles persisted per workspace, profiling summaries,
 validation issue summaries, import reconciliation records, duplicate summaries,
-paged violation browsing, freshness checks, Markdown/HTML/JSON report export,
-and a headless `dbench quality` command.
+paged violation browsing, freshness checks, query-result profiling through
+temporary DecentDB tables, post-import quality actions, Markdown/HTML/JSON
+report export, and a headless `dbench quality` command.
 
 **Design constraints:**
 

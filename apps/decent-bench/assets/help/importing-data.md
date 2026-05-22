@@ -62,6 +62,10 @@ the imported tables, review import reconciliation counts, and run validation
 rules. The default quality profile is generated from schema metadata, so you can
 run a useful check immediately without creating custom rules first.
 
+Successful import summaries include **Run Quality Profile**. Use it when you
+want Decent Bench to open the imported database and start the default/current
+quality profile immediately after import.
+
 ## Imports should not freeze the app
 
 Large imports run as background work. You should still be able to see progress and cancel when cancellation is available.

@@ -845,7 +845,9 @@ The `Data quality, profiling, and validation suite` is implemented under
 The workspace exposes a first-class Quality pane and Tools menu commands for
 running profile-driven quality scans, managing validation profiles, inspecting
 paged violation rows, and exporting Markdown, HTML, or JSON quality reports.
-The headless CLI exposes the same workflow through `dbench quality`.
+Import summaries can launch a quality run immediately after a successful import,
+and query-result targets are profiled through temporary DecentDB tables. The
+headless CLI exposes the same workflow through `dbench quality`.
 
 ### 13.1 Minimum automated tests
 

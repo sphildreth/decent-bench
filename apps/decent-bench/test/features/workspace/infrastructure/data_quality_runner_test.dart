@@ -112,6 +112,297 @@ void main() {
     expect(rows, hasLength(1));
     expect(rows.single.rowNumber, 2);
   });
+
+  test('profiles query result targets through a temporary table', () async {
+    final result = await runner.runQuality(
+      request: QualityRunRequest(
+        targetKind: QualityTargetKind.queryResult,
+        targetDatabasePath: '/tmp/workspace.ddb',
+        targetTable: null,
+        targetQueryId: 'saved-query-1',
+        targetQuerySql: 'SELECT id, title FROM tasks',
+        profileId: null,
+        profilePath: null,
+        mode: QualityRunMode.full,
+        sampleRowLimit: 100,
+        includeProfiling: true,
+        includeValidation: false,
+        includeImportReconciliation: false,
+        includeDuplicateChecks: false,
+        requestedAt: DateTime.utc(2026, 5, 22),
+      ),
+      schema: gateway.snapshot,
+      profile: null,
+    );
+
+    expect(result.status, QualityRunStatus.completed);
+    expect(result.targetKind, QualityTargetKind.queryResult);
+    expect(result.profileSummaries.single.tableName, startsWith('__dbench_'));
+    expect(result.profileSummaries.single.columnSummaries, hasLength(2));
+    expect(
+      gateway.executedSql.any((sql) => sql.contains('CREATE TEMP TABLE')),
+      isTrue,
+    );
+    expect(
+      gateway.executedSql.any((sql) => sql.contains('DROP TABLE IF EXISTS')),
+      isTrue,
+    );
+  });
+
+  test('plans every validation rule family', () {
+    const planner = ValidationRulePlanner();
+
+    final plannedByType = <ValidationRuleType, PlannedValidationRule>{
+      for (final rule in _allRuleFamilyProfile().rules)
+        rule.ruleType: planner.plan(rule),
+    };
+
+    expect(plannedByType.keys, unorderedEquals(ValidationRuleType.values));
+    for (final type in ValidationRuleType.values) {
+      final planned = plannedByType[type]!;
+      if (type == ValidationRuleType.regex ||
+          type == ValidationRuleType.nearDuplicateRows) {
+        expect(planned.isolateBacked, isTrue);
+        expect(planned.countSql, isNull);
+        expect(planned.detailSql, isNull);
+      } else {
+        expect(planned.isolateBacked, isFalse);
+        expect(planned.countSql, contains('failure_count'));
+        expect(planned.detailSql, isNotEmpty);
+      }
+      expect(planned.issueCode, isNotEmpty);
+      expect(planned.message, isNotEmpty);
+    }
+  });
+
+  test(
+    'records validation issues and duplicate summaries for every rule family',
+    () async {
+      final result = await runner.runQuality(
+        request: QualityRunRequest(
+          targetKind: QualityTargetKind.database,
+          targetDatabasePath: '/tmp/workspace.ddb',
+          targetTable: null,
+          targetQueryId: null,
+          targetQuerySql: null,
+          profileId: 'all-rules',
+          profilePath: null,
+          mode: QualityRunMode.full,
+          sampleRowLimit: 100,
+          includeProfiling: false,
+          includeValidation: true,
+          includeImportReconciliation: false,
+          includeDuplicateChecks: true,
+          requestedAt: DateTime.utc(2026, 5, 22),
+        ),
+        schema: gateway.snapshot,
+        profile: _allRuleFamilyProfile(),
+      );
+
+      expect(result.status, QualityRunStatus.completed);
+      expect(
+        result.validationIssues.map((issue) => issue.ruleType),
+        unorderedEquals(
+          ValidationRuleType.values.map((type) => type.wireName).toList(),
+        ),
+      );
+      expect(
+        result.validationIssues.map((issue) => issue.issueCode),
+        containsAll(<String>[
+          'required_value_missing',
+          'unique_value_duplicated',
+          'allowed_value_unmatched',
+          'regex_unmatched',
+          'numeric_value_out_of_range',
+          'date_value_out_of_range',
+          'string_length_out_of_range',
+          'cross_column_predicate_failed',
+          'referential_value_missing',
+          'custom_sql_predicate_failed',
+          'exact_duplicate_group',
+          'near_duplicate_group',
+        ]),
+      );
+      expect(result.duplicateSummaries, hasLength(2));
+      expect(
+        result.duplicateSummaries.map((summary) => summary.duplicateType),
+        unorderedEquals(<String>[
+          'exact_duplicate_rows',
+          'near_duplicate_rows',
+        ]),
+      );
+    },
+  );
+
+  test('returns cancelled result when cancellation is requested', () async {
+    final token = DataQualityCancellationToken()..cancel();
+
+    final result = await runner.runQuality(
+      request: QualityRunRequest(
+        targetKind: QualityTargetKind.database,
+        targetDatabasePath: '/tmp/workspace.ddb',
+        targetTable: null,
+        targetQueryId: null,
+        targetQuerySql: null,
+        profileId: null,
+        profilePath: null,
+        mode: QualityRunMode.full,
+        sampleRowLimit: 100,
+        includeProfiling: true,
+        includeValidation: false,
+        includeImportReconciliation: false,
+        includeDuplicateChecks: false,
+        requestedAt: DateTime.utc(2026, 5, 22),
+      ),
+      schema: gateway.snapshot,
+      profile: null,
+      cancellationToken: token,
+    );
+
+    expect(result.status, QualityRunStatus.cancelled);
+    expect(result.errorMessage, 'Quality run cancelled.');
+  });
+}
+
+QualityProfileDocument _allRuleFamilyProfile() {
+  return QualityProfileDocument.empty(
+    name: 'All rule families',
+    now: DateTime.utc(2026, 5, 22),
+  ).copyWith(
+    profileId: 'all-rules',
+    rules: <ValidationRule>[
+      _rule(
+        ValidationRuleType.required,
+        targetColumn: 'title',
+        params: const <String, Object?>{
+          'trim_strings': true,
+          'treat_empty_string_as_null': true,
+        },
+      ),
+      _rule(
+        ValidationRuleType.unique,
+        targetColumn: 'id',
+        params: const <String, Object?>{
+          'columns': <String>['id'],
+          'ignore_nulls': true,
+          'trim_strings': false,
+        },
+      ),
+      _rule(
+        ValidationRuleType.allowedValues,
+        targetColumn: 'title',
+        params: const <String, Object?>{
+          'values': <String>['Ship'],
+          'case_sensitive': true,
+          'trim_strings': true,
+          'allow_null': true,
+        },
+      ),
+      _rule(
+        ValidationRuleType.regex,
+        targetColumn: 'title',
+        params: const <String, Object?>{
+          'pattern': r'^OK$',
+          'case_sensitive': true,
+          'allow_null': false,
+        },
+      ),
+      _rule(
+        ValidationRuleType.numericRange,
+        targetColumn: 'id',
+        params: const <String, Object?>{
+          'min': 10,
+          'max': 20,
+          'inclusive_min': true,
+          'inclusive_max': true,
+          'allow_null': true,
+        },
+      ),
+      _rule(
+        ValidationRuleType.dateRange,
+        targetColumn: 'title',
+        params: const <String, Object?>{
+          'min': '2026-01-01',
+          'max': '2026-12-31',
+          'inclusive_min': true,
+          'inclusive_max': true,
+          'allow_null': true,
+        },
+      ),
+      _rule(
+        ValidationRuleType.stringLength,
+        targetColumn: 'title',
+        params: const <String, Object?>{
+          'min_length': 10,
+          'max_length': 20,
+          'trim_strings': true,
+          'allow_null': true,
+        },
+      ),
+      _rule(
+        ValidationRuleType.crossColumn,
+        params: const <String, Object?>{
+          'sql_expression': '"id" > 0',
+          'referenced_columns': <String>['id'],
+        },
+      ),
+      _rule(
+        ValidationRuleType.referential,
+        targetColumn: 'id',
+        params: const <String, Object?>{
+          'source_columns': <String>['id'],
+          'reference_table': 'projects',
+          'reference_columns': <String>['id'],
+          'ignore_nulls': true,
+        },
+      ),
+      _rule(
+        ValidationRuleType.customSqlPredicate,
+        params: const <String, Object?>{
+          'predicate_sql': 'LENGTH("title") > 0',
+          'referenced_columns': <String>['title'],
+        },
+      ),
+      _rule(
+        ValidationRuleType.exactDuplicateRows,
+        params: const <String, Object?>{
+          'columns': <String>['title'],
+          'ignore_nulls': true,
+          'trim_strings': true,
+        },
+      ),
+      _rule(
+        ValidationRuleType.nearDuplicateRows,
+        params: const <String, Object?>{
+          'columns': <String>['title'],
+          'similarity': 'normalized_levenshtein',
+          'threshold': 0.7,
+          'candidate_limit': 100,
+          'blocking_columns': <String>['title'],
+          'trim_strings': true,
+          'case_sensitive': false,
+        },
+      ),
+    ],
+  );
+}
+
+ValidationRule _rule(
+  ValidationRuleType type, {
+  String? targetColumn,
+  Map<String, Object?> params = const <String, Object?>{},
+}) {
+  return ValidationRule(
+    id: '${type.wireName}-rule',
+    name: '${type.wireName} rule',
+    description: '',
+    enabled: true,
+    severity: QualitySeverity.error,
+    targetTable: 'tasks',
+    targetColumn: targetColumn,
+    ruleType: type,
+    params: params,
+  );
 }
 
 class _QualityFakeGateway extends FakeWorkspaceGateway {
@@ -124,6 +415,8 @@ class _QualityFakeGateway extends FakeWorkspaceGateway {
     );
   }
 
+  final List<String> executedSql = <String>[];
+
   @override
   Future<QueryResultPage> runQuery({
     required String sql,
@@ -131,12 +424,50 @@ class _QualityFakeGateway extends FakeWorkspaceGateway {
     required int pageSize,
   }) async {
     lastRunQuerySql = sql;
+    executedSql.add(sql);
     final normalized = sql.replaceAll(RegExp(r'\s+'), ' ');
+    if (normalized.contains('CREATE TEMP TABLE') ||
+        normalized.contains('DROP TABLE IF EXISTS')) {
+      return _page(
+        columns: const <String>[],
+        rows: const <Map<String, Object?>>[],
+      );
+    }
+    if (normalized.contains('SELECT * FROM "__dbench_quality_query_')) {
+      return _page(
+        columns: const <String>['id', 'title'],
+        rows: const <Map<String, Object?>>[
+          <String, Object?>{'id': 1, 'title': 'Ship'},
+        ],
+      );
+    }
     if (normalized.contains('COUNT(*) AS failure_count')) {
       return _page(
         columns: const <String>['failure_count'],
         rows: const <Map<String, Object?>>[
           <String, Object?>{'failure_count': 1},
+        ],
+      );
+    }
+    if (normalized.contains(
+      'SELECT rowid AS row_number, "title" FROM "tasks" LIMIT',
+    )) {
+      return _page(
+        columns: const <String>['row_number', 'title'],
+        rows: const <Map<String, Object?>>[
+          <String, Object?>{'row_number': 1, 'title': 'Jon'},
+          <String, Object?>{'row_number': 2, 'title': 'John'},
+        ],
+      );
+    }
+    if (normalized.contains(
+          'SELECT rowid AS row_number, "title" AS value_display FROM "tasks"',
+        ) &&
+        !normalized.contains('IS NULL')) {
+      return _page(
+        columns: const <String>['row_number', 'value_display'],
+        rows: const <Map<String, Object?>>[
+          <String, Object?>{'row_number': 3, 'value_display': 'BAD'},
         ],
       );
     }

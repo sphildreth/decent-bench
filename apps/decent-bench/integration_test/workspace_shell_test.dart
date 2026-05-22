@@ -5,6 +5,7 @@ import 'package:decent_bench/app/logging/app_logger.dart';
 import 'package:decent_bench/app/startup_launch_options.dart';
 import 'package:archive/archive.dart';
 import 'package:decent_bench/features/workspace/application/workspace_controller.dart';
+import 'package:decent_bench/features/workspace/domain/workspace_models.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,9 +16,9 @@ import '../test/support/fakes.dart';
 
 const _integrationTestTimeout = Timeout(Duration(minutes: 1));
 
-WorkspaceController _createController() {
+WorkspaceController _createController({FakeWorkspaceGateway? gateway}) {
   return WorkspaceController(
-    gateway: FakeWorkspaceGateway(),
+    gateway: gateway ?? FakeWorkspaceGateway(),
     configStore: InMemoryConfigStore(),
     workspaceStateStore: InMemoryWorkspaceStateStore(),
   );
@@ -117,7 +118,9 @@ void main() {
     testWidgets(
       'creates and switches between multiple editor tabs',
       (tester) async {
-        final controller = _createController();
+        final controller = _createController(
+          gateway: _QualityIntegrationGateway(),
+        );
 
         await controller.initialize();
         controller.createTab(sql: 'SELECT 1');
@@ -156,6 +159,42 @@ void main() {
         expect(find.text('Options / Preferences'), findsOneWidget);
         expect(find.textContaining('Theme'), findsWidgets);
         expect(find.textContaining('Editor'), findsWidgets);
+      },
+      timeout: _integrationTestTimeout,
+    );
+
+    testWidgets(
+      'shows quality dashboard results for an open workspace',
+      (tester) async {
+        final controller = _createController();
+        final tempDir = await Directory.systemTemp.createTemp(
+          'decent-bench-it-',
+        );
+        final dbPath = p.join(tempDir.path, 'workspace.ddb');
+
+        addTearDown(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+
+        await controller.initialize();
+        await controller.openDatabase(dbPath, createIfMissing: true);
+
+        await _pumpShell(tester, controller);
+
+        await tester.tap(find.text('Quality').first);
+        await tester.pumpAndSettle();
+
+        expect(find.text('No run'), findsOneWidget);
+        expect(find.textContaining('Run a quality profile'), findsOneWidget);
+
+        await controller.dataQuality.startRun();
+        await tester.pump();
+
+        expect(controller.dataQuality.currentRun?.status.name, 'completed');
+        expect(find.text('Tables'), findsWidgets);
+        expect(find.text('Rows'), findsWidgets);
       },
       timeout: _integrationTestTimeout,
     );
@@ -324,4 +363,99 @@ void main() {
       timeout: _integrationTestTimeout,
     );
   });
+}
+
+class _QualityIntegrationGateway extends FakeWorkspaceGateway {
+  final List<String> executedSql = <String>[];
+
+  @override
+  Future<QueryResultPage> runQuery({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+  }) async {
+    lastRunQuerySql = sql;
+    lastRunQueryParams = <Object?>[...params];
+    executedSql.add(sql);
+    final normalized = sql.replaceAll(RegExp(r'\s+'), ' ');
+    if (normalized.contains('COUNT(*) AS failure_count')) {
+      return _page(
+        columns: const <String>['failure_count'],
+        rows: const <Map<String, Object?>>[
+          <String, Object?>{'failure_count': 0},
+        ],
+      );
+    }
+    if (normalized.contains('COUNT(*) AS row_count')) {
+      return _page(
+        columns: const <String>['row_count'],
+        rows: const <Map<String, Object?>>[
+          <String, Object?>{'row_count': 2},
+        ],
+      );
+    }
+    if (normalized.contains('SUM(CASE')) {
+      final isTitle = normalized.contains('"title"');
+      return _page(
+        columns: const <String>[
+          'row_count',
+          'null_count',
+          'non_null_count',
+          'empty_string_count',
+          'distinct_count',
+          'min_value',
+          'max_value',
+          'mean_value',
+          'min_length',
+          'max_length',
+        ],
+        rows: <Map<String, Object?>>[
+          <String, Object?>{
+            'row_count': 2,
+            'null_count': 0,
+            'non_null_count': 2,
+            'empty_string_count': 0,
+            'distinct_count': isTitle ? 1 : 2,
+            'min_value': isTitle ? 'Ship phase 1' : 1,
+            'max_value': isTitle ? 'Ship phase 1' : 2,
+            'mean_value': isTitle ? null : 1.5,
+            'min_length': isTitle ? 12 : 1,
+            'max_length': isTitle ? 12 : 1,
+          },
+        ],
+      );
+    }
+    if (normalized.contains('GROUP BY')) {
+      return _page(
+        columns: const <String>['value_display', 'value_count'],
+        rows: const <Map<String, Object?>>[
+          <String, Object?>{'value_display': 'Ship phase 1', 'value_count': 2},
+        ],
+      );
+    }
+    if (normalized.contains('SELECT "id" AS value')) {
+      return _page(
+        columns: const <String>['value'],
+        rows: const <Map<String, Object?>>[
+          <String, Object?>{'value': 1},
+          <String, Object?>{'value': 2},
+        ],
+      );
+    }
+    return super.runQuery(sql: sql, params: params, pageSize: pageSize);
+  }
+
+  QueryResultPage _page({
+    required List<String> columns,
+    required List<Map<String, Object?>> rows,
+  }) {
+    return QueryResultPage(
+      cursorId: null,
+      columns: columns,
+      rows: rows,
+      done: true,
+      rowsAffected: null,
+      elapsed: const Duration(milliseconds: 1),
+    );
+  }
 }

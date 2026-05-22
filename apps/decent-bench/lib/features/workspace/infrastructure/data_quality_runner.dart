@@ -511,7 +511,8 @@ class DataQualityRunner {
       if (profile != null) {
         _validateOrThrow(profile.validate(), 'quality profile');
       }
-      final queryResultTable = request.targetKind == QualityTargetKind.queryResult
+      final queryResultTable =
+          request.targetKind == QualityTargetKind.queryResult
           ? await _materializeQueryResultTarget(runId: runId, request: request)
           : null;
       temporaryQueryTableName = queryResultTable?.name;
@@ -1214,7 +1215,8 @@ class DataQualityRunner {
     final tableName = '__dbench_quality_query_${runId.replaceAll('-', '_')}';
     final table = sqlPlanner.quoteIdentifier(tableName);
     await _gateway.runQuery(
-      sql: 'CREATE TEMP TABLE $table AS SELECT * FROM ($querySql) quality_source',
+      sql:
+          'CREATE TEMP TABLE $table AS SELECT * FROM ($querySql) quality_source',
       params: const <Object?>[],
       pageSize: 1,
     );
@@ -1489,7 +1491,11 @@ List<Map<String, Object?>> _findNearDuplicateViolationRows({
   final failing = <Map<String, Object?>>[];
   final scorer = _parseSimilarity(similarity);
   for (var leftIndex = 0; leftIndex < rows.length; leftIndex++) {
-    for (var rightIndex = leftIndex + 1; rightIndex < rows.length; rightIndex++) {
+    for (
+      var rightIndex = leftIndex + 1;
+      rightIndex < rows.length;
+      rightIndex++
+    ) {
       final left = columns
           .map((column) => '${rows[leftIndex][column] ?? ''}')
           .join(' ');

@@ -78,6 +78,8 @@ void main() {
       exportDelimiter: '|',
       preferredBranch: 'analysis',
       runRiskyQueriesOnBranch: true,
+      qualityProfilePath: 'quality/team-profile.toml',
+      qualityDefaultMode: 'sampled',
     );
 
     final parsed = WorkspaceProjectFile.fromToml(project.toToml());
@@ -96,5 +98,10 @@ void main() {
     expect(parsed.exportDelimiter, '|');
     expect(parsed.preferredBranch, 'analysis');
     expect(parsed.runRiskyQueriesOnBranch, isTrue);
+    expect(
+      parsed.resolveQualityProfilePath('/tmp/workspace/.dbench-project.toml'),
+      '/tmp/workspace/quality/team-profile.toml',
+    );
+    expect(parsed.qualityDefaultMode, 'sampled');
   });
 }

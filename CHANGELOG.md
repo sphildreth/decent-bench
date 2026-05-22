@@ -96,8 +96,10 @@ This file records notable project changes. It follows the
 - Added the Data Quality workspace suite with schema-derived default profiles,
   saved validation profiles, table/column profiling, validation rule execution,
   import reconciliation persistence, duplicate summaries, stale-run detection,
-  paged violation inspection, Markdown/HTML/JSON quality report export, and the
-  headless `dbench quality` command.
+  query-result profiling via temporary DecentDB tables, post-import quality
+  actions, isolate-backed non-SQL checks, paged violation inspection,
+  Markdown/HTML/JSON quality report export, and the headless `dbench quality`
+  command.
 
 ### Changed
 

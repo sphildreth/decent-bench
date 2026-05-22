@@ -30,7 +30,6 @@
   <a href="#-features">Features</a> •
   <a href="#-getting-started">Getting Started</a> •
   <a href="#-developer-onboarding">Developer Onboarding</a> •
-  <a href="#-roadmap">Roadmap</a> •
   <a href="#-contributing">Contributing</a>
 </p>
 
@@ -74,9 +73,10 @@
   EXPLAIN visualization, and result charts help users understand data and query
   behavior without leaving the workspace.
 - ✅ **Data Quality Suite:** A first-class Quality workspace profiles tables
-  and columns, runs schema-derived or custom validation profiles, records import
-  reconciliation, summarizes duplicate checks, pages violation details, tracks
-  stale runs, and exports privacy-aware Markdown, HTML, or JSON quality reports.
+  columns, and query results, runs schema-derived or custom validation profiles,
+  records import reconciliation, summarizes duplicate checks, pages violation
+  details, tracks stale runs, offers post-import quality actions, and exports
+  privacy-aware Markdown, HTML, or JSON quality reports.
 - 🗺️ **Read-Only ERD Viewer:** Inspect table relationships from loaded
   foreign-key metadata in the navigation pane, search tables/columns, jump from
   ERD nodes to limited table-preview queries, and export full diagrams or the
@@ -260,48 +260,6 @@ Typical files under that root include:
   Long-term import format roadmap and prioritization
 - 🧠 [`design/adr/README.md`](design/adr/README.md) — Architecture Decision Records
 - 🤖 [`AGENTS.md`](AGENTS.md) — Agent instructions and guardrails
-
-## 🗺️ Roadmap
-
-**Shipped through 2.0.0:**
-- ✅ Drag-and-drop open/import flows
-- ✅ Module-backed import catalog with built-in TOML manifests,
-  per-format documentation, fixture notes, status metadata, capability
-  declarations, and adapter bindings
-- ✅ Expansive import support: delimited text, JSON/NDJSON, XML, HTML tables,
-  SQLite, Excel, SQL dumps, and archive wrappers
-- ✅ ZIP, GZip, and BZip2 wrapper routing for imports
-- ✅ Headless CLI import mode
-- ✅ DecentDB v2.6.0 binding alignment, native asset staging, CLI staging, and pinned runtime resolution
-- ✅ In-app application log viewing
-- ✅ Clear blocking import-failure dialogs and richer import summaries
-- ✅ Schema browsing, metadata fingerprints, query contracts, and native type display
-- ✅ Multi-tab SQL editing with typed parameters, autocomplete, snippets, formatter, command palette, and query history
-- ✅ Paged results, query cancellation, safe-run prompts, and CSV/JSON/NDJSON export
-- ✅ Excel result export and PNG chart export
-- ✅ Column statistics, database statistics, EXPLAIN visualization, and result charts
-- ✅ Read-only ERD viewer with table-preview navigation and PNG/JPG image export
-- ✅ Import/export profiles plus row-local generic import transforms
-- ✅ Local app config plus persistent per-database workspaces
-
-**Near-Term Roadmap:**
-- 🔜 **Data quality, profiling, and validation suite:** Add profiling,
-  default checks, optional custom validation rules, duplicate/anomaly summaries,
-  source-vs-import reconciliation, and exportable quality reports.
-- 🔜 **Import format expansion:** Promote the highest-value planned modules into
-  implemented adapters, starting with fixed-width text, ODS, Parquet, DuckDB,
-  PostgreSQL plain dumps, and clipboard table import as dependency and UX
-  decisions are accepted.
-- 🔜 **Public branch/snapshot API wiring:** Complete branch-local execution,
-  edits, imports, restore, and merge once the DecentDB Dart package exposes the
-  native branch API publicly.
-- 🔜 **Parquet export:** Select and validate an Apache-compatible Dart or FFI
-  writer before shipping the format.
-- 🔜 **SDK generation workflow:** Promote the schema-first TypeScript prototype
-  into a user-facing CLI/UI workflow.
-- 🔜 **Repeatable import/export workflows:** Expand saved profiles into
-  reliable GUI and headless rerun flows once recipe persistence contracts are
-  finalized.
 
 ## 🤝 Contributing
 
