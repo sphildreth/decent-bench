@@ -83,8 +83,9 @@ This file records notable project changes. It follows the
 - Added menu-backed table and schema export workflows: selected tables route
   through the existing paged result export flow, and schema export writes SQL
   DDL from the loaded schema snapshot.
-- Added a real Help > Documentation dialog that points to bundled docs and
-  summarizes core desktop workflows.
+- Added a searchable in-app Help Center opened by Help > Documentation and
+  F1, backed by bundled user-focused Markdown articles, a Start Here default
+  entry topic, and local search.
 
 ### Changed
 

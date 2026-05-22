@@ -42,6 +42,7 @@ import 'excel_import_dialog.dart';
 import 'export_results_csv_dialog.dart';
 import 'export_results_excel_dialog.dart';
 import 'export_results_json_dialog.dart';
+import 'help/help_center_dialog.dart';
 import 'ms_sql_bak_import_dialog.dart';
 import 'preferences_dialog.dart';
 import 'shell/app_menu_bar.dart';
@@ -4993,20 +4994,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   Future<void> _showDocumentationDialog() {
-    return _showInfoDialog(
-      'Documentation',
-      'Decent Bench documentation is bundled with the project.\n\n'
-          'Primary documents:\n'
-          '- README.md: setup and desktop launch workflow\n'
-          '- design/PRD.md: product requirements\n'
-          '- design/SPEC.md: implementation scope\n'
-          '- design/adr/: accepted architecture decisions\n\n'
-          'Common workflows:\n'
-          '- File > Open opens an existing DecentDB database.\n'
-          '- Import opens the supported file import wizards.\n'
-          '- Export writes query results, selected tables, schema SQL, or ERD images.\n'
-          '- Tools > Branch & Snapshots manages native DecentDB branch workflows when supported by the binding.\n'
-          '- Tools > Options / Preferences edits TOML-backed app settings.',
+    return showDialog<void>(
+      context: context,
+      builder: (context) =>
+          const HelpCenterDialog(initialArticleId: 'getting-started'),
     );
   }
 

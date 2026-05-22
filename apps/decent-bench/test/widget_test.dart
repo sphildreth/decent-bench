@@ -181,12 +181,9 @@ void main() {
       expect(find.byType(CommandPalette), findsNothing);
 
       await _pressShortcut(tester, LogicalKeyboardKey.f1);
-      expect(find.text('Documentation'), findsOneWidget);
-      expect(
-        find.textContaining('Decent Bench documentation is bundled'),
-        findsOneWidget,
-      );
-      await tester.tap(find.widgetWithText(FilledButton, 'Close').last);
+      expect(find.text('Decent Bench Help Center'), findsOneWidget);
+      expect(find.text('Getting Started'), findsWidgets);
+      await tester.tap(find.byTooltip('Close').last);
       await tester.pumpAndSettle();
 
       await _pressShortcut(tester, LogicalKeyboardKey.keyQ, control: true);

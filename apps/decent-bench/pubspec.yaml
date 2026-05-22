@@ -20,6 +20,7 @@ dependencies:
   html: ^0.15.6
   xml: ^6.6.1
   image: ^4.3.0
+  flutter_markdown_plus: ^1.0.7
 
 dev_dependencies:
   flutter_test:
@@ -32,4 +33,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo-256x256.png
+    - assets/help/
     - assets/themes/

@@ -31,6 +31,11 @@ Apache 2.0 distribution. This file tracks attributions and license details.
   - Copyright: The Flutter Authors
   - Source: `https://pub.dev/packages/file_selector`
 
+- `flutter_markdown_plus` `1.0.7`
+  - License: BSD-3-Clause
+  - Copyright: package contributors
+  - Source: `https://pub.dev/packages/flutter_markdown_plus`
+
 - `html` `0.15.6`
   - License: MIT
   - Copyright: package contributors and Google LLC
@@ -65,5 +70,8 @@ Their licenses are compatible with Apache 2.0 distribution:
 
 - `archive` brings `crypto` (MIT, Dart project authors) and `convert`
   (BSD-style, Dart project authors)
+- `flutter_markdown_plus` brings `markdown` and `args` (BSD-style, Dart
+  project authors) and reuses `meta` and `path` from the Dart project
+  dependency set
 - `sqlite3` brings `collection` and `meta` (BSD-style, Dart project authors)
 - `excel` brings `equatable` (MIT), `ffi` (BSD-style), and `recase` (MIT)

@@ -244,7 +244,24 @@ required. It is defined as `AppConfig.currentConfigVersion` in
   [unreleased]: https://github.com/sphildreth/decent-bench/compare/vX.Y.Z...HEAD
   ```
 
-### 3.5 Create the release tag
+### 3.5 Update bundled Help Center documentation
+
+- [ ] Review the user-visible changes in this release and update bundled Help
+  Center articles under `apps/decent-bench/assets/help/` when workflows,
+  supported formats, menu behavior, preferences, troubleshooting guidance, or
+  feature availability changed.
+- [ ] Create new Help Center articles when a release adds a substantial new
+  workflow or capability that does not fit naturally in an existing article.
+- [ ] Update `apps/decent-bench/assets/help/help_manifest.json` when adding,
+  renaming, recategorizing, retagging, or removing Help Center articles.
+- [ ] Keep Help Center content user-focused. Include developer details only
+  when they help users understand behavior, limits, or troubleshooting.
+- [ ] Run help-related tests after documentation changes:
+  ```bash
+  flutter test test/features/workspace/domain/help test/features/workspace/infrastructure/help test/features/workspace/presentation/help
+  ```
+
+### 3.6 Create the release tag
 
 - [ ] Create an annotated Git tag with a leading `v`:
   ```bash
@@ -270,7 +287,7 @@ git tag -a vX.Y.Z-rc.1 -m "Decent Bench vX.Y.Z Release Candidate 1"
 
 The `release.yml` workflow treats any tag containing `-` as a pre-release.
 
-### 3.6 Post-release verification
+### 3.7 Post-release verification
 
 - [ ] Verify the GitHub Release was created with all three platform artifacts.
 - [ ] Download and run at least one platform artifact to confirm the bundled
@@ -278,8 +295,10 @@ The `release.yml` workflow treats any tag containing `-` as a pre-release.
 - [ ] Confirm the About dialog shows the new version.
 - [ ] Confirm `dbench --version` outputs the new version.
 - [ ] Confirm `CHANGELOG.md` on the main branch has the new version section.
+- [ ] Confirm Help > Documentation opens the Help Center and relevant updated
+  topics are searchable.
 
-### 3.7 Stale version detection
+### 3.8 Stale version detection
 
 After a bump, scan for stale old-version strings:
 
@@ -293,7 +312,7 @@ and `pubspec.yaml` version should match. If other files match, investigate
 whether they need updating or are historical references that should remain
 unchanged (test fixtures, comments, ADRs).
 
-### 3.8 When a version bump spans multiple packages
+### 3.9 When a version bump spans multiple packages
 
 The `decent_bench` pubspec is the only package in this repository that carries a
 release version. There are no additional Dart packages, bindings, or example
