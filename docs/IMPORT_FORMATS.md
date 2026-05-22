@@ -5,6 +5,9 @@ This document mirrors the code-level import registry in
 It summarizes what the current build can import now, what is only partially
 supported, and what is recognized but not implemented yet.
 
+Future import-format expansion is planned in
+`design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`.
+
 ## Fully implemented now
 
 - DecentDB `.ddb` open path

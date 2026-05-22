@@ -219,7 +219,7 @@ profiling, historical plan tracking, and query performance advisories.
 | 11 | `P1` | `BACKLOG` | Query performance diagnostics suite | EXPLAIN ANALYZE, runtime profiling, slow-query history, plan comparison, index/advisor hints, regression tracking | Fits the "Bench" identity and helps developers optimize local datasets | ADR before implementation |
 | 12 | `P1` | `TODO` | Provenance, lineage, and audit metadata | Source path/hash, import profile, transform plan, warnings, row counts, timestamps, query/table impact analysis, mutation/import audit trail | Helps users reproduce, trust, and debug data shaping workflows | ADR before implementation |
 | 13 | `P1` | `TODO` | Global database search | Search values across selected tables/views with paged results and quick navigation | Common discovery workflow for unfamiliar imported data | ADR only if index/persistence strategy is added |
-| 14 | `P1` | `BACKLOG` | Parquet, DuckDB, ODS, fixed-width, and other connector expansion | Prioritized import formats from the import support plan; Parquet import tracked separately from Parquet export | Expands the "front door into DecentDB" with high-value source families | ADR/dependency review before each major connector |
+| 14 | `P1` | `BACKLOG` | Parquet, DuckDB, ODS, fixed-width, and other connector expansion | Prioritized import formats from `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`; Parquet import tracked separately from Parquet export | Expands the "front door into DecentDB" with high-value source families | ADR/dependency review before each major connector |
 | 15 | `P2` | `BACKLOG` | Incremental sync and merge/upsert import modes | Append, replace, ignore, upsert/merge by key, conflict handling, recurring refresh support | Valuable for recurring imports but changes import semantics materially | ADR before implementation |
 | 16 | `P2` | `BACKLOG` | Advanced transform library | Regex extraction, split/merge columns, lookup joins, value mapping, date parsing presets, reusable transform presets | Useful once base import workflows and profiles are stable | ADR before implementation |
 | 17 | `P2` | `TODO` | Query contract tests and regression harness | Saved queries as assertions for columns, types, row counts, sample values, performance baselines; CLI test runner | Strong developer/CI value and builds on query contracts | ADR before implementation |
@@ -814,6 +814,8 @@ start by searching for a known customer id, email, SKU, or term.
 - Show which tables/columns are included.
 
 ### 14. Connector Expansion
+
+**Detailed plan:** `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`
 
 **Consolidates:**
 
