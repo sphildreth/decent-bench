@@ -1,11 +1,16 @@
 # Future Win Plan: Modular Import Architecture And Module Catalog
 
-**Status:** Planning document
+**Status:** Implemented
 **Last reviewed:** 2026-05-22
 **Source roadmap item:** `design/FUTURE_WINS.md` rank 1, `P0`
 **Target outcome:** Convert the current import registry and import-specific
 wizard routing into a module-based import architecture that can support dozens
 of present and future formats without hardcoded scattered format knowledge.
+
+**Implementation note:** The built-in module catalog now lives under
+`apps/decent-bench/import_modules/builtin/`. Runtime code uses a compiled
+Dart catalog projection for synchronous startup and validates that projection
+against TOML manifests in tests.
 
 ## Purpose
 

@@ -7,7 +7,7 @@ Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
 
 - `pubspec.yaml`, `lib/`, `test/`, and `integration_test/` are present
 - the workspace controller, multi-tab UI, desktop bridge, autocomplete,
-  snippets, formatter, drag-and-drop entry flow, shared import registry,
+  snippets, formatter, drag-and-drop entry flow, module-backed import registry,
   generic import wizard, SQLite import wizard, Excel import wizard, and SQL
   dump import wizard are in place
 - reopening the same DecentDB file restores persisted query tabs for that
@@ -30,8 +30,9 @@ Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
   `design/SPEC.md`: common MariaDB/MySQL-style `CREATE TABLE` plus
   `INSERT ... VALUES`, with unsupported statements surfaced as warnings rather
   than hard failures when possible
-- `design/IMPORT_FORMATS.md` summarizes the currently implemented, partial, and
-  recognized-but-unimplemented import formats
+- `apps/decent-bench/import_modules/builtin/` is the source of truth for
+  built-in import modules; `design/IMPORT_FORMATS.md` summarizes implemented,
+  partial, and recognized-but-unimplemented import formats
 - `CHANGELOG.md` records shipped releases starting with `1.0.0`
 - native-library resolution uses bundled app location first, then system
   paths (`/usr/local/lib/`, `~/.local/lib/`), with a packaging helper

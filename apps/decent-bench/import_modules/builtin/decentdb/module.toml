@@ -1,0 +1,66 @@
+schema_version = 1
+id = "decentdb"
+kind = "direct_open"
+status = "complete"
+priority = "P0"
+legacy_format_key = "decentDb"
+name = "DecentDB"
+family = "database"
+summary = "Open an existing DecentDB workspace directly."
+description = "Direct-open module for existing DecentDB files."
+
+[detection]
+extensions = [".ddb"]
+mime_types = []
+filename_patterns = []
+magic_numbers = []
+priority = 100
+
+[support]
+implementation = "direct_open"
+availability = "builtin"
+min_app_version = "0.0.0"
+requires_dependency_review = false
+requires_adr = false
+
+[capabilities]
+detect_by_extension = true
+detect_by_signature = false
+inspect_schema = false
+preview_rows = false
+import_full = true
+import_selected_tables = false
+supports_multiple_tables = false
+supports_archives = false
+supports_streaming_preview = false
+supports_streaming_import = false
+supports_cancellation = false
+supports_rejected_rows = false
+preserves_logical_types = false
+preserves_constraints = false
+preserves_indexes = false
+preserves_relationships = false
+can_export_recipe = false
+
+[adapter]
+id = "direct_open_decentdb"
+kind = "dart_builtin"
+protocol = "dart_import_adapter_v1"
+
+[[actions]]
+id = "open_database"
+label = "Open Database"
+required = true
+
+[documentation]
+help_topic = "importing-data"
+format_docs = "README.md"
+fixture_notes = "fixtures/README.md"
+
+[[fixtures]]
+id = "decentdb_smoke"
+path = "fixtures/README.md"
+purpose = "Module fixture contract and generation notes."
+expected_tables = []
+expected_warnings = []
+generated = true

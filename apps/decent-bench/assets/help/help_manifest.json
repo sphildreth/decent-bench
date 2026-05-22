@@ -21,8 +21,8 @@
       "id": "importing-data",
       "title": "Importing Data",
       "category": "Importing",
-      "summary": "Bring delimited text, JSON, XML, HTML tables, Excel, SQLite, SQL dumps, and archive-wrapped sources into a local DecentDB database.",
-      "tags": ["import", "csv", "json", "xml", "html", "excel", "sqlite", "sql dump", "archive", "wizard"],
+      "summary": "Bring module-backed delimited text, JSON, XML, HTML tables, Excel, SQLite, SQL dumps, and archive-wrapped sources into a local DecentDB database.",
+      "tags": ["import", "module", "csv", "json", "xml", "html", "excel", "sqlite", "sql dump", "archive", "wizard"],
       "asset": "assets/help/importing-data.md"
     },
     {

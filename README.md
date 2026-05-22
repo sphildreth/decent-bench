@@ -98,11 +98,15 @@
 | `.bz2`, `.tar.bz2`, `.tbz2` | **Unwrap & Import** | Supports single-file bzip2 unwrap and tar+bzip2 archive inspection/extraction. |
 | `.bak` | *Recognized / Not Implemented* | Tracked for future container-assisted SQL Server backup import. |
 
+Supported, partial, and recognized-but-unavailable import entries are backed by
+built-in module manifests under `apps/decent-bench/import_modules/builtin/`.
+
 ### Recognized But Not Yet Implemented
 
 The current build recognizes, but does not yet import, several formats and
 wrappers including fixed-width text, `.ods`, `.yaml`, `.yml`, `.toml`, `.md`,
-`.duckdb`, `.mdb`, `.accdb`, `.dbf`, `.bak`, `.parquet`, `.pdf`, and `.xz`.
+`.duckdb`, `.mdb`, `.accdb`, `.dbf`, `.bak`, `.parquet`, `.pdf`, `.xz`, and
+`.tar.xz`.
 
 ## 🚀 Getting Started (End Users)
 

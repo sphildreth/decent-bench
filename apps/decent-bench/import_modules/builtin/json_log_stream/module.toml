@@ -1,0 +1,71 @@
+schema_version = 1
+id = "json_log_stream"
+kind = "source"
+status = "planned"
+priority = "P1"
+legacy_format_key = "jsonLogStream"
+name = "JSON Log Stream"
+family = "logs_events"
+summary = "Operational log ingestion built on NDJSON support."
+description = "Planned log-focused workflow over JSON line streams."
+
+[detection]
+extensions = []
+mime_types = []
+filename_patterns = []
+magic_numbers = []
+priority = 60
+
+[support]
+implementation = "recognized_unsupported"
+availability = "builtin"
+min_app_version = "0.0.0"
+requires_dependency_review = false
+requires_adr = false
+
+[capabilities]
+detect_by_extension = true
+detect_by_signature = false
+inspect_schema = false
+preview_rows = false
+import_full = false
+import_selected_tables = false
+supports_multiple_tables = false
+supports_archives = false
+supports_streaming_preview = false
+supports_streaming_import = false
+supports_cancellation = false
+supports_rejected_rows = false
+preserves_logical_types = false
+preserves_constraints = false
+preserves_indexes = false
+preserves_relationships = false
+can_export_recipe = false
+
+[adapter]
+id = "none"
+kind = "none"
+protocol = "dart_import_adapter_v1"
+
+[[actions]]
+id = "recognize_source"
+label = "Recognize Source"
+required = true
+
+[[limitations]]
+id = "json_log_stream.limitation_1"
+severity = "info"
+message = "Timestamp extraction and log templates are not implemented yet."
+
+[documentation]
+help_topic = "importing-data"
+format_docs = "README.md"
+fixture_notes = "fixtures/README.md"
+
+[[fixtures]]
+id = "json_log_stream_smoke"
+path = "fixtures/README.md"
+purpose = "Module fixture contract and generation notes."
+expected_tables = []
+expected_warnings = []
+generated = true

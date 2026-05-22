@@ -17,6 +17,7 @@ import '../../../app/startup_launch_options.dart';
 import '../../../app/theme_system/theme_manager.dart';
 import '../../import/application/import_manager.dart';
 import '../../import/domain/import_models.dart';
+import '../../import_modules/domain/import_module_manifest.dart';
 import '../../import/presentation/generic_import_dialog.dart';
 import '../../import/presentation/import_archive_chooser_dialog.dart';
 import '../application/menu_command_registry.dart';
@@ -37,6 +38,7 @@ import '../infrastructure/app_lifecycle_service.dart';
 import '../infrastructure/decentdb_migration_service.dart';
 import '../infrastructure/decentdb_web_console_service.dart';
 import '../infrastructure/shortcut_config_service.dart';
+import 'about_dialog.dart';
 import 'decentdb_migration_dialog.dart';
 import 'excel_import_dialog.dart';
 import 'export_results_csv_dialog.dart';
@@ -61,6 +63,8 @@ import 'sql_dump_import_dialog.dart';
 import 'sqlite_import_dialog.dart';
 
 enum _RiskySqlDecision { cancel, currentDatabase, newBranch }
+
+enum _AboutDialogAction { viewLicenses }
 
 class WorkspaceScreen extends StatefulWidget {
   const WorkspaceScreen({
@@ -3338,32 +3342,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   Future<void> _showImportChooser() async {
     final file = await openFile(
-      acceptedTypeGroups: const <XTypeGroup>[
-        XTypeGroup(
-          label: 'Import sources',
-          extensions: <String>[
-            'csv',
-            'tsv',
-            'txt',
-            'dat',
-            'log',
-            'json',
-            'jsonl',
-            'ndjson',
-            'xml',
-            'html',
-            'htm',
-            'xlsx',
-            'xls',
-            'db',
-            'sqlite',
-            'sqlite3',
-            'sql',
-            'zip',
-            'gz',
-          ],
-        ),
-      ],
+      acceptedTypeGroups: <XTypeGroup>[_importSourceTypeGroup()],
     );
     if (file == null) {
       return;
@@ -3423,9 +3402,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         await _handleArchiveImport(detection);
         break;
       case ImportImplementationKind.recognizedUnsupported:
-        final note = detection.format.note == null
-            ? ''
-            : '\n\n${detection.format.note}';
+        final module = _importManager.moduleForDetection(detection);
+        final note = _moduleLimitationsText(module.limitations);
         await _showPlaceholderNotice(
           '${detection.format.label} not available yet',
           'Decent Bench recognizes this format as `${detection.format.supportState.name}`, but it is not implemented in this build yet.$note',
@@ -3434,10 +3412,51 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       case ImportImplementationKind.unknown:
         await _showPlaceholderNotice(
           'Unknown file type',
-          'Supported import sources currently include `.csv`, `.tsv`, `.txt`, `.json`, `.jsonl`, `.ndjson`, `.xml`, `.html`, `.db`/`.sqlite`/`.sqlite3`, `.xls`/`.xlsx`, `.sql`, `.zip`, `.gz`, and `.bz2` (including `.tar.bz2` and `.tar.gz` archives).',
+          'Supported import sources currently include ${_supportedImportExtensionSummary()}.',
         );
         break;
     }
+  }
+
+  XTypeGroup _importSourceTypeGroup() {
+    return XTypeGroup(
+      label: 'Import sources',
+      extensions: _importManager.registry
+          .implementedExtensions()
+          .map(_fileSelectorExtension)
+          .where((extension) => extension.isNotEmpty)
+          .toList(growable: false),
+    );
+  }
+
+  String _supportedImportExtensionSummary() {
+    final extensions = _importManager.registry.implementedExtensions();
+    final display = <String>[
+      for (final extension in extensions)
+        if (!extension.contains('.tar.')) '`$extension`',
+    ];
+    final compound = <String>[
+      for (final extension in extensions)
+        if (extension.contains('.tar.')) '`$extension`',
+    ];
+    if (compound.isNotEmpty) {
+      display.add('including ${compound.join(' and ')} archives');
+    }
+    if (display.length <= 1) {
+      return display.join();
+    }
+    return '${display.take(display.length - 1).join(', ')}, and ${display.last}';
+  }
+
+  String _moduleLimitationsText(List<ImportModuleLimitation> limitations) {
+    if (limitations.isEmpty) {
+      return '';
+    }
+    return '\n\n${limitations.map((limitation) => limitation.message).join('\n')}';
+  }
+
+  String _fileSelectorExtension(String extension) {
+    return extension.startsWith('.') ? extension.substring(1) : extension;
   }
 
   Future<void> _showCsvExportDialog() async {
@@ -5061,16 +5080,40 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     }
   }
 
-  Future<void> _showAboutDialog() {
-    showAboutDialog(
+  Future<void> _showAboutDialog() async {
+    final action = await showDialog<_AboutDialogAction>(
+      context: context,
+      builder: (dialogContext) {
+        return DecentBenchAboutDialog(
+          onViewLicenses: () {
+            Navigator.of(dialogContext).pop(_AboutDialogAction.viewLicenses);
+          },
+          onClose: () {
+            Navigator.of(dialogContext).pop();
+          },
+        );
+      },
+    );
+
+    if (!mounted || action != _AboutDialogAction.viewLicenses) {
+      return;
+    }
+
+    showLicensePage(
       context: context,
       applicationName: kDecentBenchDisplayName,
       applicationVersion: kDecentBenchVersion,
-      children: const <Widget>[
-        Text('Classic desktop SQL workbench for DecentDB.'),
-      ],
+      applicationIcon: Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Image.asset(
+          kDecentBenchLogoAsset,
+          width: 88,
+          height: 88,
+          fit: BoxFit.contain,
+          semanticLabel: 'Decent Bench logo',
+        ),
+      ),
     );
-    return Future<void>.value();
   }
 
   Future<void> _showInfoDialog(String title, String message) {

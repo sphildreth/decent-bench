@@ -1,6 +1,6 @@
 # Importing Data
 
-Imports bring data from another file into a DecentDB database. The importer guides you through the source file, destination table names, column names, and type choices.
+Imports bring data from another file into a DecentDB database. The importer guides you through the source file, destination table names, column names, and type choices. Import detection is backed by built-in import modules, so each recognized source has declared status, extensions, limitations, and adapter routing.
 
 ## Supported sources
 
@@ -10,7 +10,7 @@ Imports bring data from another file into a DecentDB database. The importer guid
 - **Excel**: `.xlsx`; `.xls` is supported through the legacy conversion path and may show warnings
 - **SQLite**: `.db`, `.sqlite`, and `.sqlite3`
 - **SQL dumps**: `.sql` files with common table and insert statements
-- **Archive wrappers**: `.zip`, `.gz`, `.tgz`, `.bz2`, and `.tbz2` when they contain a supported inner file
+- **Archive wrappers**: `.zip`, `.gz`, `.tgz`, `.tar.gz`, `.bz2`, `.tbz2`, and `.tar.bz2` when they contain a supported inner file
 
 You can start an import from the **Import** menu, toolbar import buttons, or drag and drop.
 
@@ -42,7 +42,7 @@ Use SQL dump import for common MariaDB or MySQL-style `.sql` files. Decent Bench
 
 ## Archive wrappers
 
-Archive imports are wrappers, not data formats. Decent Bench inspects supported archives and routes a selected inner file through the normal import flow. ZIP supports inner-file discovery. GZip and BZip2 support single-file unwrap, plus tar+gzip and tar+bzip2 archive inspection when available.
+Archive imports are wrappers, not data formats. Decent Bench inspects supported archives and routes a selected inner file through the normal import flow. ZIP Wrapper supports inner-file discovery. GZip Wrapper and BZip2 / Tar+BZip2 Wrapper support single-file unwrap, plus tar+gzip and tar+bzip2 archive inspection when available.
 
 ## Column names and types
 
@@ -61,6 +61,6 @@ Large imports run as background work. You should still be able to see progress a
 
 ## Not yet available
 
-Live database connection import is intentionally deferred. Recognized but unavailable formats include ODS, YAML, TOML, Markdown tables, DuckDB, Access, DBF, SQL Server backups, Parquet, XZ wrappers, clipboard tables, and PDF table extraction.
+Live database connection import is intentionally deferred. Recognized but unavailable modules include Fixed-width Text, OpenDocument Spreadsheet, YAML, TOML, Markdown Tables, DuckDB, Microsoft Access, DBF / FoxPro, MS SQL Server Backup, PostgreSQL Plain SQL Dump, Parquet, JSON Log Stream, Delimited Log File, XZ Wrapper, Clipboard Table, and PDF Tables.
 
 Use file-based exports such as SQLite, Excel, CSV, JSON, XML, HTML tables, or SQL dump as the practical bridge until connection management is implemented.

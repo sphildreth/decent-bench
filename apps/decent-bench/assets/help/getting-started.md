@@ -30,7 +30,7 @@ Supported import sources include:
 - Excel workbooks: `.xlsx`, with `.xls` available through the legacy warning path
 - SQLite databases: `.db`, `.sqlite`, and `.sqlite3`
 - SQL dumps: `.sql`
-- Archive wrappers: `.zip`, `.gz`, `.tgz`, `.bz2`, and `.tbz2` when they contain a supported inner file
+- Archive wrappers: `.zip`, `.gz`, `.tgz`, `.tar.gz`, `.bz2`, `.tbz2`, and `.tar.bz2` when they contain a supported inner file
 
 If the file type is not recognized, Decent Bench shows a clear message instead of guessing.
 

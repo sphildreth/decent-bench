@@ -187,12 +187,14 @@ class ImportDetectionResult {
     required this.sourcePath,
     required this.format,
     required this.warnings,
+    this.moduleId,
     this.archiveCandidates = const <ImportArchiveCandidate>[],
   });
 
   final String sourcePath;
   final ImportFormatDefinition format;
   final List<String> warnings;
+  final String? moduleId;
   final List<ImportArchiveCandidate> archiveCandidates;
 
   bool get isWrapper => format.isWrapper;

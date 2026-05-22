@@ -9,6 +9,7 @@ import '../features/import/application/import_manager.dart';
 import '../features/import/domain/import_models.dart';
 import '../features/import/infrastructure/import_execution_service.dart';
 import '../features/import/infrastructure/import_preview_service.dart';
+import '../features/import_modules/infrastructure/import_module_option_defaults.dart';
 import '../features/workspace/domain/excel_import_models.dart';
 import '../features/workspace/domain/import_export_profiles.dart';
 import '../features/workspace/domain/sql_dump_import_models.dart';
@@ -307,7 +308,7 @@ Future<HeadlessImportCliReport> _runGenericHeadlessImport({
   required HeadlessImportLineWriter writeStderr,
   required NativeLibraryResolver libraryResolver,
 }) async {
-  final options = defaultGenericImportOptionsFor(source.format.key);
+  final options = defaultGenericImportOptionsForModule(source.format.key);
   final inspection = await previewService.inspect(
     sourcePath: source.resolvedSourcePath,
     format: source.format,

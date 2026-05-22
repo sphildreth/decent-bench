@@ -5,9 +5,9 @@
 Decent Bench should be positioned as a **practical data intake and conversion workbench** for **DecentDB**.
 
 The long-running implementation plan for adding import formats over time is
-`design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`. The target architecture for
-scaling that work is the module catalog described in
-`design/WIN_IMPORT_MODULAR_PLAN.md`. This document remains the broader product
+`design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`. The built-in module catalog
+created by `design/WIN_IMPORT_MODULAR_PLAN.md` is the implementation source of
+truth for current format metadata. This document remains the broader product
 landscape and status table for import source families.
 
 The product goal is not merely to be a SQL editor. Its larger value is:
@@ -426,10 +426,9 @@ To make this actionable for development, keep user-facing support state in:
 
 - `design/IMPORT_FORMATS.md`
 
-and keep the broader product planning view in this document. After
-`design/WIN_IMPORT_MODULAR_PLAN.md` is implemented, both documents should be
-validated against import module manifests instead of being maintained as
-independent lists.
+and keep the broader product planning view in this document. Both documents
+should be validated against import module manifests instead of being maintained
+as independent lists.
 
 Future module manifests should continue to track:
 
@@ -442,14 +441,14 @@ Future module manifests should continue to track:
 - **Dependency/license review required**
 - **Profile-only versus parser-required implementation**
 
-The engineering execution view should eventually be generated from module
-metadata with a shape similar to:
+The engineering execution view should be generated from module metadata with a
+shape similar to:
 
 | Module | Family | Priority | Complexity | Status | Adapter | Fixtures | ADR |
 |---|---|---|---|---|---|---|---|
 
 The table in this document is intentionally product-planning oriented. The
-module catalog should become the implementation source of truth.
+module catalog is the implementation source of truth.
 
 ---
 

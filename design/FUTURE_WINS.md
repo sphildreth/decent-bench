@@ -192,10 +192,10 @@ dbench generate-sdk --project <workspace.dbench-project.toml> \
 
 ### Connector Expansion
 
-The import registry remains the source of truth for supported and recognized
-formats today. The planned modular import catalog should become that source of
-truth before large new connector waves. Future connector work should prioritize
-broad value, streaming behavior, and Apache-compatible distribution.
+The built-in module catalog is now the source of truth for supported and
+recognized formats. Future connector work should add or promote modules first,
+then implement reviewed adapters with broad value, streaming behavior, and
+Apache-compatible distribution.
 
 ### Query-Plan And Performance Diagnostics
 
@@ -207,7 +207,7 @@ profiling, historical plan tracking, and query performance advisories.
 
 | Rank | Priority | Status | Enhancement | Consolidated Scope | Why This Rank | ADR Gate |
 |---:|---|---|---|---|---|---|
-| 1 | `P0` | `TODO` | Modular import architecture and module catalog | Convert current import formats into declarative built-in modules with TOML manifests, docs, fixtures, capability declarations, adapter bindings, and docs validation | Highest leverage prerequisite for broad, high-fidelity import growth; prevents dozens of future formats from becoming hardcoded one-offs | Existing ADRs for plan; update ADRs if implementation changes the contract |
+| 1 | `P0` | `DONE` | Modular import architecture and module catalog | Converted current import formats into declarative built-in modules with TOML manifests, docs, fixtures, capability declarations, adapter bindings, typed-batch placeholders, and docs validation | Highest leverage prerequisite for broad, high-fidelity import growth; prevents dozens of future formats from becoming hardcoded one-offs | ADR-0049 through ADR-0052 |
 | 2 | `P0` | `TODO` | Data quality, profiling, and validation suite | Profiling dashboard, validation rules, anomaly/outlier detection, duplicate summaries, reconciliation reports, exportable quality reports | Highest trust-builder after import; helps users decide whether imported data can be queried or exported safely | Existing ADRs for plan; implementation follows accepted ADRs |
 | 3 | `P0` | `TODO` | Import/export recipe rerun and profile reuse | Re-run last import/export, saved recipe/profile library, shareable TOML recipes, GUI and CLI reruns | Directly supports repeatable local workflows and completes existing deferred menu commands | Existing ADR; update ADR before implementation if recipe contract changes |
 | 4 | `P0` | `BACKLOG` | Clipboard table import | Paste TSV/CSV/HTML table/JSON table data into import wizard with preview and type inference | High-frequency convenience feature for spreadsheet, browser, and portal workflows | ADR before implementation if clipboard formats or persistent profile contract changes |
@@ -253,6 +253,11 @@ happened, query safely, and rerun or export the result.
 ### 1. Modular Import Architecture And Module Catalog
 
 **Detailed plan:** `design/WIN_IMPORT_MODULAR_PLAN.md`
+
+**Current status:** Implemented. Built-in module manifests now live under
+`apps/decent-bench/import_modules/builtin/`, the runtime compatibility registry
+is module-backed, detection uses module extension metadata including compound
+archive extensions, and docs/tests validate module catalog coverage.
 
 **Consolidates suggestions named:**
 
@@ -1239,13 +1244,14 @@ extension economy is not a core backlog item.
 
 ## Recommended Near-Term Backlog Additions
 
-If only five new backlog items are promoted from this consolidation, use:
+With modular import architecture implemented, the next five backlog items to
+promote from this consolidation are:
 
-1. Modular import architecture and module catalog.
-2. Data quality, profiling, and validation suite.
-3. Import/export recipe rerun and profile reuse.
-4. Clipboard table import.
-5. Safe import preview and branch-backed sandbox.
+1. Data quality, profiling, and validation suite.
+2. Import/export recipe rerun and profile reuse.
+3. Clipboard table import.
+4. Safe import preview and branch-backed sandbox.
+5. Multi-file batch import.
 
 These are ranked highest because they deepen Decent Bench's core promise rather
 than expanding into a different product category.

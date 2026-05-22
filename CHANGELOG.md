@@ -86,6 +86,10 @@ This file records notable project changes. It follows the
 - Added a searchable in-app Help Center opened by Help > Documentation and
   F1, backed by bundled user-focused Markdown articles, a Start Here default
   entry topic, and local search.
+- Added a module-backed import catalog with built-in TOML manifests, per-format
+  documentation and fixture notes, adapter declarations, typed-batch placeholder
+  models, module-driven import detection metadata, and docs/catalog validation
+  tests.
 
 ### Changed
 
@@ -93,6 +97,8 @@ This file records notable project changes. It follows the
   v2.6.0.
 - Updated the desktop runtime/app icons to use the Decent Bench logo instead
   of the default Flutter logo.
+- Updated the About dialog to use the Decent Bench logo, branded layout, and
+  modern license/close actions.
 - Updated DecentDB v2.6 operational metrics display to keep a single
   compatibility note only when older runtimes still reject `sys.*` inspection
   views.

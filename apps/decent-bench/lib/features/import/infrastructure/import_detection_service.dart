@@ -28,6 +28,7 @@ class ImportDetectionService {
         sourcePath: sourcePath,
         format: format,
         warnings: warnings,
+        moduleId: _moduleIdFor(format),
         archiveCandidates: candidates,
       );
     }
@@ -55,6 +56,7 @@ class ImportDetectionService {
         archiveCandidates: candidate == null
             ? const <ImportArchiveCandidate>[]
             : <ImportArchiveCandidate>[candidate],
+        moduleId: _moduleIdFor(format),
       );
     }
     if (format.key == ImportFormatKey.bzip2Archive) {
@@ -82,6 +84,7 @@ class ImportDetectionService {
         archiveCandidates: candidate == null
             ? const <ImportArchiveCandidate>[]
             : <ImportArchiveCandidate>[candidate],
+        moduleId: _moduleIdFor(format),
       );
     }
     if (format.key == ImportFormatKey.sqlite && file.existsSync()) {
@@ -103,7 +106,12 @@ class ImportDetectionService {
       sourcePath: sourcePath,
       format: format,
       warnings: warnings,
+      moduleId: _moduleIdFor(format),
     );
+  }
+
+  String _moduleIdFor(ImportFormatDefinition format) {
+    return _registry.moduleForKey(format.key).id;
   }
 
   bool _looksLikeTar(String innerName) {
@@ -136,6 +144,7 @@ class ImportDetectionService {
           sourcePath: sourcePath,
           format: format,
           warnings: warnings,
+          moduleId: _moduleIdFor(format),
           archiveCandidates: candidates,
         );
       }
@@ -183,6 +192,7 @@ class ImportDetectionService {
       sourcePath: sourcePath,
       format: format,
       warnings: warnings,
+      moduleId: _moduleIdFor(format),
       archiveCandidates: candidates,
     );
   }
@@ -371,8 +381,7 @@ class ImportDetectionService {
       );
     }
 
-    if (extension.isNotEmpty &&
-        !baseName.toLowerCase().endsWith(extension)) {
+    if (extension.isNotEmpty && !baseName.toLowerCase().endsWith(extension)) {
       final renamed = '$extractedPath$extension';
       extractedFile.renameSync(renamed);
       return renamed;

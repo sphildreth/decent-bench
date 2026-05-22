@@ -4,8 +4,8 @@
 **Last reviewed:** 2026-05-22  
 **Source roadmap item:** `design/FUTURE_WINS.md` rank 15, `P1`
 **Current implementation index:** `design/IMPORT_FORMATS.md`
-**Current registry source of truth:** `apps/decent-bench/lib/features/import/infrastructure/import_format_registry.dart`
-**Target registry source of truth:** `design/WIN_IMPORT_MODULAR_PLAN.md`
+**Current module source of truth:** `apps/decent-bench/import_modules/builtin/`
+**Compatibility registry:** `apps/decent-bench/lib/features/import/infrastructure/import_format_registry.dart`
 
 ## Purpose
 
@@ -66,10 +66,9 @@ Use these documents for different purposes:
 - This document: implementation and governance plan for continually adding
   import formats.
 
-When a format ships, update all applicable docs and module manifests.
-After the modular import plan is complete, the module catalog should become the
-source of truth and these documents should be validated against it instead of
-hand-synchronized.
+When a format ships, update all applicable docs and module manifests. The
+module catalog is now the source of truth for built-in format metadata, and
+these documents should be validated against it instead of hand-synchronized.
 
 ## Current Supported Baseline
 
@@ -920,7 +919,8 @@ Wrapper formats additionally require:
 
 When any import format changes status, update:
 
-- [ ] `ImportFormatRegistry`
+- [ ] built-in module manifest under `apps/decent-bench/import_modules/builtin/`
+- [ ] compatibility projection through `ImportFormatRegistry`
 - [ ] `design/IMPORT_FORMATS.md`
 - [ ] `design/IMPORT_SUPPORT_PLAN.md`
 - [ ] this plan, if priority/status changed
