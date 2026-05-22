@@ -898,6 +898,22 @@ class _GenericImportDialogState extends State<GenericImportDialog> {
               },
         child: Text(_summary == null ? 'Close' : 'Done'),
       ),
+      if (_summary != null && !_summary!.rolledBack)
+        TextButton.icon(
+          onPressed: isBusy
+              ? null
+              : () {
+                  Navigator.of(context).pop(
+                    GenericImportDialogResult(
+                      targetPath: _summary!.targetPath,
+                      summary: _summary!,
+                      runQualityAfterImport: true,
+                    ),
+                  );
+                },
+          icon: const Icon(Icons.fact_check_outlined),
+          label: const Text('Run Quality Profile'),
+        ),
       if (_step != GenericImportWizardStep.source)
         TextButton(
           onPressed: isBusy

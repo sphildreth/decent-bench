@@ -721,6 +721,18 @@ class _ExcelImportDialogState extends State<ExcelImportDialog> {
             ),
           );
           actions.add(
+            TextButton.icon(
+              onPressed: () async {
+                await widget.controller.runQualityForExcelImportedDatabase();
+                if (context.mounted) {
+                  Navigator.of(context).pop();
+                }
+              },
+              icon: const Icon(Icons.fact_check_outlined),
+              label: const Text('Run Quality Profile'),
+            ),
+          );
+          actions.add(
             FilledButton(
               onPressed: () async {
                 await widget.controller.runQueryForExcelImportedTable();

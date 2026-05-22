@@ -73,6 +73,10 @@
 - 📊 **Diagnostics & Visualization:** Column statistics, database statistics,
   EXPLAIN visualization, and result charts help users understand data and query
   behavior without leaving the workspace.
+- ✅ **Data Quality Suite:** A first-class Quality workspace profiles tables
+  and columns, runs schema-derived or custom validation profiles, records import
+  reconciliation, summarizes duplicate checks, pages violation details, tracks
+  stale runs, and exports privacy-aware Markdown, HTML, or JSON quality reports.
 - 🗺️ **Read-Only ERD Viewer:** Inspect table relationships from loaded
   foreign-key metadata in the navigation pane, search tables/columns, jump from
   ERD nodes to limited table-preview queries, and export full diagrams or the
@@ -147,6 +151,7 @@ flows:
 dbench /path/to/workspace.ddb
 dbench --import /path/to/source.xlsx
 dbench --in /path/to/source.sqlite --out /tmp/import.ddb
+dbench quality --database /path/to/workspace.ddb --profile /path/to/profile.toml --out /tmp/quality-report.json --format json
 dbench --version
 ```
 
@@ -156,6 +161,9 @@ dbench --version
 - `--silent` suppresses headless progress output.
 - `--plan` loads and validates a versioned import/export profile document for
   repeatable headless workflows.
+- `quality` runs a saved quality profile without the UI and writes Markdown,
+  HTML, or JSON reports. Use `dbench quality --help` for target-table, sampled
+  mode, and report privacy flags.
 - `--help` and `--version` print CLI help and the app version.
 
 ## 💻 Developer Onboarding

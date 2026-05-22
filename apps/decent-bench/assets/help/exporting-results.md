@@ -20,11 +20,19 @@ Use schema export when you need a readable description of database structure. Sc
 
 Use **Tools > Export ERD Image** when you need a visual relationship diagram. This is useful in documentation, data review, or planning conversations.
 
+## Export a quality report
+
+Use **Tools > Export Quality Report** after running a quality profile. Quality
+reports are available as Markdown, HTML, or JSON. Failing row sample values are
+redacted by default; enable sample values only when the report destination is
+allowed to contain source data.
+
 ## Choose the right format
 
 - **CSV** is simple and works almost everywhere.
 - **JSON** is useful for structured records and downstream tooling.
 - **Excel** is useful when the recipient expects a spreadsheet.
+- **Quality reports** are best for review and trust checks after imports.
 - **Parquet** is best for analytics pipelines and large typed datasets, but it is not enabled yet.
 
 ## Before exporting

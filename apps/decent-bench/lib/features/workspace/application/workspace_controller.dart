@@ -7,7 +7,9 @@ import 'package:path/path.dart' as p;
 
 import '../../../app/logging/app_logger.dart';
 import '../../../app/logging/import_log_details.dart';
+import 'data_quality_controller.dart';
 import '../domain/app_config.dart';
+import '../domain/data_quality_models.dart';
 import '../domain/excel_import_models.dart';
 import '../domain/saved_query_models.dart';
 import '../domain/sql_dump_import_models.dart';
@@ -17,6 +19,8 @@ import '../domain/workspace_models.dart';
 import '../domain/workspace_shell_preferences.dart';
 import '../domain/workspace_state.dart';
 import '../infrastructure/app_config_store.dart';
+import '../infrastructure/data_quality_repository.dart';
+import '../infrastructure/data_quality_runner.dart';
 import '../infrastructure/decentdb_bridge.dart';
 import '../infrastructure/layout_persistence_service.dart';
 import '../infrastructure/saved_query_library_store.dart';
@@ -44,6 +48,14 @@ class WorkspaceController extends ChangeNotifier {
            savedQueryLibraryStore ?? FileSavedQueryLibraryStore(),
        _layoutPersistenceService =
            layoutPersistenceService ?? const LayoutPersistenceService() {
+    final dataQualityRepository = DataQualityRepository();
+    dataQuality = DataQualityController(
+      runner: DataQualityRunner(
+        gateway: _gateway,
+        repository: dataQualityRepository,
+      ),
+      repository: dataQualityRepository,
+    );
     _resetTabs(notify: false, resetCounters: true);
   }
 
@@ -66,6 +78,7 @@ class WorkspaceController extends ChangeNotifier {
   ExcelImportSession? excelImportSession;
   SqlDumpImportSession? sqlDumpImportSession;
   SqliteImportSession? sqliteImportSession;
+  late final DataQualityController dataQuality;
 
   String? databasePath;
   String? engineVersion;
@@ -427,6 +440,7 @@ class WorkspaceController extends ChangeNotifier {
       engineVersion = null;
       schema = SchemaSnapshot.empty();
       toolingMetadata = null;
+      await dataQuality.attachWorkspace(databasePath: null, schema: schema);
       branchState = WorkspaceBranchState.unavailable(
         nativeBranchApiUnavailableReason,
       );
@@ -485,10 +499,24 @@ class WorkspaceController extends ChangeNotifier {
         }
       }
     }
+    final qualityProfilePath = project.resolveQualityProfilePath(normalized);
+    String qualityWarning = '';
+    if (qualityProfilePath != null) {
+      try {
+        if (await File(qualityProfilePath).exists()) {
+          await dataQuality.importProfile(qualityProfilePath);
+        } else {
+          qualityWarning = ' Quality profile was not found.';
+        }
+      } catch (error) {
+        qualityWarning = ' Quality profile could not be loaded: $error';
+      }
+    }
     workspaceError = null;
     workspaceMessage =
         'Opened project ${p.basename(normalized)}'
-        '${project.runRiskyQueriesOnBranch && !canUseNativeBranchWorkflow ? ' (branch-safe risky queries unavailable).' : '.'}';
+        '${project.runRiskyQueriesOnBranch && !canUseNativeBranchWorkflow ? ' (branch-safe risky queries unavailable).' : '.'}'
+        '$qualityWarning';
     _safeNotify();
   }
 
@@ -612,6 +640,7 @@ class WorkspaceController extends ChangeNotifier {
     );
     lastBranchDiff = null;
     savedQueryLibrary = SavedQueryLibrary.empty;
+    await dataQuality.attachWorkspace(databasePath: null, schema: schema);
     workspaceMessage = 'Workspace closed.';
     workspaceError = null;
     _resetTabs(notify: false, resetCounters: true);
@@ -628,16 +657,27 @@ class WorkspaceController extends ChangeNotifier {
     }
     final normalized = p.normalize(projectPath);
     final queryLibraryPath = p.join(p.dirname(normalized), 'queries.toml');
+    final qualityProfile = dataQuality.currentProfile;
+    String? qualityProfilePath;
     await _savedQueryLibraryStore.saveToPath(
       queryLibraryPath,
       savedQueryLibrary,
     );
+    if (qualityProfile != null) {
+      qualityProfilePath = p.join('quality', 'default-quality-profile.toml');
+      await dataQuality.exportProfile(
+        profile: qualityProfile,
+        destinationPath: p.join(p.dirname(normalized), qualityProfilePath),
+      );
+    }
     final project = WorkspaceProjectFile(
       databasePath: p.relative(
         currentDatabasePath,
         from: p.dirname(normalized),
       ),
       queryLibraryPath: p.basename(queryLibraryPath),
+      qualityProfilePath: qualityProfilePath,
+      qualityDefaultMode: qualityProfile?.defaultMode.wireName ?? 'full',
     );
     final file = File(normalized);
     await file.parent.create(recursive: true);
@@ -664,6 +704,10 @@ class WorkspaceController extends ChangeNotifier {
     try {
       final loadedSchema = await _gateway.loadSchema();
       schema = loadedSchema;
+      await dataQuality.attachWorkspace(
+        databasePath: databasePath,
+        schema: schema,
+      );
       _safeNotify();
 
       ToolingMetadata? metadata;
@@ -3163,6 +3207,9 @@ class WorkspaceController extends ChangeNotifier {
               details: buildExcelImportSummaryLogDetails(summary),
             );
           }
+          if (summary != null && !summary.rolledBack) {
+            unawaited(_recordExcelImportReconciliation(summary));
+          }
           break;
         case ExcelImportUpdateKind.cancelled:
           final summary = update.summary;
@@ -3268,6 +3315,18 @@ class WorkspaceController extends ChangeNotifier {
             'SELECT *\nFROM ${_quoteIdentifier(summary.firstImportedObject!)}\nLIMIT ${config.defaultPageSize};',
       );
     }
+    excelImportSession = null;
+    _safeNotify();
+  }
+
+  Future<void> runQualityForExcelImportedDatabase() async {
+    final summary = excelImportSession?.summary;
+    if (summary == null) {
+      return;
+    }
+    await openDatabase(summary.targetPath, createIfMissing: false);
+    dataQuality.selectTable(null);
+    await dataQuality.startRun();
     excelImportSession = null;
     _safeNotify();
   }
@@ -3652,6 +3711,9 @@ class WorkspaceController extends ChangeNotifier {
                   details: buildSqlDumpImportSummaryLogDetails(summary),
                 );
               }
+              if (summary != null && !summary.rolledBack) {
+                unawaited(_recordSqlDumpImportReconciliation(summary));
+              }
               break;
             case SqlDumpImportUpdateKind.cancelled:
               final summary = update.summary;
@@ -3760,6 +3822,18 @@ class WorkspaceController extends ChangeNotifier {
             'SELECT *\nFROM ${_quoteIdentifier(summary.firstImportedTable!)}\nLIMIT ${config.defaultPageSize};',
       );
     }
+    sqlDumpImportSession = null;
+    _safeNotify();
+  }
+
+  Future<void> runQualityForSqlDumpImportedDatabase() async {
+    final summary = sqlDumpImportSession?.summary;
+    if (summary == null) {
+      return;
+    }
+    await openDatabase(summary.targetPath, createIfMissing: false);
+    dataQuality.selectTable(null);
+    await dataQuality.startRun();
     sqlDumpImportSession = null;
     _safeNotify();
   }
@@ -4171,6 +4245,9 @@ class WorkspaceController extends ChangeNotifier {
               details: buildSqliteImportSummaryLogDetails(summary),
             );
           }
+          if (summary != null && !summary.rolledBack) {
+            unawaited(_recordSqliteImportReconciliation(summary));
+          }
           break;
         case SqliteImportUpdateKind.cancelled:
           final summary = update.summary;
@@ -4279,6 +4356,18 @@ class WorkspaceController extends ChangeNotifier {
             'SELECT *\nFROM ${_quoteIdentifier(summary.firstImportedTable!)}\nLIMIT ${config.defaultPageSize};',
       );
     }
+    sqliteImportSession = null;
+    _safeNotify();
+  }
+
+  Future<void> runQualityForImportedDatabase() async {
+    final summary = sqliteImportSession?.summary;
+    if (summary == null) {
+      return;
+    }
+    await openDatabase(summary.targetPath, createIfMissing: false);
+    dataQuality.selectTable(null);
+    await dataQuality.startRun();
     sqliteImportSession = null;
     _safeNotify();
   }
@@ -5093,6 +5182,7 @@ class WorkspaceController extends ChangeNotifier {
     if (hasOpenDatabase) {
       unawaited(_persistWorkspaceStateNow());
     }
+    dataQuality.dispose();
     unawaited(_gateway.dispose());
     super.dispose();
   }
@@ -5938,6 +6028,109 @@ class WorkspaceController extends ChangeNotifier {
 
   String _suggestImportTargetPath(String sourcePath) {
     return suggestNewDecentDbTargetPath(sourcePath);
+  }
+
+  Future<void> _recordExcelImportReconciliation(
+    ExcelImportSummary summary,
+  ) async {
+    await dataQuality.recordImportReconciliation(
+      _buildImportReconciliation(
+        importJobId: summary.jobId,
+        sourcePath: summary.sourcePath,
+        sourceFormat: 'xlsx',
+        rowsCopiedByTable: summary.rowsCopiedByTable,
+        warnings: summary.warnings,
+      ),
+      targetDatabasePath: summary.targetPath,
+    );
+  }
+
+  Future<void> _recordSqlDumpImportReconciliation(
+    SqlDumpImportSummary summary,
+  ) async {
+    await dataQuality.recordImportReconciliation(
+      _buildImportReconciliation(
+        importJobId: summary.jobId,
+        sourcePath: summary.sourcePath,
+        sourceFormat: 'sql_dump',
+        rowsCopiedByTable: summary.rowsCopiedByTable,
+        warnings: summary.warnings,
+        skippedRowCount: summary.skippedStatementCount,
+      ),
+      targetDatabasePath: summary.targetPath,
+    );
+  }
+
+  Future<void> _recordSqliteImportReconciliation(
+    SqliteImportSummary summary,
+  ) async {
+    await dataQuality.recordImportReconciliation(
+      _buildImportReconciliation(
+        importJobId: summary.jobId,
+        sourcePath: summary.sourcePath,
+        sourceFormat: 'sqlite',
+        rowsCopiedByTable: summary.rowsCopiedByTable,
+        warnings: summary.warnings,
+        skippedRowCount: summary.skippedItems.length,
+      ),
+      targetDatabasePath: summary.targetPath,
+    );
+  }
+
+  ImportReconciliationSummary _buildImportReconciliation({
+    required String importJobId,
+    required String sourcePath,
+    required String sourceFormat,
+    required Map<String, int> rowsCopiedByTable,
+    required List<String> warnings,
+    int skippedRowCount = 0,
+  }) {
+    final warningsByCode = <String, int>{};
+    for (final warning in warnings) {
+      final code = normalizeImportWarningCode(warning);
+      warningsByCode[code] = (warningsByCode[code] ?? 0) + 1;
+    }
+    return ImportReconciliationSummary(
+      importJobId: importJobId,
+      sourcePathDisplay: sourcePath,
+      sourceFormat: sourceFormat,
+      sourceFingerprint: _sourceFingerprintDisplay(sourcePath),
+      startedAt: null,
+      completedAt: DateTime.now().toUtc(),
+      tableMappings: <ImportTableReconciliation>[
+        for (final entry in rowsCopiedByTable.entries)
+          ImportTableReconciliation(
+            sourceName: entry.key,
+            targetTable: entry.key,
+            sourceRowCount: null,
+            importedRowCount: entry.value,
+            skippedRowCount: skippedRowCount,
+            rejectedRowCount: 0,
+            transformedRowCount: 0,
+            typeCoercionFailureCount:
+                warningsByCode['type_coercion_failed'] ?? 0,
+            warningCount: warnings.length,
+          ),
+      ],
+      warningCount: warnings.length,
+      warningsByTable: <String, int>{
+        for (final table in rowsCopiedByTable.keys) table: warnings.length,
+      },
+      warningsByCode: warningsByCode,
+    );
+  }
+
+  String? _sourceFingerprintDisplay(String sourcePath) {
+    try {
+      final file = File(sourcePath);
+      if (!file.existsSync()) {
+        return null;
+      }
+      final stat = file.statSync();
+      return 'size=${stat.size};modified=${stat.modified.toUtc().toIso8601String()}';
+    } catch (_) {
+      return null;
+    }
   }
 
   String _quoteIdentifier(String value) {

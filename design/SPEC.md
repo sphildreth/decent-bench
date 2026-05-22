@@ -834,6 +834,19 @@ storage includes an independent schema version for file-specific UI state.
 
 ## 13. Testing and quality
 
+### 13.0 Data quality suite
+
+The `Data quality, profiling, and validation suite` is implemented under
+`design/WIN_DATA_QUALITY_PROFILING_VALIDATION_PLAN.md` with ADR contracts in
+`design/adr/0046-data-quality-persistence-and-project-contract.md`,
+`design/adr/0047-data-quality-execution-and-paging-contract.md`, and
+`design/adr/0048-data-quality-report-privacy-contract.md`.
+
+The workspace exposes a first-class Quality pane and Tools menu commands for
+running profile-driven quality scans, managing validation profiles, inspecting
+paged violation rows, and exporting Markdown, HTML, or JSON quality reports.
+The headless CLI exposes the same workflow through `dbench quality`.
+
 ### 13.1 Minimum automated tests
 
 Unit tests:

@@ -90,6 +90,14 @@ This file records notable project changes. It follows the
   documentation and fixture notes, adapter declarations, typed-batch placeholder
   models, module-driven import detection metadata, and docs/catalog validation
   tests.
+- Added planning alignment for the Data quality, profiling, and validation suite:
+  accepted ADRs (`0046`, `0047`, `0048`), implementation source-of-truth plan
+  link updates, and `design/SPEC.md` / `design/FUTURE_WINS.md` references.
+- Added the Data Quality workspace suite with schema-derived default profiles,
+  saved validation profiles, table/column profiling, validation rule execution,
+  import reconciliation persistence, duplicate summaries, stale-run detection,
+  paged violation inspection, Markdown/HTML/JSON quality report export, and the
+  headless `dbench quality` command.
 
 ### Changed
 

@@ -21,6 +21,11 @@ Apache 2.0 distribution. This file tracks attributions and license details.
   - Copyright: Brendan Duncan
   - Source: `https://pub.dev/packages/archive`
 
+- `crypto` `3.0.6`
+  - License: MIT
+  - Copyright: Dart project authors
+  - Source: `https://pub.dev/packages/crypto`
+
 - `excel` `4.0.6`
   - License: MIT
   - Copyright: package contributors
@@ -68,8 +73,8 @@ Apache 2.0 distribution. This file tracks attributions and license details.
 The following transitive dependencies are brought in by direct dependencies.
 Their licenses are compatible with Apache 2.0 distribution:
 
-- `archive` brings `crypto` (MIT, Dart project authors) and `convert`
-  (BSD-style, Dart project authors)
+- `archive` brings `convert` (BSD-style, Dart project authors) and also uses
+  `crypto`, which is listed above as a direct dependency.
 - `flutter_markdown_plus` brings `markdown` and `args` (BSD-style, Dart
   project authors) and reuses `meta` and `path` from the Dart project
   dependency set

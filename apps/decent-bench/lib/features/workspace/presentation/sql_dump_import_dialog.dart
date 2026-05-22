@@ -756,6 +756,18 @@ class _SqlDumpImportDialogState extends State<SqlDumpImportDialog> {
             ),
           );
           actions.add(
+            TextButton.icon(
+              onPressed: () async {
+                await widget.controller.runQualityForSqlDumpImportedDatabase();
+                if (context.mounted) {
+                  Navigator.of(context).pop();
+                }
+              },
+              icon: const Icon(Icons.fact_check_outlined),
+              label: const Text('Run Quality Profile'),
+            ),
+          );
+          actions.add(
             FilledButton(
               onPressed: () async {
                 await widget.controller.runQueryForSqlDumpImportedTable();

@@ -25,6 +25,8 @@ import '../application/workspace_controller.dart';
 import '../application/workspace_shell_controller.dart';
 import '../domain/app_config.dart';
 import '../domain/column_statistics.dart';
+import '../domain/data_quality_models.dart';
+import '../domain/data_quality_reports.dart';
 import '../domain/database_statistics.dart';
 import '../domain/saved_query_models.dart';
 import '../domain/sql_autocomplete.dart';
@@ -47,6 +49,9 @@ import 'export_results_json_dialog.dart';
 import 'help/help_center_dialog.dart';
 import 'ms_sql_bak_import_dialog.dart';
 import 'preferences_dialog.dart';
+import 'quality/data_quality_dashboard.dart';
+import 'quality/quality_report_export_dialog.dart';
+import 'quality/validation_profile_editor.dart';
 import 'shell/app_menu_bar.dart';
 import 'shell/command_palette.dart';
 import 'shell/command_toolbar.dart';
@@ -365,6 +370,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                         controller.refreshSchema();
                                       },
                                       isLoading: schemaPaneIsLoading,
+                                    ),
+                                    qualityDashboard: DataQualityDashboard(
+                                      controller: controller.dataQuality,
+                                      onExportReport:
+                                          _showQualityReportExportDialog,
                                     ),
                                     erdViewer: SchemaRelationshipDiagram(
                                       key: _erdDiagramKey,
@@ -2965,6 +2975,37 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           enabled: controller.hasOpenDatabase,
         ),
         command(
+          id: 'tools_data_quality_dashboard',
+          label: 'Data Quality Dashboard',
+          icon: Icons.fact_check_outlined,
+          onInvoke: _showQualityDashboard,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_run_quality_profile',
+          label: 'Run Quality Profile',
+          icon: Icons.play_circle_outline,
+          onInvoke: () async => controller.dataQuality.startRun(),
+          enabled:
+              controller.hasOpenDatabase && !controller.dataQuality.isRunning,
+        ),
+        command(
+          id: 'tools_manage_quality_profiles',
+          label: 'Manage Quality Profiles',
+          icon: Icons.rule_folder_outlined,
+          onInvoke: _showQualityProfileManagerDialog,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_export_quality_report',
+          label: 'Export Quality Report...',
+          icon: Icons.ios_share_outlined,
+          onInvoke: _showQualityReportExportDialog,
+          enabled:
+              controller.hasOpenDatabase &&
+              controller.dataQuality.currentRun != null,
+        ),
+        command(
           id: 'tools_query_history',
           label: 'Query History',
           icon: Icons.history_outlined,
@@ -3333,10 +3374,25 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       _genericImportOpen = false;
     });
     if (result != null) {
+      if (!result.summary.rolledBack) {
+        await widget.controller.dataQuality.recordImportReconciliation(
+          _genericImportReconciliation(result.summary),
+          targetDatabasePath: result.targetPath,
+        );
+      }
       await widget.controller.openDatabase(
         result.targetPath,
         createIfMissing: false,
       );
+      if (result.runQualityAfterImport) {
+        widget.controller.dataQuality.selectTable(null);
+        await widget.controller.dataQuality.startRun();
+        if (mounted) {
+          setState(() {
+            _navigationPaneMode = _NavigationPaneMode.quality;
+          });
+        }
+      }
     }
   }
 
@@ -3348,6 +3404,45 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return;
     }
     await _startImportFromPath(file.path);
+  }
+
+  ImportReconciliationSummary _genericImportReconciliation(
+    GenericImportSummary summary,
+  ) {
+    final warningsByCode = <String, int>{};
+    for (final warning in summary.warnings) {
+      final code = normalizeImportWarningCode(warning);
+      warningsByCode[code] = (warningsByCode[code] ?? 0) + 1;
+    }
+    return ImportReconciliationSummary(
+      importJobId: summary.jobId,
+      sourcePathDisplay: summary.sourcePath,
+      sourceFormat: summary.formatLabel,
+      sourceFingerprint: null,
+      startedAt: null,
+      completedAt: DateTime.now().toUtc(),
+      tableMappings: <ImportTableReconciliation>[
+        for (final entry in summary.rowsCopiedByTable.entries)
+          ImportTableReconciliation(
+            sourceName: entry.key,
+            targetTable: entry.key,
+            sourceRowCount: null,
+            importedRowCount: entry.value,
+            skippedRowCount: 0,
+            rejectedRowCount: 0,
+            transformedRowCount: 0,
+            typeCoercionFailureCount:
+                warningsByCode['type_coercion_failed'] ?? 0,
+            warningCount: summary.warnings.length,
+          ),
+      ],
+      warningCount: summary.warnings.length,
+      warningsByTable: <String, int>{
+        for (final table in summary.importedTables)
+          table: summary.warnings.length,
+      },
+      warningsByCode: warningsByCode,
+    );
   }
 
   Future<void> _handleStartupLaunchOptions(
@@ -3653,6 +3748,104 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       'Export Parquet',
       'Parquet export remains blocked until a maintained Apache-compatible Dart or FFI writer is selected and validated for desktop builds. Excel export is available now.',
     );
+  }
+
+  Future<void> _showQualityDashboard() async {
+    _shellController.setSchemaExplorerVisible(true);
+    setState(() {
+      _navigationPaneMode = _NavigationPaneMode.quality;
+    });
+  }
+
+  Future<void> _showQualityProfileManagerDialog() {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        child: SizedBox(
+          width: 960,
+          height: 700,
+          child: ValidationProfileEditor(
+            controller: widget.controller.dataQuality,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showQualityReportExportDialog() async {
+    final qualityController = widget.controller.dataQuality;
+    if (qualityController.currentRun == null) {
+      await _showInfoDialog(
+        'Export Quality Report',
+        'Run a quality profile before exporting a quality report.',
+      );
+      return;
+    }
+    final result = await showDialog<QualityReportExportDialogResult>(
+      context: context,
+      builder: (context) => QualityReportExportDialog(
+        initialPath: _defaultQualityReportPath(
+          QualityReportFormat.markdown.extension,
+        ),
+        onBrowse: (format, currentPath) async {
+          final initialName = currentPath.trim().isEmpty
+              ? p.basename(_defaultQualityReportPath(format.extension))
+              : p.basename(currentPath.trim());
+          final location = await getSaveLocation(
+            suggestedName: initialName,
+            acceptedTypeGroups: <XTypeGroup>[
+              XTypeGroup(
+                label: 'Quality report',
+                extensions: <String>[format.extension.substring(1)],
+              ),
+            ],
+          );
+          return location?.path;
+        },
+      ),
+    );
+    if (result == null) {
+      return;
+    }
+    try {
+      await qualityController.exportReport(
+        QualityReportOptions(
+          format: result.format,
+          destinationPath: result.path,
+          includeSampleValues: result.includeSampleValues,
+          includeViolationDetailRows: result.includeViolationSamples,
+          includeImportReconciliation: result.includeImportReconciliation,
+          includeRuleDefinitions: result.includeRuleDefinitions,
+          freshnessStatus: qualityController.freshness,
+        ),
+      );
+      if (!mounted) {
+        return;
+      }
+      await _showInfoDialog(
+        'Export Quality Report',
+        'Quality report written to:\n${result.path}',
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      await _showInfoDialog(
+        'Export Quality Report',
+        'Unable to write quality report to ${result.path}.\n\n$error',
+      );
+    }
+  }
+
+  String _defaultQualityReportPath(String extension) {
+    final databasePath = widget.controller.databasePath;
+    final baseName = p.basenameWithoutExtension(
+      databasePath ?? 'workspace.ddb',
+    );
+    final directory = databasePath == null
+        ? Directory.current.path
+        : p.dirname(databasePath);
+    return p.join(directory, '${baseName}_quality_report$extension');
   }
 
   String _schemaExportContents(WorkspaceController controller) {
@@ -5175,19 +5368,21 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 }
 
-enum _NavigationPaneMode { schema, erd }
+enum _NavigationPaneMode { schema, quality, erd }
 
 class _WorkspaceNavigationPane extends StatelessWidget {
   const _WorkspaceNavigationPane({
     required this.mode,
     required this.onModeChanged,
     required this.schemaExplorer,
+    required this.qualityDashboard,
     required this.erdViewer,
   });
 
   final _NavigationPaneMode mode;
   final ValueChanged<_NavigationPaneMode> onModeChanged;
   final Widget schemaExplorer;
+  final Widget qualityDashboard;
   final Widget erdViewer;
 
   @override
@@ -5213,6 +5408,11 @@ class _WorkspaceNavigationPane extends StatelessWidget {
                 label: Text('Schema'),
               ),
               ButtonSegment<_NavigationPaneMode>(
+                value: _NavigationPaneMode.quality,
+                icon: Icon(Icons.fact_check_outlined, size: 16),
+                label: Text('Quality'),
+              ),
+              ButtonSegment<_NavigationPaneMode>(
                 value: _NavigationPaneMode.erd,
                 icon: Icon(Icons.account_tree_outlined, size: 16),
                 label: Text('ERD'),
@@ -5224,8 +5424,12 @@ class _WorkspaceNavigationPane extends StatelessWidget {
         ),
         Expanded(
           child: IndexedStack(
-            index: mode == _NavigationPaneMode.schema ? 0 : 1,
-            children: <Widget>[schemaExplorer, erdViewer],
+            index: switch (mode) {
+              _NavigationPaneMode.schema => 0,
+              _NavigationPaneMode.quality => 1,
+              _NavigationPaneMode.erd => 2,
+            },
+            children: <Widget>[schemaExplorer, qualityDashboard, erdViewer],
           ),
         ),
       ],

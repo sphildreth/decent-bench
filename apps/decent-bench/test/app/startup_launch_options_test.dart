@@ -14,6 +14,7 @@ void main() {
     expect(decision.output, contains('--out <path.ddb>'));
     expect(decision.output, contains('--plan <path.json>'));
     expect(decision.output, contains('--silent'));
+    expect(decision.output, contains('dbench quality --database'));
     expect(decision.output, contains('--version'));
   });
 
@@ -91,6 +92,62 @@ void main() {
     expect(decision.headlessImportOptions?.targetPath, '/tmp/output.ddb');
     expect(decision.headlessImportOptions?.planPath, '/tmp/import-plan.json');
     expect(decision.headlessImportOptions?.silent, isTrue);
+  });
+
+  test('returns a headless quality decision for quality subcommand', () {
+    final decision = parseStartupCliDecision(<String>[
+      'quality',
+      '--database',
+      '/tmp/workspace.ddb',
+      '--profile',
+      '/tmp/profile.toml',
+      '--out',
+      '/tmp/quality.json',
+      '--format',
+      'json',
+      '--target-table',
+      'tasks',
+      '--mode',
+      'sampled',
+      '--sample-row-limit',
+      '100',
+      '--include-sample-values',
+      '--include-violation-details',
+      '--silent',
+    ]);
+
+    expect(decision.behavior, StartupCliBehavior.runHeadlessQuality);
+    expect(decision.headlessQualityOptions?.databasePath, '/tmp/workspace.ddb');
+    expect(decision.headlessQualityOptions?.profilePath, '/tmp/profile.toml');
+    expect(decision.headlessQualityOptions?.outputPath, '/tmp/quality.json');
+    expect(decision.headlessQualityOptions?.format, 'json');
+    expect(decision.headlessQualityOptions?.targetTable, 'tasks');
+    expect(decision.headlessQualityOptions?.mode, 'sampled');
+    expect(decision.headlessQualityOptions?.sampleRowLimit, 100);
+    expect(decision.headlessQualityOptions?.includeSampleValues, isTrue);
+    expect(decision.headlessQualityOptions?.includeViolationDetails, isTrue);
+    expect(decision.headlessQualityOptions?.silent, isTrue);
+  });
+
+  test('returns quality-specific help', () {
+    final decision = parseStartupCliDecision(<String>['quality', '--help']);
+
+    expect(decision.behavior, StartupCliBehavior.printHelp);
+    expect(decision.output, contains('dbench quality'));
+    expect(decision.output, contains('--include-violation-details'));
+  });
+
+  test('rejects invalid quality format', () {
+    final decision = parseStartupCliDecision(<String>[
+      'quality',
+      '--database=/tmp/workspace.ddb',
+      '--profile=/tmp/profile.toml',
+      '--out=/tmp/quality.txt',
+      '--format=txt',
+    ]);
+
+    expect(decision.behavior, StartupCliBehavior.printError);
+    expect(decision.output, contains('`--format` must be one of'));
   });
 
   test('rejects --in without --out', () {

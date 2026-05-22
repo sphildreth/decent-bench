@@ -248,6 +248,8 @@ class WorkspaceProjectFile {
     this.exportDelimiter = ',',
     this.preferredBranch = 'main',
     this.runRiskyQueriesOnBranch = false,
+    this.qualityProfilePath,
+    this.qualityDefaultMode = 'full',
   });
 
   final int configVersion;
@@ -262,6 +264,8 @@ class WorkspaceProjectFile {
   final String exportDelimiter;
   final String preferredBranch;
   final bool runRiskyQueriesOnBranch;
+  final String? qualityProfilePath;
+  final String qualityDefaultMode;
 
   String resolveDatabasePath(String projectFilePath) {
     if (p.isAbsolute(databasePath)) {
@@ -272,6 +276,17 @@ class WorkspaceProjectFile {
 
   String? resolveQueryLibraryPath(String projectFilePath) {
     final path = queryLibraryPath;
+    if (path == null || path.trim().isEmpty) {
+      return null;
+    }
+    if (p.isAbsolute(path)) {
+      return path;
+    }
+    return p.normalize(p.join(p.dirname(projectFilePath), path));
+  }
+
+  String? resolveQualityProfilePath(String projectFilePath) {
+    final path = qualityProfilePath;
     if (path == null || path.trim().isEmpty) {
       return null;
     }
@@ -306,7 +321,11 @@ class WorkspaceProjectFile {
       ..writeln()
       ..writeln('[branch_safety]')
       ..writeln('preferred_branch = ${jsonEncode(preferredBranch)}')
-      ..writeln('run_risky_queries_on_branch = $runRiskyQueriesOnBranch');
+      ..writeln('run_risky_queries_on_branch = $runRiskyQueriesOnBranch')
+      ..writeln()
+      ..writeln('[quality]')
+      ..writeln('profile_path = ${jsonEncode(qualityProfilePath ?? '')}')
+      ..writeln('default_mode = ${jsonEncode(qualityDefaultMode)}');
     return buffer.toString();
   }
 
@@ -340,6 +359,7 @@ class WorkspaceProjectFile {
     final autoOpen = sections['auto_open'] ?? const <String, Object?>{};
     final exports = sections['export_defaults'] ?? const <String, Object?>{};
     final branch = sections['branch_safety'] ?? const <String, Object?>{};
+    final quality = sections['quality'] ?? const <String, Object?>{};
     final dbPath = database['path'] as String? ?? '';
     if (dbPath.trim().isEmpty) {
       throw const FormatException('Project file is missing [database].path.');
@@ -359,6 +379,8 @@ class WorkspaceProjectFile {
       preferredBranch: branch['preferred_branch'] as String? ?? 'main',
       runRiskyQueriesOnBranch:
           branch['run_risky_queries_on_branch'] as bool? ?? false,
+      qualityProfilePath: quality['profile_path'] as String?,
+      qualityDefaultMode: quality['default_mode'] as String? ?? 'full',
     );
   }
 }

@@ -1,19 +1,14 @@
 import 'dart:io';
 
-import 'package:decent_bench/app/headless_import_runner.dart';
+import 'package:decent_bench/app/headless_quality_runner.dart';
 import 'package:decent_bench/app/startup_launch_options.dart';
 
 Future<void> main(List<String> args) async {
-  final cliDecision = parseStartupCliDecision(args);
+  final cliDecision = parseStartupCliDecision(<String>['quality', ...args]);
 
   switch (cliDecision.behavior) {
-    case StartupCliBehavior.runHeadlessImport:
-      exit(await runHeadlessImportCli(cliDecision.headlessImportOptions!));
     case StartupCliBehavior.runHeadlessQuality:
-      stderr.writeln(
-        'The headless import helper only supports import flags. Use `dbench quality` from the main executable for quality reports.',
-      );
-      exit(2);
+      exit(await runHeadlessQualityCli(cliDecision.headlessQualityOptions!));
     case StartupCliBehavior.printHelp:
     case StartupCliBehavior.printVersion:
       stdout.writeln(cliDecision.output ?? '');
@@ -21,9 +16,10 @@ Future<void> main(List<String> args) async {
     case StartupCliBehavior.printError:
       stderr.writeln(cliDecision.output ?? '');
       exit(cliDecision.exitCode);
+    case StartupCliBehavior.runHeadlessImport:
     case StartupCliBehavior.launchApp:
       stderr.writeln(
-        'The headless import helper only supports `--in`/`--out`, `--help`, and `--version`.',
+        'The quality helper only supports `dbench quality` flags, `--help`, and `--version`.',
       );
       exit(2);
   }

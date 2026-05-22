@@ -746,10 +746,12 @@ class GenericImportDialogResult {
   const GenericImportDialogResult({
     required this.targetPath,
     required this.summary,
+    this.runQualityAfterImport = false,
   });
 
   final String targetPath;
   final GenericImportSummary summary;
+  final bool runQualityAfterImport;
 }
 
 String placeholderForTargetType(String targetType, int index) {

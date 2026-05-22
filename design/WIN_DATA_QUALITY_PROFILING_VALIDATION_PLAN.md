@@ -1,10 +1,16 @@
 # Future Win Plan: Data Quality, Profiling, And Validation Suite
 
-**Status:** Planning document  
+**Status:** Implemented in the Decent Bench 2.0.0 work branch
 **Last reviewed:** 2026-05-22  
 **Source roadmap item:** `design/FUTURE_WINS.md` rank 2, `P0`
 **Target outcome:** 100% completion of the Data Quality, Profiling, and
 Validation Suite through explicit implementation slices.
+
+**Implementation note:** The 2.0.0 work branch implements the suite as a
+first-class Quality workspace, persisted validation profiles, schema-derived
+default checks, import reconciliation persistence, profiling/validation
+execution, duplicate summaries, paged violation browsing, report export, and
+the headless `dbench quality` command.
 
 ## Purpose
 

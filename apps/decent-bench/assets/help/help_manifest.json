@@ -34,6 +34,14 @@
       "asset": "assets/help/schema-browser.md"
     },
     {
+      "id": "data-quality",
+      "title": "Data Quality",
+      "category": "Working With Data",
+      "summary": "Profile tables, run validation rules, inspect issue details, review import reconciliation, and export quality reports.",
+      "tags": ["quality", "profile", "validation", "rules", "reconciliation", "duplicates", "report"],
+      "asset": "assets/help/data-quality.md"
+    },
+    {
       "id": "writing-sql",
       "title": "Writing and Running SQL",
       "category": "Working With Data",

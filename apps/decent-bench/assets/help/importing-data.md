@@ -55,6 +55,13 @@ Before the final import, review:
 
 Choose clear names up front. It makes later SQL easier to write and easier to understand.
 
+## After import
+
+Open the **Quality** tab or use **Tools > Data Quality Dashboard** to profile
+the imported tables, review import reconciliation counts, and run validation
+rules. The default quality profile is generated from schema metadata, so you can
+run a useful check immediately without creating custom rules first.
+
 ## Imports should not freeze the app
 
 Large imports run as background work. You should still be able to see progress and cancel when cancellation is available.

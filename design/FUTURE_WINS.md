@@ -208,7 +208,7 @@ profiling, historical plan tracking, and query performance advisories.
 | Rank | Priority | Status | Enhancement | Consolidated Scope | Why This Rank | ADR Gate |
 |---:|---|---|---|---|---|---|
 | 1 | `P0` | `DONE` | Modular import architecture and module catalog | Converted current import formats into declarative built-in modules with TOML manifests, docs, fixtures, capability declarations, adapter bindings, typed-batch placeholders, and docs validation | Highest leverage prerequisite for broad, high-fidelity import growth; prevents dozens of future formats from becoming hardcoded one-offs | ADR-0049 through ADR-0052 |
-| 2 | `P0` | `TODO` | Data quality, profiling, and validation suite | Profiling dashboard, validation rules, anomaly/outlier detection, duplicate summaries, reconciliation reports, exportable quality reports | Highest trust-builder after import; helps users decide whether imported data can be queried or exported safely | Existing ADRs for plan; implementation follows accepted ADRs |
+| 2 | `P0` | `DONE` | [Data quality, profiling, and validation suite](WIN_DATA_QUALITY_PROFILING_VALIDATION_PLAN.md) | Profiling dashboard, validation rules, anomaly/outlier detection, duplicate summaries, reconciliation reports, exportable quality reports | Highest trust-builder after import; helps users decide whether imported data can be queried or exported safely | ADR-0046 through ADR-0048 |
 | 3 | `P0` | `TODO` | Import/export recipe rerun and profile reuse | Re-run last import/export, saved recipe/profile library, shareable TOML recipes, GUI and CLI reruns | Directly supports repeatable local workflows and completes existing deferred menu commands | Existing ADR; update ADR before implementation if recipe contract changes |
 | 4 | `P0` | `BACKLOG` | Clipboard table import | Paste TSV/CSV/HTML table/JSON table data into import wizard with preview and type inference | High-frequency convenience feature for spreadsheet, browser, and portal workflows | ADR before implementation if clipboard formats or persistent profile contract changes |
 | 5 | `P0` | `BACKLOG` | Safe import preview and branch-backed sandbox | Dry-run import preview, schema/data diff before commit, import on branch, merge/discard, rejected-row repair loop | Strong DecentDB-specific safety story for messy imports and table edits | Existing ADR for branch model; update ADR before implementation |
@@ -336,6 +336,8 @@ if the contract changes.
 
 ### 2. Data Quality, Profiling, And Validation Suite
 
+**Detailed plan:** `design/WIN_DATA_QUALITY_PROFILING_VALIDATION_PLAN.md`
+
 **Consolidates suggestions named:**
 
 - statistical table profiler,
@@ -388,11 +390,15 @@ exports on top of it.
   - exact duplicate detection first,
   - fuzzy matching only after the exact workflow proves useful and performant.
 
-**First useful slice:**
+**Implemented completion:**
 
-Add a per-table "Quality" view that computes null counts, distinct counts,
-min/max, basic distribution, import row reconciliation, and a paged list of
-type/coercion warnings from import metadata.
+Decent Bench now includes a first-class Quality navigation pane and Tools menu
+commands for opening the dashboard, running a profile, managing profiles, and
+exporting reports. The implementation includes schema-derived default profiles,
+custom validation profiles persisted per workspace, profiling summaries,
+validation issue summaries, import reconciliation records, duplicate summaries,
+paged violation browsing, freshness checks, Markdown/HTML/JSON report export,
+and a headless `dbench quality` command.
 
 **Design constraints:**
 
@@ -405,8 +411,8 @@ type/coercion warnings from import metadata.
 
 **ADR need:**
 
-Create an ADR before implementation because this establishes validation report
-contracts, profile storage behavior, and possibly persistent rule formats.
+Accepted ADRs already cover this implementation scope:
+ADR-0046, ADR-0047, and ADR-0048.
 
 ### 3. Import/Export Recipe Rerun And Profile Reuse
 
