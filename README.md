@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  Import CSV/TSV, JSON/NDJSON, XML, HTML, Excel, SQLite, SQL dumps, and archive-wrapped sources into DecentDB, inspect schema, iterate on SQL in a multi-tab editor, visualize results, and export shaped data from a fast, responsive desktop app built with Flutter.
+  Import supported delimited, structured, spreadsheet, database, dump, and archive-wrapped sources into DecentDB, inspect schema, iterate on SQL in a multi-tab editor, visualize results, and export shaped data from a fast, responsive desktop app built with Flutter.
 </p>
 
 <p align="center">
@@ -45,7 +45,17 @@
 - 🚀 **DecentDB-First:** A fully local-first workflow. Fast open/create,
   recent files, intuitive drag-and-drop support, and guided legacy `.ddb`
   migration through the official `decentdb-migrate` tool.
-- 📥 **Smart Import Wizards:** Import delimited text, JSON/NDJSON, XML, HTML tables, Excel, SQLite, SQL dumps, and wrapped archives (`.zip`, `.gz`, `.tgz`, `.bz2`, `.tbz2`). Includes previews, rename/type-override transforms, row-local filters/defaults/computed columns/dedup plans for generic imports, progress reporting, and post-import summaries.
+- 📥 **Module-Backed Import System:** Open DecentDB files directly and import
+  CSV/TSV, custom-delimited text, JSON/NDJSON, XML, HTML tables, Excel,
+  SQLite, SQL dumps, and wrapped archives (`.zip`, `.gz`, `.tgz`, `.bz2`,
+  `.tbz2`). Built-in TOML module manifests declare current support, partial
+  support, recognized future formats, capabilities, limitations, fixture
+  notes, and adapter bindings so future format work starts from a catalog
+  instead of hardcoded one-offs.
+- 🧪 **Import Wizard UX:** Import flows include previews, table/sheet
+  selection where applicable, rename/type-override transforms, row-local
+  filters/defaults/computed columns/dedup plans for generic imports, progress
+  reporting, blocking failure dialogs, and post-import summaries.
 - 🛠️ **Modern SQL Workbench:** Iterate in a multi-tab editor with isolated per-tab results, schema-aware autocomplete, editable snippets, deterministic formatting, typed parameter fields, per-tab query history, and a searchable command palette.
 - ⚡ **Performance-Focused:** Background imports, paginated/streamed results grids, and best-effort query cancellation ensure the UI never freezes.
 - 🧭 **Rich Engine Metadata:** Schema browsing is powered by DecentDB's rich
@@ -81,32 +91,50 @@
 
 ### Supported File Types
 
-| File type | Action | Details |
+This table reflects the formats that are currently supported by the app build.
+The complete module catalog, including planned and deferred formats, lives under
+`apps/decent-bench/import_modules/builtin/`.
+
+| File type | Current status | Details |
 | --- | --- | --- |
-| `.ddb` | **Open / Migrate** | Current-format files open directly. Legacy format-version failures offer a copy-based `decentdb-migrate` upgrade path. |
-| `.db`, `.sqlite`, `.sqlite3` | **Import Wizard** | Background import with schema preview and table selection. |
-| `.csv`, `.tsv` | **Import Wizard** | CSV/TSV import through the generic delimited-text pipeline. |
-| `.txt`, `.dat`, `.log`, `.psv` | **Import Wizard** | Generic delimited-text import with header, delimiter, quoting, malformed-row, preview, and type-override controls. |
-| `.json`, `.ndjson`, `.jsonl` | **Import Wizard** | Structured and line-oriented JSON import with relational previews. |
-| `.xml` | **Import Wizard** | XML import with flatten or parent-child normalization strategies. |
-| `.html`, `.htm` | **Import Wizard** | HTML table extraction with table selection and header inference. |
-| `.xlsx` | **Import Wizard** | Select worksheets and map DecentDB types automatically. |
-| `.xls` | *Partial / Warning Path* | Routed through the legacy Excel path and may require conversion/normalization warnings. |
-| `.sql` | **Import Wizard** | Supports the current MariaDB/MySQL-style MVP-lite dump scope (`CREATE TABLE` plus common `INSERT ... VALUES`). |
-| `.zip` | **Unwrap & Import** | Archive wrapper that discovers supported inner files and routes them to the normal import flow. |
-| `.gz`, `.tar.gz`, `.tgz` | **Unwrap & Import** | Supports single-file gzip unwrap and tar+gzip archive inspection/extraction. |
-| `.bz2`, `.tar.bz2`, `.tbz2` | **Unwrap & Import** | Supports single-file bzip2 unwrap and tar+bzip2 archive inspection/extraction. |
-| `.bak` | *Recognized / Not Implemented* | Tracked for future container-assisted SQL Server backup import. |
+| `.ddb` | **Complete: Open / Migrate** | Current-format files open directly. Legacy format-version failures offer a copy-based `decentdb-migrate` upgrade path. |
+| `.csv`, `.tsv` | **Complete: Import Wizard** | CSV/TSV import through the generic delimited-text pipeline. |
+| `.txt`, `.dat`, `.log`, `.psv` | **Complete: Import Wizard** | Generic custom-delimited import with header, delimiter, quoting, malformed-row, preview, and type-override controls. Fixed-width semantics for `.txt`/`.dat` are planned separately. |
+| `.json`, `.ndjson`, `.jsonl` | **Complete: Import Wizard** | Structured and line-oriented JSON import with relational previews and flattening/normalization choices. |
+| `.xml` | **Complete: Import Wizard** | XML import with flatten or parent-child normalization strategies. |
+| `.html`, `.htm` | **Complete: Import Wizard** | HTML table extraction with table selection and header inference. |
+| `.xlsx` | **Complete: Import Wizard** | Workbook import with worksheet selection and DecentDB type mapping. |
+| `.xls` | **Partial: Warning Path** | Routed through the legacy Excel path and may require conversion/normalization warnings. |
+| `.db`, `.sqlite`, `.sqlite3` | **Complete: Import Wizard** | SQLite import with schema preview and table selection. |
+| `.sql` | **Complete for MVP-lite MySQL/MariaDB-style dumps** | Supports the current dump scope: `CREATE TABLE` plus common `INSERT ... VALUES` patterns. PostgreSQL plain-dump expansion is planned separately. |
+| `.zip` | **Complete: Wrapper** | Discovers supported inner files and routes them to the normal import flow. |
+| `.gz`, `.tar.gz`, `.tgz` | **Complete: Wrapper** | Supports single-file gzip unwrap and tar+gzip archive inspection/extraction. |
+| `.bz2`, `.tar.bz2`, `.tbz2` | **Complete: Wrapper** | Supports single-file bzip2 unwrap and tar+bzip2 archive inspection/extraction. |
 
-Supported, partial, and recognized-but-unavailable import entries are backed by
-built-in module manifests under `apps/decent-bench/import_modules/builtin/`.
+### Import Catalog And Format Roadmap
 
-### Recognized But Not Yet Implemented
+The import system now separates implemented adapters from recognized future
+formats:
 
-The current build recognizes, but does not yet import, several formats and
-wrappers including fixed-width text, `.ods`, `.yaml`, `.yml`, `.toml`, `.md`,
-`.duckdb`, `.mdb`, `.accdb`, `.dbf`, `.bak`, `.parquet`, `.pdf`, `.xz`, and
-`.tar.xz`.
+- `apps/decent-bench/import_modules/builtin/` is the source of truth for
+  built-in module manifests and per-format README files.
+- [`design/IMPORT_FORMATS.md`](design/IMPORT_FORMATS.md) is the concise
+  implemented/partial/planned/import-recognition index.
+- [`design/IMPORT_SUPPORT_PLAN.md`](design/IMPORT_SUPPORT_PLAN.md) is the broad
+  long-term status table for import families and candidate formats.
+- [`design/WIN_IMPORT_MODULAR_PLAN.md`](design/WIN_IMPORT_MODULAR_PLAN.md)
+  explains the module-based import architecture.
+- [`design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`](design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md)
+  details future format expansion priorities.
+
+Recognized or planned examples include Parquet, OpenDocument Spreadsheet
+(`.ods`), fixed-width text, DuckDB, PostgreSQL plain dumps, clipboard table
+paste, YAML, Markdown tables, Microsoft Access, DBF/FoxPro, XZ wrappers, SQL
+Server backups, and PDF table extraction. The wider roadmap also tracks
+analytical, data-lake, geospatial, scientific, finance, healthcare, cloud/SaaS,
+log/event, security, email/calendar/contact, document/metadata, and
+legacy/mainframe import families. Recognized does not mean import is available;
+it means the product has an explicit tracking entry and status for future work.
 
 ## 🚀 Getting Started (End Users)
 
@@ -218,6 +246,10 @@ Typical files under that root include:
 **Project Source of Truth:**
 - 📐 [`design/PRD.md`](design/PRD.md) — Product goals and user journeys
 - 📝 [`design/SPEC.md`](design/SPEC.md) — Implementation scope (Authoritative)
+- 📥 [`design/IMPORT_FORMATS.md`](design/IMPORT_FORMATS.md) — Current import
+  support and recognized future formats
+- 🗂️ [`design/IMPORT_SUPPORT_PLAN.md`](design/IMPORT_SUPPORT_PLAN.md) —
+  Long-term import format roadmap and prioritization
 - 🧠 [`design/adr/README.md`](design/adr/README.md) — Architecture Decision Records
 - 🤖 [`AGENTS.md`](AGENTS.md) — Agent instructions and guardrails
 
@@ -225,7 +257,11 @@ Typical files under that root include:
 
 **Shipped through 2.0.0:**
 - ✅ Drag-and-drop open/import flows
-- ✅ Expansive import support: delimited text, JSON/NDJSON, XML, HTML tables, SQLite, Excel, and SQL dumps
+- ✅ Module-backed import catalog with built-in TOML manifests,
+  per-format documentation, fixture notes, status metadata, capability
+  declarations, and adapter bindings
+- ✅ Expansive import support: delimited text, JSON/NDJSON, XML, HTML tables,
+  SQLite, Excel, SQL dumps, and archive wrappers
 - ✅ ZIP, GZip, and BZip2 wrapper routing for imports
 - ✅ Headless CLI import mode
 - ✅ DecentDB v2.6.0 binding alignment, native asset staging, CLI staging, and pinned runtime resolution
@@ -241,6 +277,13 @@ Typical files under that root include:
 - ✅ Local app config plus persistent per-database workspaces
 
 **Near-Term Roadmap:**
+- 🔜 **Data quality, profiling, and validation suite:** Add profiling,
+  default checks, optional custom validation rules, duplicate/anomaly summaries,
+  source-vs-import reconciliation, and exportable quality reports.
+- 🔜 **Import format expansion:** Promote the highest-value planned modules into
+  implemented adapters, starting with fixed-width text, ODS, Parquet, DuckDB,
+  PostgreSQL plain dumps, and clipboard table import as dependency and UX
+  decisions are accepted.
 - 🔜 **Public branch/snapshot API wiring:** Complete branch-local execution,
   edits, imports, restore, and merge once the DecentDB Dart package exposes the
   native branch API publicly.
@@ -248,8 +291,9 @@ Typical files under that root include:
   writer before shipping the format.
 - 🔜 **SDK generation workflow:** Promote the schema-first TypeScript prototype
   into a user-facing CLI/UI workflow.
-- 🔜 **Connector expansion:** Add dependency-vetted imports for ODS, DuckDB,
-  Parquet, PostgreSQL dumps, live database sources, and legacy formats.
+- 🔜 **Repeatable import/export workflows:** Expand saved profiles into
+  reliable GUI and headless rerun flows once recipe persistence contracts are
+  finalized.
 
 ## 🤝 Contributing
 
