@@ -173,7 +173,7 @@ class _QualityActions extends StatelessWidget {
             label: const Text('Run'),
           ),
           OutlinedButton.icon(
-            onPressed: controller.isRunning ? controller.cancelRun : null,
+            onPressed: controller.canCancelRun ? controller.cancelRun : null,
             icon: const Icon(Icons.stop_circle_outlined, size: 18),
             label: const Text('Cancel'),
           ),

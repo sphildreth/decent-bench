@@ -37,7 +37,9 @@ class DataQualityController extends ChangeNotifier {
 
   DataQualityCancellationToken? _activeCancellation;
 
-  bool get isRunning => currentRun?.status == QualityRunStatus.running;
+  bool get isRunning => _activeCancellation != null;
+  bool get canCancelRun =>
+      _activeCancellation != null && !_activeCancellation!.isCancelled;
   bool get hasDatabase =>
       databasePath != null && databasePath!.trim().isNotEmpty;
 
@@ -219,15 +221,30 @@ class DataQualityController extends ChangeNotifier {
     currentRun = result;
     progress = null;
     _activeCancellation = null;
-    await _repository.saveRunResult(databasePath: path, result: result);
-    await loadRecentRuns();
     freshness = computeFreshness(result);
+    notifyListeners();
+    try {
+      await _repository.saveRunResult(databasePath: path, result: result);
+      recentRuns = await _repository.loadRecentRuns(path);
+      currentRun = recentRuns.firstWhere(
+        (run) => run.runId == result.runId,
+        orElse: () => result,
+      );
+      freshness = computeFreshness(currentRun);
+    } catch (error) {
+      errorMessage =
+          'Quality run completed, but the run history could not be saved: $error';
+    }
     notifyListeners();
     return result;
   }
 
   void cancelRun() {
-    _activeCancellation?.cancel();
+    final cancellation = _activeCancellation;
+    if (cancellation == null || cancellation.isCancelled) {
+      return;
+    }
+    cancellation.cancel();
     progress = const DataQualityProgress(phase: 'Cancelling');
     notifyListeners();
   }
@@ -237,6 +254,9 @@ class DataQualityController extends ChangeNotifier {
       return QualityFreshnessStatus.noRun;
     }
     if (result.status == QualityRunStatus.running) {
+      if (!isRunning) {
+        return QualityFreshnessStatus.stale;
+      }
       return QualityFreshnessStatus.running;
     }
     if (result.status == QualityRunStatus.failed) {
