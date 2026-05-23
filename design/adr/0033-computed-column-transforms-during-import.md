@@ -54,11 +54,11 @@ arbitrary scripting, cross-row lookups, database queries, or window semantics.
 
 ### Connector Expansion
 
-Connector expansion is tracked separately from transforms. The import registry
-now keeps recognized-but-unavailable connector states explicit. Formats such as
-ODS, DuckDB, Parquet import, PostgreSQL dump expansion, Access/DBF, XZ,
-clipboard tables, and PDF tables are not faked; they remain planned,
-investigate, deferred, or backlog depending on dependency/product fit.
+Connector expansion is tracked separately from transforms. Future import
+formats such as ODS, DuckDB, Parquet import, PostgreSQL dump expansion,
+Access/DBF, XZ, clipboard tables, and PDF tables are not faked as supported;
+they remain planned, investigate, deferred, or backlog depending on
+dependency/product fit.
 
 ### Non-Goals
 
@@ -82,6 +82,6 @@ investigate, deferred, or backlog depending on dependency/product fit.
 
 - ADR-0007 Excel Import Parser And Legacy Workbook Handling
 - ADR-0008 SQL Dump Import MVP Parser And Warning Contract
-- `design/IMPORT_SUPPORT_PLAN.md`
-- `design/IMPORT_FORMATS.md`
+- `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`
+- `apps/decent-bench/assets/help/importing-data.md`
 - `design/FUTURE_WINS.md`

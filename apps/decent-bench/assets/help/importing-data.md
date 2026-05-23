@@ -1,16 +1,30 @@
 # Importing Data
 
-Imports bring data from another file into a DecentDB database. The importer guides you through the source file, destination table names, column names, and type choices. Import detection is backed by built-in import modules, so each recognized source has declared status, extensions, limitations, and adapter routing.
+Imports bring data from another file into a DecentDB database. The importer
+guides you through the source file, destination table names, column names, and
+type choices.
+
+This page lists formats that this build can actually open or import. If a
+format is not listed under supported sources, treat it as unsupported in the
+app.
 
 ## Supported sources
 
-- **Delimited text**: `.csv`, `.tsv`, `.txt`, `.dat`, `.log`, and `.psv`
-- **Structured documents**: `.json`, `.ndjson`, `.jsonl`, and `.xml`
-- **HTML tables**: `.html` and `.htm`
-- **Excel**: `.xlsx`; `.xls` is supported through the legacy conversion path and may show warnings
+- **DecentDB**: `.ddb` files open directly instead of going through import.
+- **CSV**: `.csv`
+- **TSV**: `.tsv`
+- **Generic Delimited Text**: `.txt`, `.dat`, `.log`, and `.psv`
+- **JSON**: `.json`
+- **NDJSON / JSONL**: `.ndjson` and `.jsonl`
+- **XML**: `.xml`
+- **HTML Tables**: `.html` and `.htm`
+- **Excel (.xlsx)**: `.xlsx`
+- **Excel (.xls)**: `.xls` through the legacy conversion path, which may show warnings
 - **SQLite**: `.db`, `.sqlite`, and `.sqlite3`
-- **SQL dumps**: `.sql` files with common table and insert statements
-- **Archive wrappers**: `.zip`, `.gz`, `.tgz`, `.tar.gz`, `.bz2`, `.tbz2`, and `.tar.bz2` when they contain a supported inner file
+- **SQL Dump**: `.sql` files with common table and insert statements
+- **ZIP Wrapper**: `.zip` archives when they contain a supported inner file
+- **GZip Wrapper**: `.gz`, `.tgz`, and `.tar.gz` when they contain a supported inner file
+- **BZip2 / Tar+BZip2 Wrapper**: `.bz2`, `.tbz2`, and `.tar.bz2` when they contain a supported inner file
 
 You can start an import from the **Import** menu, toolbar import buttons, or drag and drop.
 
@@ -70,8 +84,28 @@ quality profile immediately after import.
 
 Large imports run as background work. You should still be able to see progress and cancel when cancellation is available.
 
-## Not yet available
+## Not Supported
 
-Live database connection import is intentionally deferred. Recognized but unavailable modules include Fixed-width Text, OpenDocument Spreadsheet, YAML, TOML, Markdown Tables, DuckDB, Microsoft Access, DBF / FoxPro, MS SQL Server Backup, PostgreSQL Plain SQL Dump, Parquet, JSON Log Stream, Delimited Log File, XZ Wrapper, Clipboard Table, and PDF Tables.
+These source types are not supported as native imports in this build. Use an
+external tool to convert them to a supported file type such as CSV, TSV, JSON,
+NDJSON, XML, HTML tables, Excel, SQLite, or SQL dump before importing.
 
-Use file-based exports such as SQLite, Excel, CSV, JSON, XML, HTML tables, or SQL dump as the practical bridge until connection management is implemented.
+- **RAR, CAB, DMG, ISO, and ZPAQ archives**: these are not planned as native
+  data import wrappers because of licensing, platform, or low tabular-data
+  value.
+- **Arbitrary TOML, INI, properties, JSON5, RDS, and RData object files**:
+  these are usually configuration files or arbitrary object graphs rather than
+  clear tabular sources.
+- **Direct mainframe database stores such as VSAM, IMS, IDMS, Adabas, and
+  MultiValue/PICK**: use a migration/export tool to create CSV, fixed-width,
+  SQL, or SQLite files first.
+- **Full media, CAD, disk-image, raster, and 3D geometry content**: Decent Bench
+  is not a media, CAD, or raster processing tool. Future metadata-only import
+  may be considered for specific formats, but full content import is not
+  planned.
+- **Direct parsing of proprietary database/application files that require vendor
+  runtimes**: export from the source application or use vendor tooling to create
+  a supported intermediate file.
+
+Live database connection import is not available in this build. Use file-based
+exports as the practical bridge until read-only source import is implemented.

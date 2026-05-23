@@ -48,7 +48,7 @@
   CSV/TSV, custom-delimited text, JSON/NDJSON, XML, HTML tables, Excel,
   SQLite, SQL dumps, and wrapped archives (`.zip`, `.gz`, `.tgz`, `.bz2`,
   `.tbz2`). Built-in TOML module manifests declare current support, partial
-  support, recognized future formats, capabilities, limitations, fixture
+  support, future-format backlog status, capabilities, limitations, fixture
   notes, and adapter bindings so future format work starts from a catalog
   instead of hardcoded one-offs.
 - 🧪 **Import Wizard UX:** Import flows include previews, table/sheet
@@ -117,19 +117,17 @@ The complete module catalog, including planned and deferred formats, lives under
 
 ### Import Catalog And Format Roadmap
 
-The import system now separates implemented adapters from recognized future
-formats:
+The import system separates shipped import support from future format planning:
 
 - `apps/decent-bench/import_modules/builtin/` is the source of truth for
   built-in module manifests and per-format README files.
-- [`design/IMPORT_FORMATS.md`](design/IMPORT_FORMATS.md) is the concise
-  implemented/partial/planned/import-recognition index.
-- [`design/IMPORT_SUPPORT_PLAN.md`](design/IMPORT_SUPPORT_PLAN.md) is the broad
-  long-term status table for import families and candidate formats.
+- `apps/decent-bench/assets/help/importing-data.md` is the user-facing list of
+  formats this build can open/import, plus the native imports that are
+  explicitly not supported.
 - [`design/WIN_IMPORT_MODULAR_PLAN.md`](design/WIN_IMPORT_MODULAR_PLAN.md)
   explains the module-based import architecture.
 - [`design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`](design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md)
-  details future format expansion priorities.
+  is the single backlog for import formats users cannot import yet.
 
 Recognized or planned examples include Parquet, OpenDocument Spreadsheet
 (`.ods`), fixed-width text, DuckDB, PostgreSQL plain dumps, clipboard table
@@ -254,10 +252,10 @@ Typical files under that root include:
 **Project Source of Truth:**
 - 📐 [`design/PRD.md`](design/PRD.md) — Product goals and user journeys
 - 📝 [`design/SPEC.md`](design/SPEC.md) — Implementation scope (Authoritative)
-- 📥 [`design/IMPORT_FORMATS.md`](design/IMPORT_FORMATS.md) — Current import
-  support and recognized future formats
-- 🗂️ [`design/IMPORT_SUPPORT_PLAN.md`](design/IMPORT_SUPPORT_PLAN.md) —
-  Long-term import format roadmap and prioritization
+- 📥 [`apps/decent-bench/assets/help/importing-data.md`](apps/decent-bench/assets/help/importing-data.md) —
+  Current user-facing import support
+- 🗂️ [`design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`](design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md) —
+  Future import format backlog and prioritization
 - 🧠 [`design/adr/README.md`](design/adr/README.md) — Architecture Decision Records
 - 🤖 [`AGENTS.md`](AGENTS.md) — Agent instructions and guardrails
 

@@ -146,9 +146,8 @@ release is produced.
 
 - `design/WIN_IMPORT_MODULAR_PLAN.md`
 - `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`
-- `design/IMPORT_FORMATS.md`
+- `apps/decent-bench/assets/help/importing-data.md`
 - `apps/decent-bench/lib/features/import/infrastructure/import_format_registry.dart`
 - `design/adr/0050-import-adapter-and-typed-batch-contract.md`
 - `design/adr/0051-worker-backed-import-module-protocol.md`
 - `design/adr/0052-external-import-module-trust-boundary.md`
-

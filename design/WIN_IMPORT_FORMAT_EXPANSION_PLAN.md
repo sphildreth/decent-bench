@@ -1,226 +1,194 @@
-# Future Win Plan: Continual Import Format Expansion
+# Import Format Backlog And Implementation Plan
 
-**Status:** Planning document  
+**Status:** Active backlog
 **Last reviewed:** 2026-05-22  
 **Source roadmap item:** `design/FUTURE_WINS.md` rank 15, `P1`
-**Current implementation index:** `design/IMPORT_FORMATS.md`
-**Current module source of truth:** `apps/decent-bench/import_modules/builtin/`
-**Compatibility registry:** `apps/decent-bench/lib/features/import/infrastructure/import_format_registry.dart`
+**Supported-format documentation:** `apps/decent-bench/assets/help/importing-data.md`
+**Module architecture:** `design/WIN_IMPORT_MODULAR_PLAN.md`
 
 ## Purpose
 
-Decent Bench is the front door into DecentDB. Import formats will keep growing
-as users bring new file types, legacy sources, analytical formats, archives,
-and operational data into the app.
+This is the single planning document for import formats that users **cannot
+import yet**.
 
-This document defines the long-running product and engineering plan for adding
-import formats over time. It exists so each new format is evaluated and
-implemented consistently instead of becoming a one-off connector with unique
-UX, validation, docs, and test behavior.
+If a format works in the app, document it in the in-app help page:
 
-This plan covers:
+- `apps/decent-bench/assets/help/importing-data.md`
 
-- recognized-but-not-implemented formats already listed in `design/IMPORT_FORMATS.md`,
-- additional import formats from `design/IMPORT_SUPPORT_PLAN.md`,
-- future user-requested formats,
-- the process for moving a format from request to shipped support,
-- required implementation slices,
-- required tests and documentation,
-- ADR and dependency gates.
+Do not duplicate shipped support tables in this design document. This document
+is only for backlog planning, prioritization, implementation gates, and future
+format intake.
 
-Format expansion should build on
-`design/WIN_IMPORT_MODULAR_PLAN.md`. New formats should first be represented as
-module manifests with documentation, fixture expectations, type-fidelity notes,
-and adapter bindings before parser/import code is added.
+Every backlog entry exists to answer one product question:
 
-## Product Goal
+> When do we intend users to be able to import this source into DecentDB?
 
-Users should be able to bring a growing set of practical source files into a
-local DecentDB database without learning a different workflow for every format.
+## Availability Targets
 
-Every import format must fit the same user promise:
+The backlog uses target waves instead of release promises. A wave describes the
+intended implementation order once import-format work is funded and scheduled.
+User demand, dependency quality, licensing, or representative fixtures can move
+an item between waves.
 
-1. detect the source clearly,
-2. preview what will become DecentDB tables,
-3. let the user adjust target table names, column names, and types,
-4. run import work off the UI thread,
-5. report progress, warnings, skipped rows, and failures,
-6. land the result in a DecentDB `.ddb` file,
-7. support repeatability through import profiles when the format has stable
-   options,
-8. update documentation and tests before the format is called supported.
+| Target | Meaning |
+|---|---|
+| `Wave 1` | Highest practical usage potential. Implement first after current import architecture work. |
+| `Wave 2` | Broadly useful expansion after Wave 1 or when a nearby adapter is active. |
+| `Wave 3` | Domain or ecosystem expansion. Implement with clear user demand and fixtures. |
+| `Wave 4` | Specialized or high-risk. Prototype or investigate before committing. |
+| `Demand-gated` | Do not schedule until users bring concrete files and workflows. |
 
-## Relationship To Existing Docs
+## Status Values
 
-Use these documents for different purposes:
+| Status | Meaning |
+|---|---|
+| `Planned` | Accepted direction. Needs implementation, tests, docs, and any required ADR/dependency review before users can import it. |
+| `Candidate` | Valuable enough to keep on the backlog, but not accepted for near-roadmap implementation. |
+| `Investigate` | Technical fit, dependency path, licensing, data-shape policy, or user demand is not clear yet. |
+| `Deferred` | Not a good implementation target now. Revisit only if strong demand or a better dependency/conversion path appears. |
 
-- `design/IMPORT_FORMATS.md`: current user/developer inventory of what the build
-  can import now, what is partial, and what is recognized but unavailable.
-- `design/IMPORT_SUPPORT_PLAN.md`: broad product landscape for possible import
-  families and format statuses.
-- `design/FUTURE_WINS.md`: ranked roadmap index. Modular import architecture is
-  the prerequisite Future Win, and connector expansion stays as a separate
-  downstream Future Win there.
-- `design/WIN_IMPORT_MODULAR_PLAN.md`: module manifest, catalog, adapter,
-  fixture, and docs-sync architecture that future formats should use.
-- This document: implementation and governance plan for continually adding
-  import formats.
+Formats that are deliberately out of scope or not feasible as native imports
+are documented in the Help page under **Not Supported** instead of being treated
+as backlog items.
 
-When a format ships, update all applicable docs and module manifests. The
-module catalog is now the source of truth for built-in format metadata, and
-these documents should be validated against it instead of hand-synchronized.
+## Backlog
 
-## Current Supported Baseline
+Priority is ranked by likely user reach and import frequency first, then by fit
+with Decent Bench's local DecentDB import loop. Implementation complexity is
+captured in notes and gates, not hidden inside the priority number.
 
-Do not reimplement these from scratch. New formats should reuse their
-infrastructure where possible.
+| Priority | Target | Status | Family | Format / Source | Typical Extensions / Source | Implementation Path | Gates / Notes |
+|---:|---|---|---|---|---|---|---|
+| 1 | Wave 1 | Planned | Clipboard / Source Adapter | Clipboard table paste | clipboard TSV/CSV/HTML | Source adapter into generic import wizard | Explicit user action only; sanitize HTML; enforce size limits; never monitor clipboard continuously. |
+| 2 | Wave 1 | Planned | Analytical / Columnar | Parquet | `.parquet` | New analytical importer | Requires Apache-compatible reader, logical type mapping, nested type policy, and large-file streaming. |
+| 3 | Wave 1 | Planned | Spreadsheet | OpenDocument Spreadsheet | `.ods` | Spreadsheet importer extension | Multi-sheet preview, formula policy, date handling, and type inference. |
+| 4 | Wave 1 | Planned | Delimited / Text | Fixed-width text | `.txt`, `.dat`, `.fwf` | Generic import extension | Column-boundary editor, layout profiles, encoding, malformed-row handling, and validation. |
+| 5 | Wave 1 | Planned | Dump / Backup | PostgreSQL plain SQL dump expansion | `.sql` | SQL dump parser expansion | Add `COPY FROM stdin`, sequences, identity columns, constraints, and PostgreSQL type mapping. |
+| 6 | Wave 1 | Planned | Database / Embedded DB | DuckDB | `.duckdb` | Embedded database importer | Table selection, type mapping, dependency/packaging decision, and rich type fidelity. |
+| 7 | Wave 1 | Planned | Logs / Events | JSON log stream workflow | `.jsonl`, `.ndjson`, `.log` | Profile over existing NDJSON import | Current NDJSON import works for raw rows; add timestamp extraction, presets, and log-oriented defaults. |
+| 8 | Wave 1 | Investigate | Compressed / Archive | Zstandard wrapper | `.zst`, `.tar.zst` | Archive/compression wrapper | Needs cross-platform streaming decompression strategy and safe extraction policy. |
+| 9 | Wave 1 | Investigate | Logs / Events | Common web/app log templates | Apache, Nginx, IIS W3C, custom app logs | Template-based structured text importer | W3C `#Fields` and common access-log patterns are highest value; preserve timestamps and request fields. |
+| 10 | Wave 2 | Investigate | Database / Embedded DB | Microsoft Access | `.mdb`, `.accdb` | Legacy database importer | High user value, but dependency, driver, and cross-platform packaging are hard. ADR required. |
+| 11 | Wave 2 | Investigate | Database / Embedded DB | DBF / FoxPro plus memo files | `.dbf`, `.fpt`, `.dbt` | Legacy table importer | Code pages, deleted-row policy, memo file linking, and GIS bundle use cases. |
+| 12 | Wave 2 | Investigate | Web / Markup | Markdown tables | `.md` | Markup table importer | Escaped pipes, malformed tables, multiple tables per document, and header inference. |
+| 13 | Wave 2 | Investigate | Structured Document | YAML structured records | `.yaml`, `.yml` | Structured document importer | Only table-like records should import; arbitrary config should not be oversold as tabular data. |
+| 14 | Wave 2 | Investigate | Compressed / Archive | XZ wrapper | `.xz`, `.tar.xz` | Archive/compression wrapper | Cross-platform extraction and streaming behavior required. |
+| 15 | Wave 2 | Investigate | Compressed / Archive | 7-Zip wrapper | `.7z` | Archive wrapper | Dependency/licensing review and solid-archive extraction safety. |
+| 16 | Wave 2 | Candidate | Analytical / Columnar | Apache Avro | `.avro`, `.avsc` | Analytical importer | Schema evolution, logical types, nested records, and dependency review. |
+| 17 | Wave 2 | Investigate | Analytical / Columnar | Apache Arrow IPC | `.arrow`, `.ipc` | Analytical importer | Depends on maintained Dart/FFI/worker strategy. |
+| 18 | Wave 2 | Investigate | Analytical / Columnar | Feather | `.feather` | Arrow-backed importer | Shares Arrow dependency decisions; important for Python/R dataframe interchange. |
+| 19 | Wave 2 | Candidate | Structured Document | Binary JSON family | `.bson`, `.msgpack`, `.cbor` | Binary structured-document adapters | BSON/mongodump, MessagePack, and CBOR need typed value preservation and nested flattening. |
+| 20 | Wave 2 | Candidate | Structured Document | Protocol Buffers | `.proto`, `.pb`, `.pbtxt` | Schema-driven binary/text adapter | Binary protobuf requires schemas/descriptors; nested message flattening policy required. |
+| 21 | Wave 2 | Investigate | Spreadsheet | SpreadsheetML / Excel XML Spreadsheet | `.xml` | Spreadsheet-specific XML adapter | Signature detection must distinguish from generic XML import. |
+| 22 | Wave 2 | Candidate | Spreadsheet | Legacy spreadsheet interchange | `.slk`, `.dif`, `.wk1`, `.wk3`, `.wk4`, `.123` | Spreadsheet importer extension or external conversion | SYLK/DIF are text-based; Lotus formats likely need conversion support. |
+| 23 | Wave 2 | Candidate | Open Data / Metadata | Frictionless Data Package / CSVW / JSON Table Schema / dbt seeds | `datapackage.json`, CSVW metadata, schema JSON, dbt files | Profile over CSV/JSON import | Use metadata to improve type inference, naming, validation, and repeatability. |
+| 24 | Wave 2 | Candidate | Cloud / SaaS Profiles | Google Takeout bundles | `.zip` with `.json`, `.csv`, `.mbox`, `.vcf`, `.ics` | Archive plus profile set | Treat as reusable profiles over existing and future adapters; avoid implying all Google services work at once. |
+| 25 | Wave 2 | Candidate | Cloud / SaaS Profiles | Cloud audit and billing exports | CloudTrail, AWS/GCP/Azure billing, Okta/Azure AD exports | Profiles over JSON/CSV/Parquet/GZip | No live cloud credentials initially; file export profiles only. |
+| 26 | Wave 2 | Candidate | Cloud / SaaS Profiles | CRM, marketing, e-commerce, survey, and analytics exports | Salesforce, HubSpot, Marketo, Mailchimp, Shopify, WooCommerce, Magento, Qualtrics, Typeform, SurveyMonkey, GA4, Mixpanel | Profiles over CSV/XLSX/JSON/ZIP | Relationship metadata and column mapping are the value add. |
+| 27 | Wave 2 | Candidate | Cloud / SaaS Profiles | Project, chat, developer, and low-code exports | Jira, Trello, Asana, Linear, Monday, Slack, Discord, Teams, GitHub, GitLab, Airtable | Profiles over JSON/CSV/ZIP | Group as source templates, not separate parser engines. |
+| 28 | Wave 2 | Planned | Database / Live Source | PostgreSQL read-only live import | connection-based | Live source import | Requires credential storage, connection testing, cancellation, and no admin/live-query scope. ADR required. |
+| 29 | Wave 2 | Planned | Database / Live Source | MariaDB / MySQL read-only live import | connection-based | Live source import | May share mapping logic with current SQL dump support. ADR required. |
+| 30 | Wave 2 | Planned | Database / Live Source | SQL Server read-only live import | connection-based | Live source import | Authentication and type system complexity. ADR required. |
+| 31 | Wave 2 | Candidate | NoSQL / Search / Time-Series | MongoDB / Elasticsearch / Redis / InfluxDB / Prometheus exports | `.bson`, `.json`, `.ndjson`, `.rdb`, line protocol, OpenMetrics | Parser/profile family | BSON and Elasticsearch bulk NDJSON rank highest; RDB/key-value mapping needs explicit table-shape policy. |
+| 32 | Wave 2 | Candidate | Network / IT | HAR | `.har` | JSON profile | Browser/devtools HTTP archive; map requests, timings, headers, and responses conservatively. |
+| 33 | Wave 3 | Investigate | Data Science / Statistics | Stata | `.dta` | Statistical dataset importer | Preserve variable labels, value labels, missing-value semantics, and encodings. |
+| 34 | Wave 3 | Investigate | Data Science / Statistics | SPSS | `.sav`, `.zsav` | Statistical dataset importer | Preserve value labels, encodings, missing values, and survey metadata. |
+| 35 | Wave 3 | Investigate | Data Science / Statistics | SAS transport | `.xpt` | Statistical dataset importer | Common regulated/research exchange; dependency review required. |
+| 36 | Wave 3 | Candidate | Data Science / Statistics | SAS native dataset | `.sas7bdat` | Statistical dataset importer | Proprietary binary; open-source readers exist but packaging review is required. |
+| 37 | Wave 3 | Candidate | Data Science / Statistics | ARFF | `.arff` | Structured text importer | Weka/ML format with typed attributes and dense/sparse rows. |
+| 38 | Wave 3 | Candidate | Scientific / Engineering | HDF5 and NeXus | `.h5`, `.hdf5`, `.hdf`, `.nxs` | Worker-backed scientific importer | Hierarchical groups/datasets need table mapping policy and native dependency review. |
+| 39 | Wave 3 | Candidate | Scientific / Engineering | NetCDF / CDF | `.nc`, `.nc4`, `.cdf` | Worker-backed scientific importer | Coordinate variables and multidimensional arrays need relational mapping. |
+| 40 | Wave 3 | Candidate | Scientific / Engineering | FITS | `.fits`, `.fit` | Scientific binary/table importer | Binary table HDUs map well; image HDUs should be skipped or summarized initially. |
+| 41 | Wave 3 | Candidate | Scientific / Engineering | MATLAB MAT-file | `.mat` | Scientific importer | v7.3 can reuse HDF5 path; earlier versions need separate parser. |
+| 42 | Wave 3 | Candidate | Weather / Scientific | GRIB / BUFR weather formats | `.grb`, `.grib`, `.grib2`, `.bufr` | Worker-backed scientific importer | Likely requires ecCodes or equivalent; grids need relational mapping. |
+| 43 | Wave 3 | Candidate | Bioinformatics | FASTA / FASTQ | `.fa`, `.fasta`, `.fq`, `.fastq`, gzip wrappers | Streaming structured text importer | Sequence plus quality metadata maps naturally to rows; large-file streaming required. |
+| 44 | Wave 3 | Candidate | Bioinformatics | Genomics alignment, variant, and annotation formats | `.sam`, `.bam`, `.cram`, `.vcf`, `.bed`, `.gff`, `.gtf` | Structured text plus worker-backed binary adapters | VCF/BED/GFF are text; BAM/CRAM likely need htslib. |
+| 45 | Wave 3 | Investigate | Scientific / Lab | Lab and domain instrument formats | `.tdms`, `.las`, `.cif`, `.sdf`, `.mol`, `.pdb`, `.root`, `.asdf` | Domain-specific adapters | Useful in measurement, oil/gas, chemistry, biology, and physics; require concrete fixtures. |
+| 46 | Wave 3 | Candidate | Geospatial | GeoJSON | `.geojson` | Spatial profile over JSON import | Geometry mapping, CRS handling, and DecentDB spatial type policy. |
+| 47 | Wave 3 | Investigate | Geospatial | Shapefile bundle | `.shp`, `.shx`, `.dbf`, `.prj` | Multi-file spatial importer | Bundle coordination, projection metadata, DBF attributes, and geometry conversion. |
+| 48 | Wave 3 | Investigate | Geospatial | GeoPackage | `.gpkg` | SQLite-backed spatial importer | Reuse SQLite path with spatial metadata and geometry mapping. |
+| 49 | Wave 3 | Candidate | Geospatial | KML / KMZ / GPX | `.kml`, `.kmz`, `.gpx` | XML/ZIP spatial adapters | Map placemarks, tracks, routes, waypoints, and metadata. |
+| 50 | Wave 3 | Candidate | Geospatial | OSM PBF | `.osm.pbf`, `.pbf` | Protobuf streaming importer | Nodes, ways, relations, tags, and large-file streaming policy. |
+| 51 | Wave 3 | Candidate | Geospatial | GML / CityGML / TopoJSON / WKT / WKB | `.gml`, `.xml`, `.topojson`, `.wkt`, `.wkb` | Spatial structured-document adapters | Government/spatial standards and geometry interchange; WKT/WKB often appear embedded in other sources. |
+| 52 | Wave 3 | Candidate | Geospatial | GeoParquet / GeoArrow | `.parquet`, `.arrow` with geospatial metadata | Profile over Parquet/Arrow | Build after Parquet/Arrow foundations. |
+| 53 | Wave 3 | Candidate | Geospatial | SpatiaLite / MBTiles | `.sqlite`, `.db`, `.mbtiles` | SQLite-backed profile | Skip or summarize large tile BLOBs by default. |
+| 54 | Wave 3 | Candidate | Financial / Banking | OFX / QFX / QIF | `.ofx`, `.qfx`, `.qif` | Finance transaction importer | Map accounts and transactions; handle OFX SGML and XML variants; privacy care required. |
+| 55 | Wave 3 | Candidate | Financial / Banking | MT940 / MT942 / ISO 20022 CAMT / SEPA | `.mt940`, `.sta`, `.camt`, `.xml` | Bank statement importer | Tag-based text and complex XML; strong fintech/treasury use case. |
+| 56 | Wave 3 | Candidate | Financial / Accounting | XBRL / iXBRL / XBRL GL | `.xbrl`, `.xml`, inline HTML | Financial reporting importer | Taxonomy/linkbase handling is complex; report and ledger profiles are distinct. |
+| 57 | Wave 3 | Candidate | Financial / Messaging | EDI X12 / EDIFACT | `.edi`, `.x12`, `.edifact` | EDI parser | Segment/loop hierarchy and implementation guides matter. |
+| 58 | Wave 3 | Candidate | Financial / Trading | FIX / FIXML logs | `.fix`, `.log`, `.txt`, `.xml` | Structured log/message importer | Tag=value parser for FIX; XML profile for FIXML. |
+| 59 | Wave 3 | Candidate | Financial / Payments | NACHA ACH and payment processor exports | `.ach`, `.csv`, `.xlsx`, `.json` | Fixed-width plus profile family | ACH is fixed-width; Stripe/PayPal/Square/crypto exports are mostly CSV/JSON profiles. |
+| 60 | Wave 3 | Candidate | Financial / Accounting | QuickBooks / Xero / GnuCash / Ledger / Beancount | `.iif`, `.csv`, `.xlsx`, `.gnucash`, `.ledger`, `.beancount` | Accounting importer/profile family | IIF/ledger formats need section/journal parsers; many exports are CSV/XLSX/XML profiles. |
+| 61 | Wave 3 | Candidate | Healthcare | FHIR bundles / NDJSON profiles | `.json`, `.ndjson` | Healthcare JSON/NDJSON profile | Raw JSON can import now, but resource-aware table mapping is future work. |
+| 62 | Wave 3 | Investigate | Healthcare | HL7 v2 / C-CDA / CDA | `.hl7`, `.xml` | Healthcare message/document importers | HL7 v2 is pipe-delimited with hierarchy; CDA is complex XML. |
+| 63 | Wave 3 | Investigate | Healthcare | DICOM metadata | `.dcm`, `.dicom`, `DICOMDIR` | Metadata-only healthcare importer | Skip pixel data; PHI sensitivity and metadata dictionary required. |
+| 64 | Wave 3 | Candidate | Healthcare | Clinical terminology and reference datasets | ICD, CPT/HCPCS, NDC, LOINC, SNOMED CT RF2 | Profiles over CSV/TSV/XML | Large reference datasets and vocabulary relationships. |
+| 65 | Wave 3 | Candidate | Healthcare | Research and clinical data standards | REDCap, OMOP CDM, CDISC SDTM/ADaM, NCPDP, ASC X12N | Profile families over CSV/SAS/EDI | Domain-specific validation is the hard part. |
+| 66 | Wave 3 | Candidate | Email / Communication | MBOX / EML | `.mbox`, `.eml` | Email archive importer | RFC 2822 parsing; attachment metadata/link-only by default. |
+| 67 | Wave 3 | Investigate | Email / Communication | Outlook PST / OST / MSG | `.pst`, `.ost`, `.msg` | External-conversion assisted importer | Direct parsing is dependency-heavy; prefer conversion to MBOX/EML first. |
+| 68 | Wave 3 | Candidate | Calendar / Contacts | iCalendar / vCard | `.ics`, `.vcf` | Calendar/contact importers | Recurrence, timezones, and multi-value fields need careful mapping. |
+| 69 | Wave 3 | Candidate | Security / Logs | CEF / LEEF / auditd / Windows EVTX | `.log`, `.csv`, `.evtx` | Security log importers | CEF/LEEF/auditd are structured text; EVTX likely needs binary/XML parser. |
+| 70 | Wave 3 | Candidate | Observability | OpenTelemetry / Prometheus / Splunk / Datadog / New Relic / Loki exports | `.json`, `.jsonl`, `.csv`, OpenMetrics text | Observability profile family | Time-series labels, traces, spans, and metric samples. |
+| 71 | Wave 3 | Candidate | Network / IT | PCAP / PCAPNG | `.pcap`, `.pcapng`, `.cap` | Packet summary importer | Packet summary tables only; full protocol dissection out of initial scope. |
+| 72 | Wave 3 | Candidate | Network / IT | Nmap / DNS / NetFlow / BGP outputs | `.xml`, `.gnmap`, `.zone`, `.txt`, binary/CSV flow exports | Network diagnostic importers | XML/text profiles first; binary flow/routing formats require specialized parsers. |
+| 73 | Wave 3 | Candidate | Industrial / IoT | Time-series and industrial text exports | OPC-UA exports, SCADA historian CSV, MQTT logs, Modbus dumps, telematics CSV | Profiles over CSV/JSON/logs | Timestamp/tag handling and quality-code metadata. |
+| 74 | Wave 3 | Investigate | Industrial / IoT | Engineering/automation formats | CAN DBC/ASC, ADS-B/ACARS, AIS, IFC/BIM | Domain adapters | CAN/AIS/ADS-B feasible; IFC is complex and demand-gated. |
+| 75 | Wave 3 | Candidate | Government / Public Data | Census, ACS, FEC, HMDA, IPEDS, BLS, BEA, FRED, World Bank, IMF, Comtrade | `.csv`, `.xlsx`, fixed-width, `.fec`, API downloads | Public-data profiles | Mostly CSV/XLSX/fixed-width plus codebooks. |
+| 76 | Wave 3 | Candidate | Government / Public Data | Statistical exchange and publication standards | SDMX, DDI, NOAA GRIB/BUFR, USPTO XML, PubMed/MEDLINE XML | Structured/binary public-data profiles | Prioritize with public-sector/research users and fixtures. |
+| 77 | Wave 4 | Candidate | Publishing / Bibliographic | BibTeX / RIS / MARC / ONIX / Crossref / DataCite | `.bib`, `.ris`, `.mrc`, `.xml`, `.json` | Bibliographic importers | BibTeX/RIS easier; MARC/ONIX specialized. |
+| 78 | Wave 4 | Candidate | Media / Metadata | EXIF / IPTC / XMP / ID3 / subtitles / playlists / GEDCOM | images, audio, `.srt`, `.vtt`, `.m3u`, `.ged` | Metadata-only importers | Avoid becoming a media-management app; import metadata, not media content. |
+| 79 | Wave 4 | Candidate | Configuration / Dev Tooling | Terraform state/plan, Ansible facts, HCL, Postman/Insomnia/Bruno collections, package metadata, SARIF | `.tfstate`, `.json`, `.yaml`, `.hcl`, `.sarif`, archives | Developer-data profiles | Mostly profiles over JSON/YAML/archive parsing; SARIF is high-value security results data. |
+| 80 | Wave 4 | Candidate | Security / Threat Intel | STIX, CVE/NVD feeds, Nessus/OpenVAS, Sigma, YARA metadata | `.json`, `.xml`, `.nessus`, `.yaml`, `.yar` | Security-data profiles | Mostly JSON/XML/YAML profiles; YARA/Sigma metadata extraction only. |
+| 81 | Wave 4 | Investigate | Legacy / Mainframe | EBCDIC files and COBOL copybook data | `.dat`, `.cpy` plus binary/fixed-width data | Legacy record-layout importer | Copybook parsing, packed decimals, zoned decimals, and EBCDIC transcoding. |
+| 82 | Demand-gated | Candidate | Data Lake | Delta Lake table folders | `_delta_log` plus Parquet files | Table-directory importer | Depends on Parquet first; transaction log replay and time-travel semantics. |
+| 83 | Demand-gated | Candidate | Data Lake | Apache Iceberg table metadata | metadata folder plus data files | Table-directory importer | Depends on Parquet/Avro; manifest/catalog handling. |
+| 84 | Demand-gated | Candidate | Data Lake | Apache Hudi table folders | `.hoodie` metadata plus data files | Table-directory importer | Depends on Parquet/Avro/ORC; complex table types. |
+| 85 | Demand-gated | Deferred | Analytical / Columnar | ORC | `.orc` | Analytical importer | Lower expected desktop frequency than Parquet; revisit after Parquet/Avro. |
+| 86 | Demand-gated | Investigate | Database / Live Source | Oracle read-only live import | connection-based | Live source import | Important in some enterprise shops; high setup and support burden. |
+| 87 | Demand-gated | Investigate | Database / Live Source | Generic ODBC/JDBC-like import abstraction | connection-based | Live source framework | Risk of becoming database administration scope; only consider for read-only import. |
+| 88 | Demand-gated | Candidate | Dump / Backup | Oracle Data Pump / SQL*Loader | `.dmp`, `.ctl` plus data files | External-tool assisted importer | Likely requires Oracle tooling and companion data handling. |
+| 89 | Demand-gated | Candidate | Dump / Backup | DB2 IXF / Teradata exports / Cassandra exports / Neo4j CSV bundles | `.ixf`, CSV/JSON/bundles | Enterprise migration importers | Usually dialect-specific tools, companion metadata, or coordinated files. |
+| 90 | Demand-gated | Deferred | Database / Embedded DB | Proprietary desktop databases | FileMaker, Progress OpenEdge, Btrieve/Actian, Lotus Notes NSF, Paradox | External-conversion assisted importer | Vendor tools or drivers usually required; only schedule with representative files and users. |
+| 91 | Demand-gated | Deferred | Data Science / Statistics | JMP / Minitab / EViews | `.jmp`, `.mtw`, `.mpj`, `.wf1` | Statistical importer | Concentrated niches; defer until clear demand. |
 
-### Complete Import Or Open Support
+## Not Supported In The App
 
-| Family | Format | Extensions | Current Path |
-|---|---|---|---|
-| DecentDB | DecentDB open/migrate | `.ddb` | Direct open, with legacy migration path on format-version failure |
-| Delimited text | CSV | `.csv` | Generic import wizard |
-| Delimited text | TSV | `.tsv` | Generic import wizard |
-| Delimited text | Generic delimited | `.txt`, `.dat`, `.log`, `.psv` | Generic import wizard |
-| Structured document | JSON | `.json` | Generic import wizard |
-| Structured document | NDJSON / JSONL | `.ndjson`, `.jsonl` | Generic import wizard |
-| Structured document | XML | `.xml` | Generic import wizard |
-| Web / markup | HTML tables | `.html`, `.htm` | Generic import wizard |
-| Spreadsheet | Excel Open XML | `.xlsx` | Dedicated Excel wizard |
-| Database | SQLite | `.db`, `.sqlite`, `.sqlite3` | Dedicated SQLite wizard |
-| Database dump | MariaDB/MySQL-style SQL dump | `.sql` | Dedicated MVP-lite SQL dump wizard |
-| Archive wrapper | ZIP | `.zip` | Extract supported inner file, then route normally |
-| Archive wrapper | GZip / Tar+GZip | `.gz`, `.tgz`, `.tar.gz` | Extract supported inner file, then route normally |
-| Archive wrapper | BZip2 / Tar+BZip2 | `.bz2`, `.tbz2`, `.tar.bz2` | Extract supported inner file, then route normally |
+Some source types are deliberately not backlog items for native import because
+they are installer/disk containers, arbitrary object graphs, binary systems
+that need migration tooling, or content types where tabular import would be
+misleading. These are documented for users in:
 
-### Partial Support
+- `apps/decent-bench/assets/help/importing-data.md`
 
-| Family | Format | Extensions | Current Path |
-|---|---|---|---|
-| Spreadsheet | Legacy Excel | `.xls` | Dedicated Excel path with conversion/normalization warnings |
+Use that Help section to point users toward external conversion into supported
+formats such as CSV, TSV, JSON, NDJSON, XML, HTML tables, Excel, SQLite, or SQL
+dumps.
 
-## Recognized But Not Implemented Yet
+## Format Addition Lifecycle
 
-The current registry and docs recognize these unavailable formats. They should
-remain honest unavailable states until the implementation and validation gates
-in this document are complete.
+Every new import format must move through these stages before it is described
+as supported.
 
-| Format | Extensions / Source | Current Status | Priority Bucket | Recommended Path |
-|---|---|---|---|---|
-| Fixed-width text | usually `.txt`, `.dat` | Planned | Near | Generic import extension |
-| OpenDocument Spreadsheet | `.ods` | Planned | Near | Spreadsheet importer extension |
-| Parquet | `.parquet` | Planned | Near | New analytical importer |
-| DuckDB | `.duckdb` | Planned | Near | Embedded database importer |
-| PostgreSQL plain SQL dump expansion | `.sql` | Planned | Near | SQL dump parser expansion |
-| YAML / YML | `.yaml`, `.yml` | Investigate | Later | Structured document importer |
-| Markdown tables | `.md` | Investigate | Later | Markup table importer |
-| XZ wrapper | `.xz` | Investigate | Later | Archive wrapper |
-| Clipboard table capture | clipboard | Investigate | Later | Source adapter into generic importer |
-| Microsoft Access | `.mdb`, `.accdb` | Investigate | Specialized | Legacy database importer |
-| DBF / FoxPro | `.dbf` | Investigate | Specialized | Legacy table importer |
-| MS SQL Server backup | `.bak` | Investigate | Specialized | Container-assisted source conversion |
-| PDF table extraction | `.pdf` | Deferred | Defer | Extraction-quality gated importer |
-| TOML | `.toml` | Deferred | Defer | Structured key/value importer only if demand appears |
+### 1. Request Intake
 
-## Priority Model
+Capture:
 
-Rank future import formats by these criteria. The highest-value format is not
-always the easiest one; use the score to decide roadmap order, not to skip ADRs
-or tests.
-
-| Criterion | Weight | How To Score |
-|---|---:|---|
-| User frequency | 30 | How often likely users receive this format |
-| DecentDB fit | 20 | How naturally the format becomes DecentDB tables |
-| Implementation confidence | 15 | Availability of stable parsers, fixtures, and platform support |
-| Streaming feasibility | 15 | Ability to preview/import without full materialization |
-| Licensing/package fit | 10 | Apache-compatible dependency path and notices |
-| Support burden | 10 | Low ambiguity, low platform fragility, clear failure modes |
-
-Scoring rule:
-
-- `80-100`: near-roadmap candidate.
-- `60-79`: backlog candidate after near-roadmap formats.
-- `40-59`: investigate only; gather user demand or prototype first.
-- `< 40`: defer unless a specific user need justifies it.
-
-## Recommended Roadmap Order
-
-### Wave 1: Highest Practical Value
-
-Implement these first unless user demand strongly changes the order:
-
-1. Fixed-width text.
-2. OpenDocument Spreadsheet (`.ods`).
-3. Parquet import.
-4. DuckDB import.
-5. PostgreSQL plain SQL dump expansion.
-
-Rationale:
-
-- Fixed-width text covers legacy enterprise, payroll, banking, government, and
-  batch exports.
-- ODS closes a common spreadsheet gap for LibreOffice/OpenOffice users.
-- Parquet covers modern analytics and data engineering workflows.
-- DuckDB overlaps strongly with local analytics users who are likely DecentDB
-  adopters.
-- PostgreSQL plain dumps are common developer and migration handoff artifacts.
-
-### Wave 2: Practical Niche Expansion
-
-Implement after Wave 1 or when user demand is clear:
-
-1. Markdown table import.
-2. YAML import for structured records.
-3. XZ wrapper.
-4. Clipboard table capture.
-5. Log templates for Apache/Nginx/common app logs.
-
-### Wave 3: Specialized Legacy And Enterprise
-
-Implement only with clear demand, strong fixtures, and dependency confidence:
-
-1. Access (`.mdb`, `.accdb`).
-2. DBF / FoxPro (`.dbf`).
-3. SQL Server BCP / bulk export files.
-4. PostgreSQL custom/binary backup.
-5. MS SQL Server backup (`.bak`).
-6. Stata/SPSS/SAS transport.
-
-### Deferred Until Extraction Quality Or Product Fit Is Proven
-
-- PDF table extraction.
-- TOML import.
-- ORC.
-- R data files.
-- Generic ODBC/JDBC-like source abstraction.
-
-## Standard Format Addition Lifecycle
-
-Every new import format must move through these stages.
-
-### Stage 1: Request Intake
-
-Create or update a short issue/design note with:
-
-- format name,
-- extensions,
+- format name and extensions,
 - sample files,
 - user workflow,
 - expected DecentDB output shape,
-- whether source data is tabular, nested, relational, archival, or binary,
-- whether the source can be streamed,
-- whether the user expects one table or many tables,
-- whether preserving formulas, constraints, indexes, metadata, or nested
-  relationships matters.
+- expected table count,
+- source data model,
+- streaming requirements,
+- metadata or type-fidelity requirements,
+- privacy/security concerns.
 
 Do not implement from a vague request like "support format X" without at least
 one representative sample or a documented source specification.
 
-### Stage 2: Product Classification
+### 2. Product Classification
 
-Classify the format as one of:
+Classify the source family:
 
 - delimited/text tabular,
 - spreadsheet,
@@ -233,728 +201,84 @@ Classify the format as one of:
 - logs/events,
 - legacy business/data science,
 - clipboard/source adapter,
-- live source import.
+- live source import,
+- domain-specific profile.
 
-Record this classification in `design/IMPORT_SUPPORT_PLAN.md` and
-`ImportFormatRegistry`.
+Add or update the backlog row in this document.
 
-### Stage 3: Dependency And License Review
+### 3. Dependency And License Review
 
-Before adding any package or native tool:
+Before adding any package, native library, or external tool:
 
-- verify license compatibility with Apache 2.0 distribution,
-- verify desktop platform support for Linux, macOS, and Windows,
+- verify Apache 2.0-compatible distribution,
+- verify Linux, macOS, and Windows support,
 - verify maintenance status,
-- verify whether the package can stream or requires full-file reads,
-- identify native binary packaging needs,
-- identify notices required in `THIRD_PARTY_NOTICES` or equivalent repo policy,
-- decide whether a dependency ADR is required.
+- verify streaming or bounded-memory behavior,
+- identify native packaging needs,
+- identify third-party notice requirements,
+- decide whether an ADR is required.
 
 If dependency status is uncertain, the format remains `Investigate`.
 
-### Stage 4: ADR Gate
+### 4. Module Manifest And Fixtures
 
-Create an ADR before implementation when the format:
+Add or update a built-in module manifest under:
+
+- `apps/decent-bench/import_modules/builtin/`
+
+The module must declare:
+
+- source family,
+- status,
+- extensions or signatures,
+- implementation kind,
+- adapter binding,
+- limitations,
+- user-facing documentation,
+- fixture expectations.
+
+Add representative fixtures before calling the format supported.
+
+### 5. Adapter Implementation
+
+Implementation must:
+
+- run heavy work off the UI thread,
+- stream or page large files,
+- expose preview before import,
+- let users adjust table and column names,
+- preserve source types and logical metadata where practical,
+- report warnings and skipped rows,
+- support cancellation where practical,
+- land data in a DecentDB `.ddb` file.
+
+### 6. Validation And Documentation
+
+Before marking a format supported:
+
+- detection tests pass,
+- unsupported/invalid-file tests pass,
+- preview tests pass,
+- import round-trip tests pass,
+- large-file behavior is bounded,
+- warning/error behavior is tested,
+- docs are updated in `apps/decent-bench/assets/help/importing-data.md`,
+- changelog is updated,
+- any dependency notices are updated.
+
+## ADR Gates
+
+Create or update an ADR when a format:
 
 - adds a major dependency,
-- adds a native binary or external CLI requirement,
+- adds a native binary or external CLI,
 - changes import profile format,
 - changes generic import transform behavior,
 - adds credential storage,
-- adds a live source connection,
-- adds a source conversion/container workflow,
+- adds live source import,
+- adds source conversion/container workflow,
 - cannot preserve streaming/paging expectations,
 - introduces security-sensitive parsing or extraction.
 
-Minor parser additions that reuse existing dependencies and contracts may not
-need a new ADR, but the implementation PR must explicitly state why no ADR was
-required.
-
-### Stage 5: Registry And Detection
-
-Update `ImportFormatRegistry`:
-
-- add or update `ImportFormatKey`,
-- set `label`,
-- set `family`,
-- set `supportState`,
-- set `extensions`,
-- set `implementationKind`,
-- write a truthful `description`,
-- write a `note` when behavior is partial or warning-prone.
-
-Update `ImportDetectionService` when extension-only detection is not enough.
-
-Detection requirements:
-
-- known unsupported formats must show a clear unavailable state,
-- implemented formats must route to the correct wizard/importer,
-- wrappers must expose supported inner candidates and not pretend unsupported
-  inner files are importable,
-- ambiguous extensions must use safe signature/header checks where practical,
-- failure to inspect a file must produce a user-facing warning or error.
-
-### Stage 6: Preview Contract
-
-Every implemented format needs an import preview.
-
-Preview must show:
-
-- detected tables or source objects,
-- target table names,
-- source column names,
-- target column names,
-- inferred DecentDB types,
-- sample rows,
-- warnings,
-- unsupported source features,
-- format-specific options.
-
-Preview must not:
-
-- import data before user confirmation,
-- block the UI thread,
-- silently drop source structures,
-- load large files into widget state.
-
-### Stage 7: Import Execution Contract
-
-Every implemented format must:
-
-- run off the UI thread,
-- write to DecentDB through a transactional or rollback-safe path where
-  possible,
-- provide progress updates,
-- support cancellation when feasible,
-- report rows copied by target table,
-- report warnings with stable codes where possible,
-- surface unsupported source features,
-- write post-import summaries,
-- integrate with import/export profile persistence when stable options exist.
-
-### Stage 8: Test Fixtures
-
-Each format must include fixtures before being marked supported.
-
-Minimum fixture set:
-
-- one clean happy-path source,
-- one messy source with warnings,
-- one empty or nearly empty source,
-- one malformed source,
-- one source with non-ASCII text,
-- one source with null/empty values,
-- one source with type edge cases,
-- one large or generated fixture for performance-sensitive formats.
-
-Binary or large fixtures should be generated in tests when practical instead of
-checked in.
-
-### Stage 9: Documentation
-
-When a format changes status, update:
-
-- `design/IMPORT_FORMATS.md`,
-- `design/IMPORT_SUPPORT_PLAN.md`,
-- `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md` if priority/status changes,
-- `README.md`,
-- `apps/decent-bench/README.md`,
-- `apps/decent-bench/assets/help/importing-data.md`,
-- `apps/decent-bench/assets/help/getting-started.md`,
-- `apps/decent-bench/assets/help/help_manifest.json` when search tags or
-  summary should change.
-
-The docs must distinguish:
-
-- complete support,
-- partial support,
-- recognized but not implemented,
-- deferred,
-- wrapper support,
-- live source import.
-
-### Stage 10: Release Readiness
-
-Do not mark a format complete until:
-
-- registry state is `complete`,
-- UI flow works,
-- headless flow works when applicable,
-- tests pass,
-- docs are updated,
-- dependency/license review is done,
-- import warnings are understandable,
-- cancellation/progress behavior is verified,
-- archive/wrapper interaction is tested if applicable.
-
-## Common Implementation Paths
-
-### Generic Import Extension
-
-Use for:
-
-- fixed-width text,
-- Markdown tables,
-- YAML when it maps to records,
-- log templates after parsing into records.
-
-Expected files:
-
-- `apps/decent-bench/lib/features/import/domain/import_models.dart`
-- `apps/decent-bench/lib/features/import/infrastructure/import_format_registry.dart`
-- `apps/decent-bench/lib/features/import/infrastructure/import_preview_service.dart`
-- `apps/decent-bench/lib/features/import/infrastructure/import_execution_service.dart`
-- a format-specific support file under
-  `apps/decent-bench/lib/features/import/infrastructure/`.
-
-Requirements:
-
-- materialize source into `MaterializedImportSource`,
-- reuse generic import options where possible,
-- add format-specific options only when needed,
-- support generic transforms after preview.
-
-### Spreadsheet Import Extension
-
-Use for:
-
-- ODS,
-- future SpreadsheetML if accepted,
-- legacy Excel improvements.
-
-Requirements:
-
-- support multi-sheet preview,
-- preserve sheet names as source names,
-- infer headers,
-- infer types,
-- warn on formulas and unsupported workbook features,
-- avoid full workbook UI-thread parsing.
-
-### Embedded Database Importer
-
-Use for:
-
-- DuckDB,
-- Access,
-- DBF where it behaves as table files,
-- future local database sources.
-
-Requirements:
-
-- inspect schema and tables,
-- preview rows,
-- map source types to DecentDB types,
-- preserve table names,
-- preserve indexes/constraints only when product contract accepts it,
-- run source reads off the UI thread,
-- never treat the source database as a live query target.
-
-### Database Dump Parser Expansion
-
-Use for:
-
-- PostgreSQL plain SQL dumps,
-- broader MySQL/MariaDB dump support,
-- SQL Server BCP/bulk metadata if accepted.
-
-Requirements:
-
-- explicit dialect scope,
-- warning-first unsupported statement behavior where safe,
-- clear parser limitations,
-- fixtures for common dump constructs,
-- no silent execution of unsupported DDL/DML.
-
-### Analytical / Columnar Importer
-
-Use for:
-
-- Parquet,
-- Arrow IPC,
-- Feather,
-- ORC if ever accepted.
-
-Requirements:
-
-- dependency/license ADR,
-- streaming or chunked row-group import,
-- nested type mapping plan,
-- binary metadata preview,
-- large-file tests,
-- typed DecentDB native type mapping.
-
-### Archive Wrapper
-
-Use for:
-
-- XZ,
-- additional tar wrappers,
-- future compressed wrappers.
-
-Requirements:
-
-- wrapper detects supported inner files,
-- wrapper does not claim unsupported inner files are importable,
-- extraction is safe against path traversal,
-- extraction uses temp directories and cleans them up,
-- large archive behavior is documented,
-- system-tool dependency is documented when used.
-
-### Source Adapter
-
-Use for:
-
-- clipboard table capture,
-- URL import if accepted,
-- cloud object pre-signed URL import if accepted.
-
-Requirements:
-
-- source adapter produces a temporary local source or stream,
-- user explicitly initiates capture/fetch,
-- no continuous clipboard monitoring,
-- network/cloud imports require a separate ADR,
-- source metadata avoids storing sensitive payloads by default.
-
-## Per-Format Plans
-
-### Fixed-Width Text
-
-Priority: Wave 1.
-
-Implementation path: Generic import extension.
-
-Required options:
-
-- column boundary mode:
-  - manual widths,
-  - start/end positions,
-  - infer from header ruler if present,
-- encoding,
-- header row on/off,
-- skip leading rows,
-- trim fields,
-- pad short rows,
-- reject short rows,
-- reject long rows,
-- table name.
-
-Preview:
-
-- show ruler/position view,
-- show parsed columns,
-- show malformed row count,
-- show sample rows.
-
-Tests:
-
-- fixed widths,
-- start/end positions,
-- short row pad,
-- short row reject,
-- long row reject,
-- non-ASCII text,
-- generated large file.
-
-ADR need: no ADR if implemented with standard Dart IO and existing generic
-import contracts. ADR required if a new parser dependency is added.
-
-### OpenDocument Spreadsheet (`.ods`)
-
-Priority: Wave 1.
-
-Implementation path: Spreadsheet import extension.
-
-Required options:
-
-- sheet selection,
-- header row on/off,
-- formula handling:
-  - displayed values only for first implementation,
-  - formula metadata warning when available,
-- type overrides,
-- table naming.
-
-Dependency gate:
-
-- must verify parser license and desktop support,
-- must update notices if required.
-
-Tests:
-
-- single sheet,
-- multi-sheet,
-- formulas,
-- blank rows,
-- merged cells if parser exposes them,
-- mixed types,
-- non-ASCII text.
-
-ADR need: required if adding a new ODS parser dependency.
-
-### Parquet Import
-
-Priority: Wave 1.
-
-Implementation path: Analytical / columnar importer.
-
-Required options:
-
-- row group selection if available,
-- nested strategy:
-  - flatten,
-  - JSON text fallback,
-  - child-table normalization only if explicitly accepted,
-- logical type mapping,
-- table name,
-- column selection.
-
-Dependency gate:
-
-- must use an Apache-compatible maintained parser or validated FFI path,
-- must validate Linux/macOS/Windows packaging,
-- must document whether import is streaming or chunked.
-
-Tests:
-
-- primitive columns,
-- nullable columns,
-- decimals,
-- timestamps,
-- nested lists/structs,
-- multiple row groups,
-- large generated file.
-
-ADR need: required.
-
-### DuckDB Import
-
-Priority: Wave 1.
-
-Implementation path: Embedded database importer.
-
-Required options:
-
-- table selection,
-- view import decision:
-  - materialize selected views as tables only for first implementation,
-- type mapping,
-- table renaming,
-- column renaming.
-
-Dependency gate:
-
-- decide between DuckDB CLI, native library, or file parser approach,
-- validate license and packaging,
-- document version compatibility.
-
-Tests:
-
-- table import,
-- view materialization if accepted,
-- decimals,
-- timestamps,
-- list/struct columns with fallback mapping,
-- empty table,
-- large table.
-
-ADR need: required.
-
-### PostgreSQL Plain SQL Dump Expansion
-
-Priority: Wave 1.
-
-Implementation path: Database dump parser expansion.
-
-Required scope for first accepted implementation:
-
-- `CREATE TABLE`,
-- `ALTER TABLE ... ADD CONSTRAINT` for primary keys, unique constraints, and
-  foreign keys when safely translatable,
-- `COPY ... FROM stdin`,
-- `INSERT ... VALUES`,
-- sequences represented as DecentDB-compatible defaults only when safe,
-- unsupported statements reported as warnings.
-
-Non-goals:
-
-- custom-format `.backup`,
-- binary dumps,
-- executing arbitrary PostgreSQL functions,
-- full stored procedure support.
-
-Tests:
-
-- common `pg_dump --format=plain`,
-- COPY data,
-- quoted identifiers,
-- schemas,
-- sequences,
-- foreign keys,
-- unsupported extensions.
-
-ADR need: required because parser scope affects user-visible migration
-behavior.
-
-### Markdown Tables
-
-Priority: Wave 2.
-
-Implementation path: Generic import extension or HTML/markup importer.
-
-Required options:
-
-- table selection,
-- header row detection,
-- alignment row handling,
-- escaped pipe handling,
-- table name.
-
-Tests:
-
-- one table,
-- multiple tables,
-- escaped pipes,
-- malformed alignment row,
-- surrounding prose.
-
-ADR need: not required if no new dependency is added.
-
-### YAML / YML
-
-Priority: Wave 2 after user demand.
-
-Implementation path: Structured document importer.
-
-Required decision:
-
-- YAML is supported only for structured records, not arbitrary config
-  semantics.
-
-Required options:
-
-- flatten,
-- normalize,
-- table name,
-- repeated object path selection.
-
-Dependency gate:
-
-- YAML parser license and maintenance review.
-
-Tests:
-
-- list of objects,
-- nested objects,
-- mixed scalar/list values,
-- anchors/aliases warning behavior,
-- malformed YAML.
-
-ADR need: required if dependency or YAML semantic scope is non-trivial.
-
-### XZ Wrapper
-
-Priority: Wave 2.
-
-Implementation path: Archive wrapper.
-
-Required options:
-
-- single-file unwrap,
-- tar+xz support only if extraction path is accepted.
-
-Dependency gate:
-
-- decide Dart package versus system `xz`/`tar`,
-- validate Windows behavior.
-
-Tests:
-
-- `.xz` wrapping CSV,
-- `.tar.xz` if supported,
-- unsupported inner file,
-- corrupt archive,
-- cleanup temp directory.
-
-ADR need: required if system tool dependency is introduced.
-
-### Clipboard Table Capture
-
-Priority: Wave 2, but high UX value.
-
-Implementation path: Source adapter into generic importer.
-
-Required options:
-
-- TSV clipboard,
-- CSV-like clipboard,
-- HTML table clipboard,
-- explicit paste/import action,
-- no background clipboard monitoring.
-
-Tests:
-
-- TSV from spreadsheet,
-- HTML table fragment,
-- empty clipboard,
-- large clipboard bounded behavior,
-- sensitive payload not persisted by default.
-
-ADR need: required if clipboard metadata becomes persistent or HTML sanitization
-rules are accepted.
-
-### Microsoft Access (`.mdb`, `.accdb`)
-
-Priority: Wave 3.
-
-Implementation path: Legacy database importer.
-
-Dependency gate:
-
-- parser/driver support is the main blocker,
-- cross-platform behavior must be proven before implementation.
-
-Required scope:
-
-- table import first,
-- views/queries only if safely materializable,
-- relationships only if parser exposes stable metadata.
-
-ADR need: required.
-
-### DBF / FoxPro
-
-Priority: Wave 3.
-
-Implementation path: Legacy table importer.
-
-Required options:
-
-- code page/encoding,
-- deleted row handling,
-- memo file handling when available,
-- table name.
-
-Tests:
-
-- DBF without memo,
-- DBF with memo if supported,
-- code page variations,
-- deleted rows.
-
-ADR need: required if dependency is added.
-
-### MS SQL Server Backup (`.bak`)
-
-Priority: Wave 3.
-
-Implementation path: Container-assisted conversion or external tool workflow.
-
-Current stance:
-
-- recognized, not implemented.
-- do not fake support.
-
-Required decisions:
-
-- whether Docker/container assistance is acceptable,
-- whether SQL Server tooling license/distribution is acceptable,
-- whether this remains local-first enough for the product.
-
-ADR need: required.
-
-### PDF Table Extraction
-
-Priority: deferred.
-
-Implementation path: none until extraction quality is acceptable.
-
-Required decision before implementation:
-
-- acceptable extraction quality threshold,
-- supported PDF classes,
-- user correction workflow.
-
-ADR need: required.
-
-## Registry Status Rules
-
-Use registry statuses consistently:
-
-- `complete`: production-ready for the intended scope.
-- `partial`: user can import, but important limitations are expected and
-  surfaced.
-- `planned`: accepted into roadmap, not implemented.
-- `investigate`: value or technical fit is not clear.
-- `deferred`: intentionally not planned until conditions change.
-- `notStarted`: no meaningful implementation or roadmap commitment.
-
-Do not set `complete` until docs, tests, and user-visible flows are done.
-
-## Required Test Matrix For Every New Format
-
-Each new format must have:
-
-- detection test,
-- unsupported/invalid file test,
-- preview test,
-- import execution test,
-- warning test,
-- headless import test if the format is file-based and non-interactive,
-- docs/update test where applicable,
-- fixture manifest entry if fixture infrastructure covers it,
-- large-file or generated performance test when the format is expected to be
-  used with large data.
-
-Wrapper formats additionally require:
-
-- supported inner file test,
-- unsupported inner file test,
-- multiple inner candidate behavior,
-- path traversal safety test,
-- temp cleanup test.
-
-## Documentation Sync Checklist
-
-When any import format changes status, update:
-
-- [ ] built-in module manifest under `apps/decent-bench/import_modules/builtin/`
-- [ ] compatibility projection through `ImportFormatRegistry`
-- [ ] `design/IMPORT_FORMATS.md`
-- [ ] `design/IMPORT_SUPPORT_PLAN.md`
-- [ ] this plan, if priority/status changed
-- [ ] `design/FUTURE_WINS.md`, if roadmap rank/scope changed
-- [ ] root `README.md`
-- [ ] `apps/decent-bench/README.md`
-- [ ] in-app help pages
-- [ ] import fixture manifest/tests
-- [ ] ADR references, if an ADR was required
-- [ ] third-party notices, if dependency changed
-
-## Completion Definition For This Future Win
-
-This Future Win is not a one-time feature. It remains active as a roadmap
-program until the product no longer intends to add import formats.
-
-For a single format to be complete:
-
-- the format is detected correctly,
-- unavailable states are honest,
-- preview works,
-- import execution works,
-- progress and cancellation behave as documented,
-- warnings are stable and understandable,
-- tests cover clean, messy, malformed, and large cases,
-- docs are updated,
-- dependency/license review is complete,
-- ADRs are accepted where required.
-
-For the import expansion program to be healthy:
-
-- `design/IMPORT_FORMATS.md` matches the registry,
-- user-requested formats are triaged through this plan,
-- recognized unavailable formats stay visible but are not oversold,
-- no import path silently materializes large data on the UI thread,
-- no new dependency enters without license review,
-- wrappers never pretend unsupported inner files are importable.
+Small adapters that reuse existing dependencies and contracts may not need a
+new ADR, but the implementation notes must explicitly state why.

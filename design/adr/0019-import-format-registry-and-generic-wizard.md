@@ -21,7 +21,7 @@ The accepted architecture is:
 
 ### Rationale
 
-`design/IMPORT_SUPPORT_PLAN.md` expands the product from a few one-off import
+The import expansion design work moved the product from a few one-off import
 dialogs into a family-aware ingestion workbench. The app already had working
 MVP import paths for Excel, SQLite, and SQL dump sources, but it lacked a
 single place to express support state, route wrapper formats, or add new import
@@ -51,7 +51,7 @@ that were already aligned to accepted ADRs.
 
 ### References
 
-- [design/IMPORT_SUPPORT_PLAN.md](/home/steven/source/decent-bench/design/IMPORT_SUPPORT_PLAN.md)
+- [design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md](/home/steven/src/github/decent-bench/design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md)
 - [design/PRD.md](/home/steven/source/decent-bench/design/PRD.md)
 - [design/SPEC.md](/home/steven/source/decent-bench/design/SPEC.md)
 - [AGENTS.md](/home/steven/source/decent-bench/AGENTS.md)

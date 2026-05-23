@@ -11,16 +11,16 @@ structured documents, Excel workbooks, SQLite, and SQL dump scenarios.
 ## Coverage intent
 
 This pack is aligned with the current import support baseline in
-`design/IMPORT_FORMATS.md`.
+`apps/decent-bench/assets/help/importing-data.md` and the module catalog under
+`apps/decent-bench/import_modules/builtin/`.
 
 - Positive-path fixtures cover formats that are implemented now or partially
   supported now, including CSV/TSV/PSV, JSON, NDJSON, XML, HTML tables, GZip
   wrappers, Excel `.xlsx`, Excel `.xls`, SQLite, and MySQL/MariaDB-style SQL
   dumps.
-- Negative-path and future-path fixtures cover formats that are recognized but
-  not fully supported in the current build, including fixed-width text,
-  PostgreSQL plain SQL dumps, and mock backup formats such as `.bak`, `.dump`,
-  and `.backup`.
+- Negative-path and future-path fixtures cover formats that are not fully
+  supported in the current build, including fixed-width text, PostgreSQL plain
+  SQL dumps, and mock backup formats such as `.bak`, `.dump`, and `.backup`.
 
 Not every file in this directory is expected to import successfully today. Some
 fixtures exist specifically to validate graceful failure, warning messages, and

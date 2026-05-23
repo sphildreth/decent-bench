@@ -31,8 +31,9 @@ Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
   `INSERT ... VALUES`, with unsupported statements surfaced as warnings rather
   than hard failures when possible
 - `apps/decent-bench/import_modules/builtin/` is the source of truth for
-  built-in import modules; `design/IMPORT_FORMATS.md` summarizes implemented,
-  partial, and recognized-but-unimplemented import formats
+  built-in import modules; `assets/help/importing-data.md` lists formats users
+  can import today, and `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md` is the
+  single backlog for future import formats
 - `CHANGELOG.md` records shipped releases starting with `1.0.0`
 - native-library resolution uses bundled app location first, then system
   paths (`/usr/local/lib/`, `~/.local/lib/`), with a packaging helper

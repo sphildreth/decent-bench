@@ -84,8 +84,8 @@ This Future Win is complete only when all of these are true:
   - ZIP wrapper,
   - GZip / Tar+GZip wrapper,
   - BZip2 / Tar+BZip2 wrapper.
-- Every currently recognized unavailable format has a built-in planned,
-  investigate, deferred, or candidate module:
+- Every current future/deferred format tracked in the module catalog has a
+  built-in planned, investigate, deferred, or candidate module:
   - fixed-width text,
   - ODS,
   - YAML,
@@ -102,7 +102,8 @@ This Future Win is complete only when all of these are true:
   - XZ wrapper,
   - clipboard table capture,
   - PDF tables,
-  - all future candidates accepted from `design/IMPORT_FORMATS.md`.
+  - future candidates accepted from
+    `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`.
 - `ImportFormatRegistry` is generated from or loaded from module manifests
   rather than being the hand-maintained source of truth for format metadata.
 - Drag-and-drop, file picker, headless import, archive candidate detection, and
@@ -118,8 +119,8 @@ This Future Win is complete only when all of these are true:
   interchange layer for other formats.
 - The canonical import handoff model is DecentDB typed schema plus typed
   preview/import batches.
-- Built-in module documentation can be validated against
-  `design/IMPORT_FORMATS.md` and bundled Help Center pages.
+- Built-in module documentation can be validated against the future-format
+  backlog and bundled Help Center pages.
 - Every module has declared fixtures or an explicit reason fixtures are not
   applicable.
 - Tests prove module loading, manifest validation, detection, routing, adapter
@@ -138,7 +139,7 @@ Do not implement these as part of this Future Win:
 - Replacing DecentDB as the destination.
 - Using SQLite as a universal import staging database.
 - Implementing new file formats beyond converting existing support and
-  recognized unavailable formats into modules.
+  future/deferred module entries into modules.
 
 Future external modules, extension marketplaces, and scripting bridges require
 separate PRD/SPEC alignment and ADRs.
@@ -1006,8 +1007,8 @@ Rules:
 - Signature checks may read only the required leading bytes.
 - Archive detection must not extract full archives just to identify candidates.
 - Detection warnings must identify ambiguous or suspicious matches.
-- Unknown files should still show helpful recognized-but-unavailable suggestions
-  when possible.
+- Unknown files should still show helpful unsupported-source suggestions when
+  the module catalog has a matching future or deferred module.
 
 ## Documentation Behavior
 
@@ -1016,12 +1017,11 @@ metadata.
 
 Required documentation updates:
 
-- `design/IMPORT_FORMATS.md` must say the module catalog is the source of truth
-  once conversion is complete.
-- Complete and partial modules must appear in "Fully implemented now" or
-  "Partial support now".
-- Planned, investigate, deferred, and candidate modules must appear in the
-  future-format table.
+- `apps/decent-bench/assets/help/importing-data.md` must list only complete and
+  partial modules that users can open/import today.
+- Planned, investigate, deferred, and candidate module work must appear in
+  `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md` or be intentionally hidden with
+  a manifest flag.
 - Bundled Help Center importing docs must list complete and partial modules.
 - Module README files must explain:
   - what the source format is,
@@ -1389,7 +1389,7 @@ Acceptance criteria:
 
 - User flow is unchanged for currently supported formats except for more
   consistent unsupported-format explanations.
-- Unsupported recognized formats show module docs/limitations.
+- Unsupported future/deferred modules show module docs/limitations.
 - Unknown formats remain clear.
 
 Tests:
@@ -1440,9 +1440,10 @@ Implementation tasks:
 
 1. Add a docs validation command or test.
 2. Validate that every complete and partial module appears in
-   `design/IMPORT_FORMATS.md`.
+   `apps/decent-bench/assets/help/importing-data.md`.
 3. Validate that every planned/investigate/deferred/candidate module appears in
-   the future table or is intentionally hidden with a manifest flag.
+   `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md` or is intentionally hidden with
+   a manifest flag.
 4. Validate bundled help docs mention complete and partial import families.
 5. Validate module README files exist.
 6. Validate module README files include required headings:
@@ -1452,9 +1453,9 @@ Implementation tasks:
    - Type Fidelity,
    - Limitations,
    - Fixtures.
-7. Update `design/IMPORT_FORMATS.md` to say the module catalog is the source of
-   truth.
-8. Update `apps/decent-bench/assets/help/importing-data.md`.
+7. Update `apps/decent-bench/assets/help/importing-data.md`.
+8. Update `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md` when future-format
+   priority or scope changes.
 9. Update `apps/decent-bench/assets/help/getting-started.md` only if visible
    import lists change.
 10. Update help manifest tags and summaries if needed.
@@ -1618,9 +1619,11 @@ Implementation tasks:
 3. Verify file picker for every complete and partial format.
 4. Verify archive wrapper candidate selection.
 5. Verify headless import where supported.
-6. Verify unsupported recognized formats show correct unavailable messaging.
+6. Verify unsupported future/deferred modules show correct unavailable
+   messaging.
 7. Verify unknown files show correct unknown messaging.
-8. Verify help docs and `design/IMPORT_FORMATS.md` match module catalog.
+8. Verify help docs and `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md` match the
+   appropriate module catalog statuses.
 
 Acceptance criteria:
 
@@ -1688,8 +1691,8 @@ Manual verification:
 ## Future Candidate Module Intake
 
 After the current registry is converted, every new future import idea should be
-tracked as a module candidate instead of only as prose in
-`design/IMPORT_FORMATS.md`.
+tracked as a module candidate and, when it is product-relevant, as a backlog row
+in `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`.
 
 Candidate modules may have:
 
@@ -1748,8 +1751,10 @@ Before and after module conversion, assert the same values for:
 
 Required:
 
-- complete/partial modules documented in `design/IMPORT_FORMATS.md`,
-- future modules documented in future table or intentionally hidden,
+- complete/partial modules documented in
+  `apps/decent-bench/assets/help/importing-data.md`,
+- future modules documented in `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md` or
+  intentionally hidden,
 - module README required sections,
 - bundled help docs mention supported import families.
 
@@ -1759,8 +1764,6 @@ Update these files as part of the relevant slices:
 
 - `design/FUTURE_WINS.md`
 - `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`
-- `design/IMPORT_FORMATS.md`
-- `design/IMPORT_SUPPORT_PLAN.md`
 - `apps/decent-bench/assets/help/importing-data.md`
 - `apps/decent-bench/assets/help/getting-started.md`
 - `apps/decent-bench/assets/help/help_manifest.json`
@@ -1771,7 +1774,7 @@ Documentation must state clearly:
 
 - which formats are complete,
 - which formats are partial,
-- which formats are recognized but unavailable,
+- which planned/deferred formats are not available yet,
 - that module manifests are declarative,
 - that external modules are not supported yet,
 - that SQLite is a source module, not universal staging,
@@ -1795,6 +1798,7 @@ This Future Win is complete when:
 - Hardcoded duplicate format metadata is removed or intentionally adapter-local.
 - `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md` uses module promotion as the
   first step for new formats.
-- `design/IMPORT_FORMATS.md` reflects module catalog status.
+- help and future-format planning docs reflect the appropriate module catalog
+  statuses.
 - `flutter analyze` passes.
 - `flutter test` passes.

@@ -136,8 +136,8 @@ This file records notable project changes. It follows the
   dependency before downloading release assets, so integration builds work
   against unpublished local DecentDB versions.
 - Updated the README import documentation to align with the module-backed
-  catalog, current supported formats, recognized future formats, and refreshed
-  import roadmap.
+  catalog, current supported formats, the future import-format backlog, and
+  refreshed import roadmap.
 - Refactored `DecentDbBridge` worker isolate into a `_BridgeWorkerState` class
   with dedicated handler methods for each operation (openDatabase, loadSchema,
   runQuery, fetchNextPage, cancelQuery, exportCsv).

@@ -5,20 +5,23 @@ import 'package:decent_bench/features/import_modules/infrastructure/builtin_impo
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('design import format documentation covers built-in modules', () {
-    final formatsDoc = File(
-      '../../design/IMPORT_FORMATS.md',
+  test('bundled help covers supported built-in modules', () {
+    final help = File('assets/help/importing-data.md').readAsStringSync();
+    final gettingStarted = File(
+      'assets/help/getting-started.md',
     ).readAsStringSync();
+    final combined = '$help\n$gettingStarted';
 
-    expect(formatsDoc, contains('module catalog'));
     for (final module in builtinImportModuleCatalog.modules) {
-      if (module.status == ImportModuleStatus.notStarted) {
+      if (module.status != ImportModuleStatus.complete &&
+          module.status != ImportModuleStatus.partial) {
         continue;
       }
       expect(
-        formatsDoc,
+        combined,
         contains(module.name),
-        reason: 'design/IMPORT_FORMATS.md must mention ${module.id}.',
+        reason:
+            'supported import module ${module.id} must be mentioned in help.',
       );
     }
   });
@@ -31,13 +34,13 @@ void main() {
     final combined = '$help\n$gettingStarted';
 
     for (final phrase in <String>[
-      'Delimited text',
+      'Generic Delimited Text',
       'Structured documents',
-      'HTML tables',
+      'HTML Tables',
       'Excel',
       'SQLite',
-      'SQL dumps',
-      'Archive wrappers',
+      'SQL Dump',
+      'ZIP Wrapper',
     ]) {
       expect(combined, contains(phrase));
     }

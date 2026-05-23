@@ -29,7 +29,7 @@ This refresh considered:
 
 - `design/PRD.md`
 - `design/SPEC.md`
-- `design/IMPORT_SUPPORT_PLAN.md`
+- `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`
 - the previous `design/FUTURE_WINS.md`
 - recent ADRs, especially:
   - `design/adr/0022-headless-cli-import-mode-and-plan-file.md`
@@ -192,10 +192,12 @@ dbench generate-sdk --project <workspace.dbench-project.toml> \
 
 ### Connector Expansion
 
-The built-in module catalog is now the source of truth for supported and
-recognized formats. Future connector work should add or promote modules first,
-then implement reviewed adapters with broad value, streaming behavior, and
-Apache-compatible distribution.
+The built-in module catalog is now the code source of truth for import module
+metadata. `apps/decent-bench/assets/help/importing-data.md` documents formats
+users can import today, and `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md` tracks
+future import formats that are not available yet. Future connector work should
+add or promote modules first, then implement reviewed adapters with broad
+value, streaming behavior, and Apache-compatible distribution.
 
 ### Query-Plan And Performance Diagnostics
 

@@ -16,7 +16,7 @@ DecentDB, or supported SQL dump) onto Decent Bench.
 - If it is a **DecentDB** file, Decent Bench opens it immediately.
 - If it is a supported **import source**, Decent Bench launches an
   **Import Wizard** tailored to the file type.
-- If it is a recognized but unsupported file type, Decent Bench shows a clear
+- If it is a known unsupported file type, Decent Bench shows a clear
   "not supported in this version" path and suggested workaround.
 
 ---
@@ -205,7 +205,7 @@ Suggested measurable targets:
    - **Legacy DecentDB file** → offer a safe copy-based migration using the
      official `decentdb-migrate` tool, then open the migrated copy
    - **Supported import source** → launch Import Wizard
-   - **Recognized but unsupported type** → open a guidance path with clear
+   - **Known unsupported type** → open a guidance path with clear
      messaging
 3. Wizard gathers options, shows preview, and runs import into a chosen or new
    DecentDB file.
