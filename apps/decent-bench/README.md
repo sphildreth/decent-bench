@@ -12,7 +12,8 @@ Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
   dump import wizard are in place
 - reopening the same DecentDB file restores persisted query tabs for that
   workspace
-- editor settings and SQL snippets persist in `config.toml`
+- editor settings, SQL snippets, and desktop window placement persist in
+  `config.toml`
 - SQLite, Excel, and SQL dump inspection plus import execution run off the UI
   thread
 - CSV, TSV, generic delimited text, fixed-width text, JSON, NDJSON/JSONL, JSON

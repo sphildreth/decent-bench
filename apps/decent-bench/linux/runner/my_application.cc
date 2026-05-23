@@ -7,6 +7,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "flutter_menu_plugin.h"
+#include "window_placement_plugin.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
@@ -14,6 +15,7 @@ struct _MyApplication {
   FlView *view;
   GtkWidget *content_box;
   FlutterMenuPlugin *menu_plugin;
+  WindowPlacementPlugin *window_placement_plugin;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -129,6 +131,7 @@ static void my_application_activate(GApplication *application) {
   FlBinaryMessenger *messenger = fl_engine_get_binary_messenger(engine);
   self->menu_plugin =
       new FlutterMenuPlugin(messenger, window, GTK_BOX(content_box));
+  self->window_placement_plugin = new WindowPlacementPlugin(messenger, window);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
@@ -177,6 +180,8 @@ static void my_application_dispose(GObject *object) {
   MyApplication *self = MY_APPLICATION(object);
   delete self->menu_plugin;
   self->menu_plugin = nullptr;
+  delete self->window_placement_plugin;
+  self->window_placement_plugin = nullptr;
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
@@ -194,6 +199,7 @@ static void my_application_init(MyApplication *self) {
   self->view = nullptr;
   self->content_box = nullptr;
   self->menu_plugin = nullptr;
+  self->window_placement_plugin = nullptr;
 }
 
 MyApplication *my_application_new() {

@@ -104,6 +104,9 @@ This file records notable project changes. It follows the
   actions, isolate-backed non-SQL checks, paged violation inspection,
   Markdown/HTML/JSON quality report export, and the headless `dbench quality`
   command.
+- Added desktop window placement persistence for Linux, macOS, and Windows,
+  including restored size, maximized/fullscreen state, and best-effort monitor
+  placement through the TOML application config.
 
 ### Changed
 
@@ -133,6 +136,8 @@ This file records notable project changes. It follows the
 - Updated deferred menu commands for live database import, connection
   management, rerun import/export, and Parquet export so they remain visible
   but disabled until their accepted product/dependency contracts exist.
+- Updated the TOML configuration version for persisted desktop window
+  placement while keeping legacy configs loadable.
 - Simplified the top command toolbar into a compact quick-action bar with New,
   Open, Import, and Commands entries while leaving full command access in the
   application menus and command palette.

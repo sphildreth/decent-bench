@@ -808,6 +808,8 @@ Config should include:
 - editor settings
 - snippets
 - export defaults
+- desktop window placement, including size, state, and monitor/display
+  restoration where the host platform allows it
 
 ### 12.2 Workspace state vs user config
 
@@ -815,6 +817,9 @@ The implementation must distinguish between:
 
 - **user config**: global preferences and defaults
 - **workspace state**: open-file-specific UI state
+
+Desktop window placement is user config. It is not tied to a specific DecentDB
+workspace file.
 
 They may be stored separately even if both use TOML.
 

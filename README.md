@@ -86,7 +86,7 @@
   typed parameters, result-column metadata, and prompts before mutating or
   destructive statements. Native branch execution is surfaced as unavailable
   until the Dart binding exposes public branch APIs.
-- 🎨 **Workspace Persistence:** Application preferences are stored as TOML, and per-database workspace state is stored separately for reliable tab and query restoration.
+- 🎨 **Workspace Persistence:** Application preferences, including desktop window size, state, and monitor placement, are stored as TOML. Per-database workspace state is stored separately for reliable tab and query restoration.
 - 🪵 **Operational Visibility:** Open the DecentDB-backed application log database directly from `Tools -> View Log`.
 - 🧪 **Import Validation:** Blocking failure dialogs and richer import summaries make unsuccessful imports obvious and successful imports easier to verify.
 - 📤 **Typed Exports:** CSV, JSON, NDJSON, and Excel export stream result pages
@@ -273,13 +273,6 @@ We love contributions! Before making non-trivial changes, please review the [`SP
 3. **ADRs are Mandatory:** Document lasting architectural or product-impacting decisions.
 4. **License Compliance:** Only add Apache 2.0 compatible dependencies.
 
-## ❓ FAQ
-
-**Is this a general-purpose database admin tool?**
-No. Decent Bench is intentionally **DecentDB-first**. 
-
-**Does the app load entire query results into memory?**
-No. Paging and streaming are core design constraints to ensure UI responsiveness.
 
 ## 📄 License & Attribution
 

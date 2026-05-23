@@ -27,6 +27,8 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   flutter_menu_plugin_ = std::make_unique<FlutterMenuPlugin>(
       flutter_controller_->engine()->messenger(), GetHandle());
+  window_placement_plugin_ = std::make_unique<WindowPlacementPlugin>(
+      flutter_controller_->engine()->messenger(), GetHandle());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -46,6 +48,7 @@ void FlutterWindow::OnDestroy() {
     flutter_controller_ = nullptr;
   }
   flutter_menu_plugin_ = nullptr;
+  window_placement_plugin_ = nullptr;
 
   Win32Window::OnDestroy();
 }

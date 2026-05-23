@@ -256,13 +256,111 @@ class AppearanceSettings {
   int get hashCode => Object.hash(activeTheme, themesDir);
 }
 
+enum WindowPlacementState {
+  normal,
+  maximized,
+  fullscreen;
+
+  String get tomlValue => name;
+
+  static WindowPlacementState parse(String raw) {
+    final normalized = raw.trim().toLowerCase();
+    for (final value in WindowPlacementState.values) {
+      if (value.name == normalized) {
+        return value;
+      }
+    }
+    return WindowPlacementState.normal;
+  }
+}
+
+class WindowPlacement {
+  static const int minimumWidth = 640;
+  static const int minimumHeight = 480;
+
+  const WindowPlacement({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.state,
+    this.displayId,
+    this.displayX,
+    this.displayY,
+    this.displayWidth,
+    this.displayHeight,
+  });
+
+  final int x;
+  final int y;
+  final int width;
+  final int height;
+  final WindowPlacementState state;
+  final String? displayId;
+  final int? displayX;
+  final int? displayY;
+  final int? displayWidth;
+  final int? displayHeight;
+
+  WindowPlacement normalized() {
+    return WindowPlacement(
+      x: x,
+      y: y,
+      width: width < minimumWidth ? minimumWidth : width,
+      height: height < minimumHeight ? minimumHeight : height,
+      state: state,
+      displayId: displayId == null || displayId!.trim().isEmpty
+          ? null
+          : displayId!.trim(),
+      displayX: displayX,
+      displayY: displayY,
+      displayWidth: displayWidth != null && displayWidth! > 0
+          ? displayWidth
+          : null,
+      displayHeight: displayHeight != null && displayHeight! > 0
+          ? displayHeight
+          : null,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is WindowPlacement &&
+        other.x == x &&
+        other.y == y &&
+        other.width == width &&
+        other.height == height &&
+        other.state == state &&
+        other.displayId == displayId &&
+        other.displayX == displayX &&
+        other.displayY == displayY &&
+        other.displayWidth == displayWidth &&
+        other.displayHeight == displayHeight;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    x,
+    y,
+    width,
+    height,
+    state,
+    displayId,
+    displayX,
+    displayY,
+    displayWidth,
+    displayHeight,
+  );
+}
+
 class AppConfig {
-  static const int currentConfigVersion = 2;
+  static const int currentConfigVersion = 3;
   static const int defaultPageSizeValue = 1000;
   static const int defaultQueryHistoryLimitValue = 40;
   static const String defaultCsvDelimiter = ',';
   static const bool defaultCsvIncludeHeaders = true;
   static const int maxRecentFiles = 8;
+  static const Object _unset = Object();
 
   const AppConfig({
     required this.configVersion,
@@ -276,6 +374,7 @@ class AppConfig {
     required this.csvIncludeHeaders,
     required this.editorSettings,
     required this.shellPreferences,
+    required this.windowPlacement,
     required this.shortcutBindings,
     required this.snippets,
   });
@@ -291,6 +390,7 @@ class AppConfig {
   final bool csvIncludeHeaders;
   final EditorSettings editorSettings;
   final WorkspaceShellPreferences shellPreferences;
+  final WindowPlacement? windowPlacement;
   final Map<String, String> shortcutBindings;
   final List<SqlSnippet> snippets;
 
@@ -307,6 +407,7 @@ class AppConfig {
       csvIncludeHeaders: defaultCsvIncludeHeaders,
       editorSettings: EditorSettings.defaults(),
       shellPreferences: WorkspaceShellPreferences.defaults(),
+      windowPlacement: null,
       shortcutBindings: defaultShortcutBindings(),
       snippets: defaultSnippets(),
     );
@@ -324,6 +425,7 @@ class AppConfig {
     bool? csvIncludeHeaders,
     EditorSettings? editorSettings,
     WorkspaceShellPreferences? shellPreferences,
+    Object? windowPlacement = _unset,
     Map<String, String>? shortcutBindings,
     List<SqlSnippet>? snippets,
   }) {
@@ -339,6 +441,9 @@ class AppConfig {
       csvIncludeHeaders: csvIncludeHeaders ?? this.csvIncludeHeaders,
       editorSettings: editorSettings ?? this.editorSettings,
       shellPreferences: shellPreferences ?? this.shellPreferences,
+      windowPlacement: windowPlacement == _unset
+          ? this.windowPlacement
+          : windowPlacement as WindowPlacement?,
       shortcutBindings: shortcutBindings ?? this.shortcutBindings,
       snippets: snippets ?? this.snippets,
     );
@@ -411,8 +516,36 @@ class AppConfig {
       ..writeln('capacity = ${writeQueue.capacity}')
       ..writeln('default_timeout_ms = ${writeQueue.defaultTimeoutMs}')
       ..writeln('max_batch = ${writeQueue.maxBatch}')
-      ..writeln('max_group_delay_us = ${writeQueue.maxGroupDelayUs}')
-      ..writeln()
+      ..writeln('max_group_delay_us = ${writeQueue.maxGroupDelayUs}');
+
+    final window = windowPlacement?.normalized();
+    if (window != null) {
+      buffer
+        ..writeln()
+        ..writeln('[window]')
+        ..writeln('state = ${jsonEncode(window.state.tomlValue)}')
+        ..writeln('x = ${window.x}')
+        ..writeln('y = ${window.y}')
+        ..writeln('width = ${window.width}')
+        ..writeln('height = ${window.height}');
+      if (window.displayId != null) {
+        buffer.writeln('display_id = ${jsonEncode(window.displayId)}');
+      }
+      if (window.displayX != null) {
+        buffer.writeln('display_x = ${window.displayX}');
+      }
+      if (window.displayY != null) {
+        buffer.writeln('display_y = ${window.displayY}');
+      }
+      if (window.displayWidth != null) {
+        buffer.writeln('display_width = ${window.displayWidth}');
+      }
+      if (window.displayHeight != null) {
+        buffer.writeln('display_height = ${window.displayHeight}');
+      }
+    }
+
+    buffer
       ..writeln()
       ..writeln('[layout]')
       ..writeln(
@@ -457,6 +590,16 @@ class AppConfig {
     Map<String, Object?>? pendingSnippet;
     int? declaredSnippetCount;
     String? currentTable;
+    var windowState = WindowPlacementState.normal;
+    int? windowX;
+    int? windowY;
+    int? windowWidth;
+    int? windowHeight;
+    String? windowDisplayId;
+    int? windowDisplayX;
+    int? windowDisplayY;
+    int? windowDisplayWidth;
+    int? windowDisplayHeight;
 
     void flushSnippet() {
       if (pendingSnippet == null) {
@@ -588,6 +731,39 @@ class AppConfig {
               writeQueue: config.writeQueue.copyWith(maxGroupDelayUs: parsed),
             );
           }
+          break;
+        case 'window.state':
+          final parsed = _decodeJsonString(value);
+          if (parsed != null) {
+            windowState = WindowPlacementState.parse(parsed);
+          }
+          break;
+        case 'window.x':
+          windowX = int.tryParse(value);
+          break;
+        case 'window.y':
+          windowY = int.tryParse(value);
+          break;
+        case 'window.width':
+          windowWidth = int.tryParse(value);
+          break;
+        case 'window.height':
+          windowHeight = int.tryParse(value);
+          break;
+        case 'window.display_id':
+          windowDisplayId = _decodeJsonString(value);
+          break;
+        case 'window.display_x':
+          windowDisplayX = int.tryParse(value);
+          break;
+        case 'window.display_y':
+          windowDisplayY = int.tryParse(value);
+          break;
+        case 'window.display_width':
+          windowDisplayWidth = int.tryParse(value);
+          break;
+        case 'window.display_height':
+          windowDisplayHeight = int.tryParse(value);
           break;
         case 'default_page_size':
           final parsed = int.tryParse(value);
@@ -794,12 +970,66 @@ class AppConfig {
     if (declaredSnippetCount != null || parsedSnippets.isNotEmpty) {
       config = config.copyWith(snippets: parsedSnippets);
     }
+    final parsedWindowPlacement = _buildWindowPlacement(
+      x: windowX,
+      y: windowY,
+      width: windowWidth,
+      height: windowHeight,
+      state: windowState,
+      displayId: windowDisplayId,
+      displayX: windowDisplayX,
+      displayY: windowDisplayY,
+      displayWidth: windowDisplayWidth,
+      displayHeight: windowDisplayHeight,
+    );
+    if (parsedWindowPlacement != null) {
+      config = config.copyWith(windowPlacement: parsedWindowPlacement);
+    }
 
     return config.copyWith(
       configVersion: config.configVersion == 0
           ? currentConfigVersion
           : config.configVersion,
       shellPreferences: config.shellPreferences.normalized(),
+    );
+  }
+
+  static WindowPlacement? _buildWindowPlacement({
+    required int? x,
+    required int? y,
+    required int? width,
+    required int? height,
+    required WindowPlacementState state,
+    required String? displayId,
+    required int? displayX,
+    required int? displayY,
+    required int? displayWidth,
+    required int? displayHeight,
+  }) {
+    if (x == null || y == null || width == null || height == null) {
+      return null;
+    }
+    if (width < WindowPlacement.minimumWidth ||
+        height < WindowPlacement.minimumHeight) {
+      return null;
+    }
+    return WindowPlacement(
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      state: state,
+      displayId: displayId == null || displayId.trim().isEmpty
+          ? null
+          : displayId.trim(),
+      displayX: displayX,
+      displayY: displayY,
+      displayWidth: displayWidth != null && displayWidth > 0
+          ? displayWidth
+          : null,
+      displayHeight: displayHeight != null && displayHeight > 0
+          ? displayHeight
+          : null,
     );
   }
 

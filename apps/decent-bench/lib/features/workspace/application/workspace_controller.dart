@@ -40,6 +40,7 @@ class WorkspaceController extends ChangeNotifier {
     SavedQueryLibraryStore? savedQueryLibraryStore,
     LayoutPersistenceService? layoutPersistenceService,
     AppLogger? logger,
+    AppConfig? initialConfig,
   }) : _logger = logger ?? const NoOpAppLogger(),
        _gateway = gateway ?? DecentDbBridge(),
        _configStore = configStore ?? AppConfigStore(logger: logger),
@@ -48,6 +49,9 @@ class WorkspaceController extends ChangeNotifier {
            savedQueryLibraryStore ?? FileSavedQueryLibraryStore(),
        _layoutPersistenceService =
            layoutPersistenceService ?? const LayoutPersistenceService() {
+    if (initialConfig != null) {
+      config = initialConfig;
+    }
     final dataQualityRepository = DataQualityRepository();
     dataQuality = DataQualityController(
       runner: DataQualityRunner(
@@ -2761,6 +2765,19 @@ class WorkspaceController extends ChangeNotifier {
   }) async {
     config = _layoutPersistenceService.save(config, preferences);
     await _persistConfig(statusMessage);
+  }
+
+  Future<void> updateWindowPlacement(WindowPlacement placement) async {
+    final normalized = placement.normalized();
+    if (config.windowPlacement == normalized &&
+        config.configVersion == AppConfig.currentConfigVersion) {
+      return;
+    }
+    config = config.copyWith(
+      configVersion: AppConfig.currentConfigVersion,
+      windowPlacement: normalized,
+    );
+    await _persistConfig();
   }
 
   Future<void> reloadConfig() async {

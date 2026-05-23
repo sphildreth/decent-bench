@@ -32,6 +32,18 @@ void main() {
         indentSpaces: 4,
         showLineNumbers: false,
       ),
+      windowPlacement: const WindowPlacement(
+        x: -1800,
+        y: 120,
+        width: 1440,
+        height: 900,
+        state: WindowPlacementState.maximized,
+        displayId: r'\\.\DISPLAY2',
+        displayX: -1920,
+        displayY: 0,
+        displayWidth: 1920,
+        displayHeight: 1080,
+      ),
       shellPreferences: const WorkspaceShellPreferences(
         leftColumnFraction: 0.33,
         leftTopFraction: 0.61,
@@ -68,6 +80,9 @@ void main() {
     expect(toml, contains('verbosity = "debug"'));
     expect(toml, contains('[write_queue]'));
     expect(toml, contains('enabled = true'));
+    expect(toml, contains('[window]'));
+    expect(toml, contains('state = "maximized"'));
+    expect(toml, contains(r'display_id = "\\\\.\\DISPLAY2"'));
     expect(toml, contains('[layout]'));
     expect(toml, contains('[shortcuts]'));
     expect(toml, contains('[[editor_snippets]]'));
@@ -96,6 +111,7 @@ void main() {
     expect(parsed.editorSettings.formatUppercaseKeywords, isFalse);
     expect(parsed.editorSettings.indentSpaces, 4);
     expect(parsed.editorSettings.showLineNumbers, isFalse);
+    expect(parsed.windowPlacement, config.windowPlacement);
     expect(parsed.shellPreferences.leftColumnFraction, closeTo(0.33, 0.001));
     expect(parsed.shellPreferences.showPropertiesPane, isFalse);
     expect(parsed.shellPreferences.showStatusBar, isFalse);
@@ -131,6 +147,7 @@ recent_files = ["/tmp/example.ddb"]
     );
     expect(parsed.defaultPageSize, 500);
     expect(parsed.writeQueue, WriteQueueSettings.defaults());
+    expect(parsed.windowPlacement, isNull);
     expect(parsed.queryHistoryLimit, AppConfig.defaultQueryHistoryLimitValue);
     expect(parsed.editorSettings.autocompleteEnabled, isTrue);
     expect(parsed.shellPreferences, isNotNull);
@@ -150,6 +167,21 @@ editor_snippets = [{"id":"custom","name":"Custom","trigger":"custom","descriptio
 
     expect(parsed.snippets.single.id, 'custom');
     expect(parsed.snippets.single.description, 'Legacy');
+  });
+
+  test('invalid persisted window bounds are ignored', () {
+    const toml = '''
+[window]
+state = "maximized"
+x = 100
+y = 100
+width = 120
+height = 80
+''';
+
+    final parsed = AppConfig.fromToml(toml);
+
+    expect(parsed.windowPlacement, isNull);
   });
 
   test('AppConfigStore reads and writes the TOML file on disk', () async {

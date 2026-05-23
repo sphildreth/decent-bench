@@ -6,13 +6,25 @@ import 'app/app.dart';
 import 'app/headless_import_runner.dart';
 import 'app/headless_quality_runner.dart';
 import 'app/startup_launch_options.dart';
+import 'app/window_placement/window_placement_service.dart';
+import 'features/workspace/infrastructure/app_config_store.dart';
 
 Future<void> main(List<String> args) async {
   final cliDecision = parseStartupCliDecision(args);
   switch (cliDecision.behavior) {
     case StartupCliBehavior.launchApp:
       WidgetsFlutterBinding.ensureInitialized();
-      runApp(DecentBenchApp(startupLaunchOptions: cliDecision.launchOptions));
+      final configStore = AppConfigStore();
+      final initialConfig = await configStore.load();
+      await const WindowPlacementService().restore(
+        initialConfig.windowPlacement,
+      );
+      runApp(
+        DecentBenchApp(
+          startupLaunchOptions: cliDecision.launchOptions,
+          initialConfig: initialConfig,
+        ),
+      );
       return;
     case StartupCliBehavior.runHeadlessImport:
       exit(await runHeadlessImportCli(cliDecision.headlessImportOptions!));
