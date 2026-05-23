@@ -1,7 +1,7 @@
 # Import Format Backlog And Implementation Plan
 
 **Status:** Active backlog
-**Last reviewed:** 2026-05-22  
+**Last reviewed:** 2026-05-22
 **Source roadmap item:** `design/FUTURE_WINS.md` rank 15, `P1`
 **Supported-format documentation:** `apps/decent-bench/assets/help/importing-data.md`
 **Module architecture:** `design/WIN_IMPORT_MODULAR_PLAN.md`
@@ -51,6 +51,49 @@ Formats that are deliberately out of scope or not feasible as native imports
 are documented in the Help page under **Not Supported** instead of being treated
 as backlog items.
 
+## Testing Tooling Policy
+
+Prefer Dockerized test tooling whenever a future format needs an external
+application, database engine, CLI, or language ecosystem to generate fixtures or
+validate output.
+
+The goal is to avoid requiring contributors to install a wide collection of
+format-specific applications on the host development system. Docker-based
+fixture generation also makes cleanup easier and makes test data provenance
+more repeatable.
+
+Rules:
+
+- Normal `flutter test` runs must use checked-in fixtures and must not require
+  Docker, a running database service, LibreOffice, Python packages, DuckDB,
+  PostgreSQL, or other optional tools.
+- Fixture-generation scripts may require Docker when a real source application
+  is needed.
+- Docker image names, tags, commands, generated file paths, and cleanup behavior
+  must be documented next to the fixture script or module README.
+- Prefer pinned image tags over floating `latest` tags for reproducibility.
+- Generated fixtures must be small enough for the repository or explicitly
+  documented as non-checked-in local fixtures.
+- If a fixture cannot be generated in Docker, document why and list the minimum
+  host tool requirement.
+- Any Docker image used for fixture generation must still pass dependency and
+  license review if it becomes part of the release build or runtime path.
+- Docker is allowed for development and fixture generation; it must not become
+  an app runtime requirement unless a format-specific ADR explicitly accepts
+  that trade-off.
+
+Expected Docker-backed fixture sources for near-term planned formats:
+
+| Format | Preferred Docker Tooling | Purpose |
+|---|---|---|
+| PostgreSQL plain dumps | `postgres` image with `pg_dump` | Generate representative plain SQL dumps with `COPY`, sequences, identity columns, quoted identifiers, and common PostgreSQL types. |
+| Parquet | Python image with `pyarrow`/`pandas`, or DuckDB image/CLI | Generate and independently validate Parquet fixtures covering primitives, nulls, logical types, decimals, timestamps, binary values, and nested values. |
+| DuckDB | DuckDB CLI image or Python image with `duckdb` | Generate `.duckdb` databases and validate table/type expectations without installing DuckDB on the host. |
+| ODS | LibreOffice image when practical | Generate and verify `.ods` workbooks with sheets, cached formulas, dates, repeated cells, and sparse rows. Checked-in hand-authored fixtures are acceptable when containerized LibreOffice is too heavy. |
+| Fixed-width text | No external tool required | Generate deterministic text fixtures in-repo. |
+| JSON log stream | No external tool required | Generate deterministic `.jsonl` and `.log` fixtures in-repo. |
+| Clipboard table paste | No external tool required for automated tests | Use synthetic clipboard payloads in tests; browser/spreadsheet manual checks are optional. |
+
 ## Backlog
 
 Priority is ranked by likely user reach and import frequency first, then by fit
@@ -59,12 +102,12 @@ captured in notes and gates, not hidden inside the priority number.
 
 | Priority | Target | Status | Family | Format / Source | Typical Extensions / Source | Implementation Path | Gates / Notes |
 |---:|---|---|---|---|---|---|---|
-| 1 | Wave 1 | Planned | Clipboard / Source Adapter | Clipboard table paste | clipboard TSV/CSV/HTML | Source adapter into generic import wizard | Explicit user action only; sanitize HTML; enforce size limits; never monitor clipboard continuously. |
-| 2 | Wave 1 | Planned | Analytical / Columnar | Parquet | `.parquet` | New analytical importer | Requires Apache-compatible reader, logical type mapping, nested type policy, and large-file streaming. |
-| 3 | Wave 1 | Planned | Spreadsheet | OpenDocument Spreadsheet | `.ods` | Spreadsheet importer extension | Multi-sheet preview, formula policy, date handling, and type inference. |
+| 1 | Wave 1 | Planned | Clipboard / Source Adapter | Clipboard table paste | clipboard TSV/CSV/HTML | Source adapter into generic import wizard | Explicit user action only; sanitize HTML; enforce size limits; never monitor clipboard continuously. Use synthetic clipboard payloads for automated tests. |
+| 2 | Wave 1 | Planned | Analytical / Columnar | Parquet | `.parquet` | New analytical importer | Requires Apache-compatible reader, logical type mapping, nested type policy, and large-file streaming. Prefer Dockerized PyArrow/DuckDB fixture generation and validation over host installs. |
+| 3 | Wave 1 | Planned | Spreadsheet | OpenDocument Spreadsheet | `.ods` | Spreadsheet importer extension | Multi-sheet preview, formula policy, date handling, and type inference. Prefer containerized LibreOffice for fixture generation when practical. |
 | 4 | Wave 1 | Planned | Delimited / Text | Fixed-width text | `.txt`, `.dat`, `.fwf` | Generic import extension | Column-boundary editor, layout profiles, encoding, malformed-row handling, and validation. |
-| 5 | Wave 1 | Planned | Dump / Backup | PostgreSQL plain SQL dump expansion | `.sql` | SQL dump parser expansion | Add `COPY FROM stdin`, sequences, identity columns, constraints, and PostgreSQL type mapping. |
-| 6 | Wave 1 | Planned | Database / Embedded DB | DuckDB | `.duckdb` | Embedded database importer | Table selection, type mapping, dependency/packaging decision, and rich type fidelity. |
+| 5 | Wave 1 | Planned | Dump / Backup | PostgreSQL plain SQL dump expansion | `.sql` | SQL dump parser expansion | Add `COPY FROM stdin`, sequences, identity columns, constraints, and PostgreSQL type mapping. Generate representative fixtures with a Dockerized PostgreSQL/`pg_dump` workflow. |
+| 6 | Wave 1 | Planned | Database / Embedded DB | DuckDB | `.duckdb` | Embedded database importer | Table selection, type mapping, dependency/packaging decision, and rich type fidelity. Prefer Dockerized DuckDB CLI/Python fixture generation and validation over host installs. |
 | 7 | Wave 1 | Planned | Logs / Events | JSON log stream workflow | `.jsonl`, `.ndjson`, `.log` | Profile over existing NDJSON import | Current NDJSON import works for raw rows; add timestamp extraction, presets, and log-oriented defaults. |
 | 8 | Wave 1 | Investigate | Compressed / Archive | Zstandard wrapper | `.zst`, `.tar.zst` | Archive/compression wrapper | Needs cross-platform streaming decompression strategy and safe extraction policy. |
 | 9 | Wave 1 | Investigate | Logs / Events | Common web/app log templates | Apache, Nginx, IIS W3C, custom app logs | Template-based structured text importer | W3C `#Fields` and common access-log patterns are highest value; preserve timestamps and request fields. |
