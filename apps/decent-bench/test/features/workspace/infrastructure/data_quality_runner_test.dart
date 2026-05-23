@@ -234,6 +234,106 @@ void main() {
     },
   );
 
+  test(
+    'passes every validation rule family when checks find no failures',
+    () async {
+      final passingGateway = _PassingQualityFakeGateway();
+      final passingRunner = DataQualityRunner(
+        gateway: passingGateway,
+        repository: DataQualityRepository(rootOverride: tempDir),
+      );
+
+      final result = await passingRunner.runQuality(
+        request: QualityRunRequest(
+          targetKind: QualityTargetKind.database,
+          targetDatabasePath: '/tmp/workspace.ddb',
+          targetTable: null,
+          targetQueryId: null,
+          targetQuerySql: null,
+          profileId: 'all-rules',
+          profilePath: null,
+          mode: QualityRunMode.full,
+          sampleRowLimit: 100,
+          includeProfiling: false,
+          includeValidation: true,
+          includeImportReconciliation: false,
+          includeDuplicateChecks: true,
+          requestedAt: DateTime.utc(2026, 5, 22),
+        ),
+        schema: passingGateway.snapshot,
+        profile: _allRuleFamilyProfile(),
+      );
+
+      expect(result.status, QualityRunStatus.completed);
+      expect(result.validationIssues, isEmpty);
+      expect(result.duplicateSummaries, isEmpty);
+    },
+  );
+
+  test('isolate-backed rules write details that can be paged', () async {
+    final result = await runner.runQuality(
+      request: QualityRunRequest(
+        targetKind: QualityTargetKind.database,
+        targetDatabasePath: '/tmp/workspace.ddb',
+        targetTable: null,
+        targetQueryId: null,
+        targetQuerySql: null,
+        profileId: 'isolate-rules',
+        profilePath: null,
+        mode: QualityRunMode.full,
+        sampleRowLimit: 100,
+        includeProfiling: false,
+        includeValidation: true,
+        includeImportReconciliation: false,
+        includeDuplicateChecks: true,
+        requestedAt: DateTime.utc(2026, 5, 22),
+      ),
+      schema: gateway.snapshot,
+      profile:
+          QualityProfileDocument.empty(
+            name: 'Isolate rules',
+            now: DateTime.utc(2026, 5, 22),
+          ).copyWith(
+            profileId: 'isolate-rules',
+            rules: <ValidationRule>[
+              _rule(
+                ValidationRuleType.regex,
+                targetColumn: 'title',
+                params: const <String, Object?>{
+                  'pattern': r'^OK$',
+                  'case_sensitive': true,
+                  'allow_null': false,
+                },
+              ),
+              _rule(
+                ValidationRuleType.nearDuplicateRows,
+                params: const <String, Object?>{
+                  'columns': <String>['title'],
+                  'similarity': 'normalized_levenshtein',
+                  'threshold': 0.7,
+                  'candidate_limit': 100,
+                  'blocking_columns': <String>[],
+                  'trim_strings': true,
+                  'case_sensitive': false,
+                },
+              ),
+            ],
+          ),
+    );
+
+    expect(result.validationIssues, hasLength(2));
+    for (final issue in result.validationIssues) {
+      expect(issue.detailStorePath, isNotNull);
+      final page = await runner.loadViolationPage(
+        databasePath: '/tmp/workspace.ddb',
+        issue: issue,
+        pageSize: 1,
+        pageIndex: 0,
+      );
+      expect(page, hasLength(1));
+    }
+  });
+
   test('returns cancelled result when cancellation is requested', () async {
     final token = DataQualityCancellationToken()..cancel();
 
@@ -554,5 +654,46 @@ class _QualityFakeGateway extends FakeWorkspaceGateway {
       rowsAffected: null,
       elapsed: const Duration(milliseconds: 1),
     );
+  }
+}
+
+class _PassingQualityFakeGateway extends _QualityFakeGateway {
+  @override
+  Future<QueryResultPage> runQuery({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+  }) async {
+    final normalized = sql.replaceAll(RegExp(r'\s+'), ' ');
+    if (normalized.contains('COUNT(*) AS failure_count')) {
+      return _page(
+        columns: const <String>['failure_count'],
+        rows: const <Map<String, Object?>>[
+          <String, Object?>{'failure_count': 0},
+        ],
+      );
+    }
+    if (normalized.contains(
+      'SELECT rowid AS row_number, "title" AS value_display FROM "tasks"',
+    )) {
+      return _page(
+        columns: const <String>['row_number', 'value_display'],
+        rows: const <Map<String, Object?>>[
+          <String, Object?>{'row_number': 1, 'value_display': 'OK'},
+        ],
+      );
+    }
+    if (normalized.contains(
+      'SELECT rowid AS row_number, "title" FROM "tasks" LIMIT',
+    )) {
+      return _page(
+        columns: const <String>['row_number', 'title'],
+        rows: const <Map<String, Object?>>[
+          <String, Object?>{'row_number': 1, 'title': 'Alpha'},
+          <String, Object?>{'row_number': 2, 'title': 'Omega'},
+        ],
+      );
+    }
+    return super.runQuery(sql: sql, params: params, pageSize: pageSize);
   }
 }
