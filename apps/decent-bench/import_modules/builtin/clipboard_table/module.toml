@@ -1,61 +1,66 @@
 schema_version = 1
 id = "clipboard_table"
 kind = "source"
-status = "investigate"
+status = "complete"
 priority = "P1"
 legacy_format_key = "clipboardTable"
 name = "Clipboard Table"
 family = "web_markup"
-summary = "Clipboard HTML/pasted table capture."
-description = "Investigate pasted table import."
+summary = "Explicit clipboard table capture."
+description = "Explicit clipboard import action for TSV, CSV, Markdown pipe-table, and HTML table payloads."
 
 [detection]
 extensions = []
 mime_types = []
 filename_patterns = []
 magic_numbers = []
-priority = 40
+priority = 100
 
 [support]
-implementation = "recognized_unsupported"
+implementation = "generic_wizard"
 availability = "builtin"
 min_app_version = "0.0.0"
 requires_dependency_review = false
 requires_adr = false
 
 [capabilities]
-detect_by_extension = true
+detect_by_extension = false
 detect_by_signature = false
-inspect_schema = false
-preview_rows = false
-import_full = false
+inspect_schema = true
+preview_rows = true
+import_full = true
 import_selected_tables = false
-supports_multiple_tables = false
+supports_multiple_tables = true
 supports_archives = false
 supports_streaming_preview = false
 supports_streaming_import = false
-supports_cancellation = false
-supports_rejected_rows = false
+supports_cancellation = true
+supports_rejected_rows = true
 preserves_logical_types = false
 preserves_constraints = false
 preserves_indexes = false
 preserves_relationships = false
-can_export_recipe = false
+can_export_recipe = true
 
 [adapter]
-id = "none"
-kind = "none"
+id = "clipboard_table_source"
+kind = "dart_builtin"
 protocol = "dart_import_adapter_v1"
 
 [[actions]]
-id = "recognize_source"
-label = "Recognize Source"
+id = "capture_clipboard"
+label = "Capture Clipboard"
 required = true
 
-[[limitations]]
-id = "clipboard_table.limitation_1"
-severity = "info"
-message = "Clipboard capture is not implemented yet."
+[[actions]]
+id = "preview_rows"
+label = "Preview Rows"
+required = true
+
+[[actions]]
+id = "import_full"
+label = "Import"
+required = true
 
 [documentation]
 help_topic = "importing-data"

@@ -45,12 +45,13 @@
   recent files, intuitive drag-and-drop support, and guided legacy `.ddb`
   migration through the official `decentdb-migrate` tool.
 - 📥 **Module-Backed Import System:** Open DecentDB files directly and import
-  CSV/TSV, custom-delimited text, JSON/NDJSON, XML, HTML tables, Excel,
-  SQLite, SQL dumps, and wrapped archives (`.zip`, `.gz`, `.tgz`, `.bz2`,
-  `.tbz2`). Built-in TOML module manifests declare current support, partial
-  support, future-format backlog status, capabilities, limitations, fixture
-  notes, and adapter bindings so future format work starts from a catalog
-  instead of hardcoded one-offs.
+  clipboard tables, CSV/TSV, custom-delimited and fixed-width text,
+  JSON/NDJSON/log streams, XML/SpreadsheetML, HTML and Markdown tables, Excel,
+  OpenDocument spreadsheets, SQLite, SQL dumps, HAR files, and wrapped archives
+  (`.zip`, `.gz`, `.tgz`, `.bz2`, `.tbz2`, `.xz`, `.txz`). Built-in TOML module
+  manifests declare current support, partial support, future-format backlog
+  status, capabilities, limitations, fixture notes, and adapter bindings so
+  future format work starts from a catalog instead of hardcoded one-offs.
 - 🧪 **Import Wizard UX:** Import flows include previews, table/sheet
   selection where applicable, rename/type-override transforms, row-local
   filters/defaults/computed columns/dedup plans for generic imports, progress
@@ -103,17 +104,22 @@ The complete module catalog, including planned and deferred formats, lives under
 | --- | --- | --- |
 | `.ddb` | **Complete: Open / Migrate** | Current-format files open directly. Legacy format-version failures offer a copy-based `decentdb-migrate` upgrade path. |
 | `.csv`, `.tsv` | **Complete: Import Wizard** | CSV/TSV import through the generic delimited-text pipeline. |
-| `.txt`, `.dat`, `.log`, `.psv` | **Complete: Import Wizard** | Generic custom-delimited import with header, delimiter, quoting, malformed-row, preview, and type-override controls. Fixed-width semantics for `.txt`/`.dat` are planned separately. |
-| `.json`, `.ndjson`, `.jsonl` | **Complete: Import Wizard** | Structured and line-oriented JSON import with relational previews and flattening/normalization choices. |
-| `.xml` | **Complete: Import Wizard** | XML import with flatten or parent-child normalization strategies. |
+| Clipboard tables | **Complete: Source Import** | Explicit clipboard import for tabular text and sanitized HTML tables. |
+| `.txt`, `.dat`, `.log`, `.psv`, `.fwf` | **Complete: Import Wizard** | Generic custom-delimited and fixed-width import with header, delimiter/boundary, quoting, malformed-row, preview, and type-override controls. |
+| `.json`, `.ndjson`, `.jsonl` | **Complete: Import Wizard** | Structured JSON, line-oriented JSON, and JSON log stream import with relational previews and flattening/normalization choices. |
+| `.xml` | **Complete: Import Wizard** | XML import with flatten or parent-child normalization strategies, plus strict SpreadsheetML routing for Excel XML Spreadsheet files. |
 | `.html`, `.htm` | **Complete: Import Wizard** | HTML table extraction with table selection and header inference. |
+| `.md` | **Complete: Import Wizard** | Markdown pipe table extraction with multiple-table previews and malformed-row warnings. |
 | `.xlsx` | **Complete: Import Wizard** | Workbook import with worksheet selection and DecentDB type mapping. |
 | `.xls` | **Partial: Warning Path** | Routed through the legacy Excel path and may require conversion/normalization warnings. |
+| `.ods` | **Complete: Import Wizard** | OpenDocument Spreadsheet extraction with worksheet previews. |
 | `.db`, `.sqlite`, `.sqlite3` | **Complete: Import Wizard** | SQLite import with schema preview and table selection. |
-| `.sql` | **Complete for MVP-lite MySQL/MariaDB-style dumps** | Supports the current dump scope: `CREATE TABLE` plus common `INSERT ... VALUES` patterns. PostgreSQL plain-dump expansion is planned separately. |
+| `.sql` | **Complete for common MySQL/MariaDB/PostgreSQL plain dumps** | Supports the current dump scope: `CREATE TABLE`, common `INSERT ... VALUES` patterns, and PostgreSQL `COPY FROM stdin` rows. |
+| `.har` | **Complete: Import Wizard** | Browser HTTP archive profile with linked request, timing, header, and response tables. |
 | `.zip` | **Complete: Wrapper** | Discovers supported inner files and routes them to the normal import flow. |
 | `.gz`, `.tar.gz`, `.tgz` | **Complete: Wrapper** | Supports single-file gzip unwrap and tar+gzip archive inspection/extraction. |
 | `.bz2`, `.tar.bz2`, `.tbz2` | **Complete: Wrapper** | Supports single-file bzip2 unwrap and tar+bzip2 archive inspection/extraction. |
+| `.xz`, `.tar.xz`, `.txz` | **Complete: Wrapper** | Supports bounded single-file xz unwrap and tar+xz archive inspection/extraction. |
 
 ### Import Catalog And Format Roadmap
 
@@ -129,10 +135,8 @@ The import system separates shipped import support from future format planning:
 - [`design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`](design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md)
   is the single backlog for import formats users cannot import yet.
 
-Recognized or planned examples include Parquet, OpenDocument Spreadsheet
-(`.ods`), fixed-width text, DuckDB, PostgreSQL plain dumps, clipboard table
-paste, YAML, Markdown tables, Microsoft Access, DBF/FoxPro, XZ wrappers, SQL
-Server backups, and PDF table extraction. The wider roadmap also tracks
+Recognized or planned examples include Parquet, DuckDB, YAML, Microsoft Access,
+DBF/FoxPro, SQL Server backups, and PDF table extraction. The wider roadmap also tracks
 analytical, data-lake, geospatial, scientific, finance, healthcare, cloud/SaaS,
 log/event, security, email/calendar/contact, document/metadata, and
 legacy/mainframe import families. Recognized does not mean import is available;

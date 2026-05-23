@@ -2785,6 +2785,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           onInvoke: _showSqlDumpImportDialog,
         ),
         command(
+          id: 'import_clipboard_table',
+          label: 'Import Clipboard Table...',
+          icon: Icons.content_paste_outlined,
+          onInvoke: _startClipboardTableImport,
+        ),
+        command(
           id: 'import_from_database',
           label: 'Import From Database...',
           icon: Icons.cloud_sync_outlined,
@@ -3406,6 +3412,34 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     await _startImportFromPath(file.path);
   }
 
+  Future<void> _startClipboardTableImport() async {
+    final clipboardText = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+    final text = clipboardText ?? '';
+    if (text.trim().isEmpty) {
+      await _showPlaceholderNotice(
+        'Clipboard is empty',
+        'Copy a TSV, CSV, Markdown pipe table, or HTML table before starting clipboard import.',
+      );
+      return;
+    }
+    const maxClipboardCharacters = 5 * 1024 * 1024;
+    if (text.length > maxClipboardCharacters) {
+      await _showPlaceholderNotice(
+        'Clipboard table is too large',
+        'Clipboard import is limited to 5 MiB of text in this build. Save the source as a file and import it from disk.',
+      );
+      return;
+    }
+
+    final tempDir = await Directory.systemTemp.createTemp(
+      'decent-bench-clipboard-',
+    );
+    final detected = _clipboardImportPayload(text);
+    final file = File(p.join(tempDir.path, detected.fileName))
+      ..writeAsStringSync(detected.text, flush: true);
+    await _startImportFromPath(file.path);
+  }
+
   ImportReconciliationSummary _genericImportReconciliation(
     GenericImportSummary summary,
   ) {
@@ -3552,6 +3586,81 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   String _fileSelectorExtension(String extension) {
     return extension.startsWith('.') ? extension.substring(1) : extension;
+  }
+
+  _ClipboardImportPayload _clipboardImportPayload(String text) {
+    final lower = text.toLowerCase();
+    if (lower.contains('<table')) {
+      return _ClipboardImportPayload(
+        fileName: 'clipboard_table.html',
+        text: _sanitizeClipboardHtml(text),
+      );
+    }
+    if (_looksLikeMarkdownClipboardTable(text)) {
+      return _ClipboardImportPayload(
+        fileName: 'clipboard_table.md',
+        text: text,
+      );
+    }
+    if (text.contains('\t')) {
+      return _ClipboardImportPayload(
+        fileName: 'clipboard_table.tsv',
+        text: text,
+      );
+    }
+    return _ClipboardImportPayload(fileName: 'clipboard_table.csv', text: text);
+  }
+
+  bool _looksLikeMarkdownClipboardTable(String text) {
+    final lines = const LineSplitter()
+        .convert(text)
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList(growable: false);
+    for (var index = 0; index + 1 < lines.length; index++) {
+      if (!lines[index].contains('|')) {
+        continue;
+      }
+      final separatorCells = lines[index + 1]
+          .split('|')
+          .map((cell) => cell.trim())
+          .where((cell) => cell.isNotEmpty)
+          .toList(growable: false);
+      if (separatorCells.isNotEmpty &&
+          separatorCells.every(
+            (cell) => RegExp(r'^:?-{3,}:?$').hasMatch(cell),
+          )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  String _sanitizeClipboardHtml(String text) {
+    return text
+        .replaceAll(
+          RegExp(
+            r'<script\b[^>]*>.*?</script>',
+            caseSensitive: false,
+            dotAll: true,
+          ),
+          '',
+        )
+        .replaceAll(
+          RegExp(
+            r'<style\b[^>]*>.*?</style>',
+            caseSensitive: false,
+            dotAll: true,
+          ),
+          '',
+        )
+        .replaceAll(
+          RegExp(
+            r'''\son[a-z]+\s*=\s*("[^"]*"|'[^']*')''',
+            caseSensitive: false,
+          ),
+          '',
+        );
   }
 
   Future<void> _showCsvExportDialog() async {
@@ -5514,6 +5623,13 @@ class _TextMatch {
 
   final int start;
   final int end;
+}
+
+class _ClipboardImportPayload {
+  const _ClipboardImportPayload({required this.fileName, required this.text});
+
+  final String fileName;
+  final String text;
 }
 
 class _EditableFieldBinding {

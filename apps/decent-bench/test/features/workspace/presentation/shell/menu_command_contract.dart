@@ -215,6 +215,15 @@ const List<MenuContractEntry> kMenuCommandContract = <MenuContractEntry>[
     icon: Icons.description_outlined,
   ),
   MenuContractEntry(
+    commandId: 'import_clipboard_table',
+    label: 'Import Clipboard Table...',
+    topLevelMenu: 'Import',
+    behavior: MenuContractBehavior.implemented,
+    enabledWithOpenDatabase: true,
+    enabledWithoutOpenDatabase: true,
+    icon: Icons.content_paste_outlined,
+  ),
+  MenuContractEntry(
     commandId: 'import_from_database',
     label: 'Import From Database...',
     topLevelMenu: 'Import',

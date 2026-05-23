@@ -25,12 +25,19 @@ Drag a supported file onto the window or use the **Import** menu.
 Supported import sources include:
 
 - Delimited text: `.csv`, `.tsv`, `.txt`, `.dat`, `.log`, and `.psv`
-- Structured documents: `.json`, `.ndjson`, `.jsonl`, and `.xml`
-- HTML tables: `.html` and `.htm`
-- Excel workbooks: `.xlsx`, with `.xls` available through the legacy warning path
+- Fixed-width text: `.fwf` and fixed-width-looking `.txt` or `.dat` files
+- Structured documents and logs: `.json`, `.ndjson`, `.jsonl`, `.xml`, `.log`,
+  and `.har`
+- HTML and Markdown tables: `.html`, `.htm`, and `.md`
+- Spreadsheets: `.xlsx`, `.ods`, SpreadsheetML `.xml`, with `.xls` available
+  through the legacy warning path
 - SQLite databases: `.db`, `.sqlite`, and `.sqlite3`
-- SQL dumps: `.sql`
-- Archive wrappers: `.zip`, `.gz`, `.tgz`, `.tar.gz`, `.bz2`, `.tbz2`, and `.tar.bz2` when they contain a supported inner file
+- SQL dumps: `.sql`, including common MySQL/MariaDB dumps and PostgreSQL plain
+  dumps
+- Archive wrappers: `.zip`, `.gz`, `.tgz`, `.tar.gz`, `.bz2`, `.tbz2`,
+  `.tar.bz2`, `.xz`, `.txz`, and `.tar.xz` when they contain a supported inner
+  file
+- Clipboard table paste from the Import menu
 
 If the file type is not recognized, Decent Bench shows a clear message instead of guessing.
 

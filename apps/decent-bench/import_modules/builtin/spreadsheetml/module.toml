@@ -1,13 +1,13 @@
 schema_version = 1
-id = "json_log_stream"
+id = "spreadsheetml"
 kind = "source"
 status = "complete"
 priority = "P1"
-legacy_format_key = "jsonLogStream"
-name = "JSON Log Stream"
-family = "logs_events"
-summary = "Operational log ingestion built on NDJSON support."
-description = "Log-focused JSON line import with source-line provenance and timestamp extraction."
+legacy_format_key = "spreadsheetMl"
+name = "SpreadsheetML / Excel XML Spreadsheet"
+family = "spreadsheet"
+summary = "Excel XML Spreadsheet import."
+description = "Strict SpreadsheetML import for Excel XML Spreadsheet workbooks."
 
 [detection]
 extensions = []
@@ -25,12 +25,12 @@ requires_adr = false
 
 [capabilities]
 detect_by_extension = false
-detect_by_signature = false
+detect_by_signature = true
 inspect_schema = true
 preview_rows = true
 import_full = true
 import_selected_tables = false
-supports_multiple_tables = false
+supports_multiple_tables = true
 supports_archives = false
 supports_streaming_preview = false
 supports_streaming_import = false
@@ -43,7 +43,7 @@ preserves_relationships = false
 can_export_recipe = true
 
 [adapter]
-id = "generic_json_log_stream"
+id = "generic_spreadsheetml"
 kind = "dart_generic"
 protocol = "dart_import_adapter_v1"
 
@@ -63,10 +63,10 @@ label = "Import"
 required = true
 
 [[type_mappings]]
-source_type = "json_log_scalar"
+source_type = "spreadsheetml_cell"
 target_type = "TEXT/INTEGER/REAL/BOOLEAN/DATE/TIMESTAMP"
 fidelity = "coerced"
-notes = "JSON log scalars are flattened and inferred from sampled values; detected timestamps are copied into _event_timestamp."
+notes = "SpreadsheetML cell values are read from cached XML values and inferred from samples; formulas import cached values when present."
 
 [documentation]
 help_topic = "importing-data"
@@ -74,7 +74,7 @@ format_docs = "README.md"
 fixture_notes = "fixtures/README.md"
 
 [[fixtures]]
-id = "json_log_stream_smoke"
+id = "spreadsheetml_smoke"
 path = "fixtures/README.md"
 purpose = "Module fixture contract and generation notes."
 expected_tables = []

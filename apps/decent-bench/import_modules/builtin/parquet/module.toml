@@ -1,13 +1,13 @@
 schema_version = 1
 id = "parquet"
 kind = "source"
-status = "planned"
+status = "investigate"
 priority = "P1"
 legacy_format_key = "parquet"
 name = "Parquet"
 family = "analytical"
 summary = "Columnar Parquet import."
-description = "Planned columnar Parquet import."
+description = "Investigate columnar Parquet import after the reader/runtime path and packaging contract are accepted."
 
 [detection]
 extensions = [".parquet"]
@@ -20,8 +20,8 @@ priority = 60
 implementation = "recognized_unsupported"
 availability = "builtin"
 min_app_version = "0.0.0"
-requires_dependency_review = false
-requires_adr = false
+requires_dependency_review = true
+requires_adr = true
 
 [capabilities]
 detect_by_extension = true
@@ -55,7 +55,7 @@ required = true
 [[limitations]]
 id = "parquet.limitation_1"
 severity = "info"
-message = "An Apache-compatible Parquet reader decision is required."
+message = "An Apache-compatible Parquet reader/runtime decision is required."
 
 [documentation]
 help_topic = "importing-data"

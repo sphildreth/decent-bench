@@ -82,8 +82,8 @@ Rules:
   an app runtime requirement unless a format-specific ADR explicitly accepts
   that trade-off.
 
-Expected Docker-backed fixture sources for near-term planned or investigated
-formats:
+Expected Docker-backed fixture sources for completed near-term formats and
+remaining planned or investigated formats:
 
 | Format | Preferred Docker Tooling | Purpose |
 |---|---|---|
@@ -124,17 +124,7 @@ document, spreadsheet, archive-wrapper, and SQL-dump paths.
 
 | Priority | Target | Status | Family | Format / Source | Typical Extensions / Source | Implementation Path | Gates / Notes |
 |---:|---|---|---|---|---|---|---|
-| 1 | Wave 1 | Planned | Clipboard / Source Adapter | Clipboard table paste | clipboard TSV/CSV/HTML | Source adapter into generic import wizard | Highest daily workflow payoff with no file-format dependency. Explicit user action only; sanitize HTML; enforce size limits; never monitor clipboard continuously. |
-| 2 | Wave 1 | Planned | Delimited / Text | Fixed-width text | `.txt`, `.dat`, `.fwf` | Generic import extension | Common in government, banking, legacy exports, and public datasets; no heavy runtime dependency. Requires column-boundary editor, encoding, malformed-row handling, and profiles. |
-| 3 | Wave 1 | Planned | Logs / Events | JSON log stream workflow | `.jsonl`, `.ndjson`, `.log` | Profile over existing NDJSON import | Current NDJSON import works for raw rows; add timestamp extraction, presets, and log-oriented defaults. No external tool required for normal tests. |
-| 4 | Wave 1 | Planned | Logs / Events | Common web/app log templates | Apache, Nginx, IIS W3C, custom app logs | Template-based structured text importer | High developer/sysadmin value with bounded parser scope. W3C `#Fields` and common access-log patterns are first; preserve timestamps and request fields. |
-| 5 | Wave 1 | Planned | Web / Markup | Markdown tables | `.md` | Markup table importer | Low dependency risk and common developer/documentation workflow. Import pipe tables only; support multiple tables and safe malformed-row reporting. |
-| 6 | Wave 1 | Planned | Spreadsheet | SpreadsheetML / Excel XML Spreadsheet | `.xml` | Spreadsheet-specific XML adapter | Feasible with the existing XML parser. Implement strict SpreadsheetML signature detection before generic XML routing. |
-| 7 | Wave 1 | Planned | Compressed / Archive | XZ wrapper | `.xz`, `.tar.xz`, `.txz` | Archive/compression wrapper | Reuses the archive wrapper model. Use system `tar` for `.tar.xz`; single-file `.xz` needs explicit size/cancellation policy. |
-| 8 | Wave 1 | Planned | Spreadsheet | OpenDocument Spreadsheet | `.ods` | Spreadsheet importer extension | Common open spreadsheet format and likely user request. `.ods` is ZIP/XML based, but needs multi-sheet preview, formulas, dates, repeated cells, and sparse-row handling. |
-| 9 | Wave 1 | Planned | Dump / Backup | PostgreSQL plain SQL dump expansion | `.sql` | SQL dump parser expansion | High developer value and no live credential surface. Add `COPY FROM stdin`, sequences, identity columns, constraints, and PostgreSQL type mapping. |
-| 10 | Wave 1 | Planned | Network / IT | HAR | `.har` | JSON profile | Browser/devtools HTTP archive is common and implementation is a bounded JSON profile. Map requests, timings, headers, and responses conservatively. |
-| 11 | Wave 2 | Planned | Analytical / Columnar | Parquet | `.parquet` | Worker-backed analytical importer | Still one of the highest-impact formats, but no longer Wave 1 because it requires an accepted reader/runtime path, logical type mapping, nested type policy, and large-file streaming. |
+| 11 | Wave 2 | Investigate | Analytical / Columnar | Parquet | `.parquet` | Worker-backed analytical importer | Still one of the highest-impact formats, but ADR-0054 keeps it dependency-gated until a reader/runtime path, logical type mapping, nested type policy, and large-file streaming plan are accepted. |
 | 12 | Wave 2 | Candidate | Database / Embedded DB | DuckDB | `.duckdb` | Embedded database importer | High local-analytics value, but native dependency and packaging decisions are unresolved. Promote to `Planned` after dependency ADR and fixture strategy are accepted. |
 | 13 | Wave 2 | Investigate | Compressed / Archive | Zstandard wrapper | `.zst`, `.tar.zst` | Archive/compression wrapper | Common and valuable, but keep below XZ until cross-platform streaming decompression and safe extraction policy are clear. |
 | 14 | Wave 2 | Candidate | Structured Document | YAML structured records | `.yaml`, `.yml` | Structured document importer | Feasible with the existing `yaml` dependency path, but only record-shaped YAML should route to import. Arbitrary config files must produce a clear "not tabular" result. |
@@ -225,8 +215,8 @@ some target waves changed during this full-table pass.
 
 Main adjustments:
 
-- Wave 1 is now limited to high-value work with a clear, bounded implementation
-  path:
+- The completed Wave 1 implementation has been removed from the Backlog table
+  and is documented in the in-app help page instead:
   - clipboard table paste,
   - fixed-width text,
   - JSON log stream workflow,
@@ -237,8 +227,9 @@ Main adjustments:
   - ODS,
   - PostgreSQL plain dump expansion,
   - HAR.
-- Parquet remains `Planned`, but moved from Wave 1 to Wave 2 because the reader
-  and runtime path are architecturally significant.
+- Parquet moved from `Planned` to `Investigate` under ADR-0054 because the
+  reader/runtime path, logical type mapping, packaging, and streaming behavior
+  need a separate accepted implementation decision.
 - DuckDB moved from `Planned` to `Candidate` until the native/worker packaging
   decision is accepted.
 - PostgreSQL, MariaDB/MySQL, and SQL Server read-only live imports moved from
@@ -271,13 +262,13 @@ under investigation, or should be deferred.
 |---|---|---|---|
 | Microsoft Access | Keep under investigation | `Investigate` | There are promising Apache-compatible Java readers, but shipping an Access importer means accepting a JVM/worker packaging strategy and reviewing a non-trivial dependency tree. |
 | DBF / FoxPro plus memo files | Promote to candidate | `Candidate` | Core DBF table import is feasible, but full FoxPro/memo/code-page behavior still needs scope control and fixtures. |
-| Markdown tables | Promote to planned | `Planned` | Low-risk adapter over deterministic text fixtures; dependency path already exists through the app's help Markdown stack. |
+| Markdown tables | Implemented in Wave 1 | Complete; removed from Backlog | Low-risk adapter over deterministic text fixtures; dependency path already exists through the app's help Markdown stack. |
 | YAML structured records | Promote to candidate | `Candidate` | Parser path exists, but the product boundary must reject arbitrary non-tabular config files cleanly. |
-| XZ wrapper | Promote to planned | `Planned` | Existing archive/tar wrapper patterns can support it, but large-file extraction must avoid full in-memory decode. |
+| XZ wrapper | Implemented in Wave 1 | Complete; removed from Backlog | Existing archive/tar wrapper patterns can support it, but large-file extraction must avoid full in-memory decode. |
 | 7-Zip wrapper | Defer | `Deferred` | Runtime extraction would require a new dependency or external tool with licensing, packaging, and solid-archive safety concerns. |
 | Apache Arrow IPC | Keep under investigation | `Investigate` | Strategically useful, but it should not become a required payload/runtime dependency until the worker-backed import path is proven. |
 | Feather | Keep under investigation | `Investigate` | Feather v2 is effectively an Arrow IPC profile, so it depends on the Arrow decision. |
-| SpreadsheetML / Excel XML Spreadsheet | Promote to planned | `Planned` | Existing XML parser is enough for a strict SpreadsheetML adapter, provided signature detection prevents conflict with generic XML import. |
+| SpreadsheetML / Excel XML Spreadsheet | Implemented in Wave 1 | Complete; removed from Backlog | Existing XML parser is enough for a strict SpreadsheetML adapter, provided signature detection prevents conflict with generic XML import. |
 
 ### Microsoft Access (`.mdb`, `.accdb`)
 
@@ -366,9 +357,9 @@ Required gates before implementation:
 
 ### Markdown Tables (`.md`)
 
-Markdown table import is ready for planned implementation because it is
-well-bounded and useful for developer workflows, README data tables, exported
-reports, and copied web/documentation data.
+Markdown table import was completed in the Wave 1 import expansion and removed
+from the Backlog table. It is useful for developer workflows, README data
+tables, exported reports, and copied web/documentation data.
 
 Implementation scope:
 
@@ -456,8 +447,9 @@ Testing:
 
 ### XZ Wrapper (`.xz`, `.tar.xz`)
 
-XZ should move to planned implementation because it fits the existing archive
-wrapper model. The main risk is memory behavior.
+XZ wrapper import was completed in the Wave 1 import expansion and removed from
+the Backlog table. It fits the existing archive wrapper model; the main risk
+remains memory behavior for huge single-file `.xz` payloads.
 
 Findings:
 
@@ -600,8 +592,9 @@ Required gates:
 
 ### SpreadsheetML / Excel XML Spreadsheet (`.xml`)
 
-SpreadsheetML should move to planned implementation because it is bounded,
-uses existing XML infrastructure, and has a clear detection strategy.
+SpreadsheetML import was completed in the Wave 1 import expansion and removed
+from the Backlog table. It uses existing XML infrastructure with strict
+signature detection before generic XML routing.
 
 Findings:
 

@@ -65,21 +65,21 @@ void main() {
     expect(result.archiveCandidates.single.innerFormatKey, ImportFormatKey.csv);
   });
 
-  test('recognizes planned spreadsheet formats', () async {
+  test('detects ODS as a supported generic spreadsheet import', () async {
     final file = File(p.join(tempDir.path, 'report.ods'))
       ..writeAsStringSync('');
 
     final result = await service.detect(file.path);
 
     expect(result.format.key, ImportFormatKey.ods);
-    expect(result.format.isRecognizedButUnavailable, isTrue);
-    expect(result.format.supportState, ImportSupportState.planned);
+    expect(result.format.launchesGenericWizard, isTrue);
+    expect(result.format.supportState, ImportSupportState.complete);
   });
 
   test('keeps connector expansion formats explicit but unavailable', () async {
     final cases = <String, ImportSupportState>{
       'warehouse.duckdb': ImportSupportState.planned,
-      'analytics.parquet': ImportSupportState.planned,
+      'analytics.parquet': ImportSupportState.investigate,
       'legacy.dbf': ImportSupportState.investigate,
       'report.pdf': ImportSupportState.deferred,
     };
@@ -92,5 +92,71 @@ void main() {
       expect(result.format.isRecognizedButUnavailable, isTrue);
       expect(result.format.supportState, entry.value);
     }
+  });
+
+  test('routes XML SpreadsheetML signatures before generic XML', () async {
+    final file = File(p.join(tempDir.path, 'workbook.xml'))
+      ..writeAsStringSync('''
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+          xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  <Worksheet ss:Name="Sheet1"><Table /></Worksheet>
+</Workbook>
+''');
+
+    final result = await service.detect(file.path);
+
+    expect(result.format.key, ImportFormatKey.spreadsheetMl);
+    expect(result.format.launchesGenericWizard, isTrue);
+  });
+
+  test('routes JSON and W3C log content before generic .log import', () async {
+    final jsonLog = File(p.join(tempDir.path, 'app.log'))
+      ..writeAsStringSync(
+        '{"timestamp":"2026-05-23T12:00:00Z","level":"info","message":"ok"}\n',
+      );
+    final w3cLog = File(p.join(tempDir.path, 'access.log'))
+      ..writeAsStringSync(
+        '#Fields: date time cs-method cs-uri-stem sc-status\n'
+        '2026-05-23 12:00:00 GET / 200\n',
+      );
+
+    expect(
+      (await service.detect(jsonLog.path)).format.key,
+      ImportFormatKey.jsonLogStream,
+    );
+    expect(
+      (await service.detect(w3cLog.path)).format.key,
+      ImportFormatKey.delimitedLog,
+    );
+  });
+
+  test(
+    'routes fixed-width .txt content before generic delimited import',
+    () async {
+      final file = File(p.join(tempDir.path, 'employees.txt'))
+        ..writeAsStringSync('ID  NAME        TOTAL\n1   Ada         42\n');
+
+      final result = await service.detect(file.path);
+
+      expect(result.format.key, ImportFormatKey.fixedWidth);
+      expect(result.format.launchesGenericWizard, isTrue);
+    },
+  );
+
+  test('detects and extracts XZ single-file wrapper candidates', () async {
+    final bytes = XZEncoder().encode('id,name\n1,Ada\n'.codeUnits);
+    final file = File(p.join(tempDir.path, 'customers.csv.xz'))
+      ..writeAsBytesSync(bytes, flush: true);
+
+    final result = await service.detect(file.path);
+    expect(result.format.key, ImportFormatKey.xzArchive);
+    expect(result.archiveCandidates.single.innerFormatKey, ImportFormatKey.csv);
+
+    final extracted = await service.extractArchiveCandidate(
+      archivePath: file.path,
+      wrapperKey: ImportFormatKey.xzArchive,
+      candidate: result.archiveCandidates.single,
+    );
+    expect(File(extracted).readAsStringSync(), 'id,name\n1,Ada\n');
   });
 }

@@ -206,7 +206,7 @@ schema_version = 1
       );
       expect(
         registry.forKey(ImportFormatKey.parquet).supportState,
-        ImportSupportState.planned,
+        ImportSupportState.investigate,
       );
       expect(registry.detectByPath('/tmp/data.csv').key, ImportFormatKey.csv);
       expect(

@@ -1,18 +1,18 @@
-# OpenDocument Spreadsheet Import Module
+# SpreadsheetML / Excel XML Spreadsheet Import Module
 
 ## Status
 
 - Status: `complete`
 - Priority: `P1`
-- Adapter: `generic_ods` (`dart_generic`)
+- Adapter: `generic_spreadsheetml` (`dart_generic`)
 
 ## Extensions
 
-`.ods`
+`.xml` files route here only when strict SpreadsheetML signatures are detected. Arbitrary XML still uses the generic XML importer.
 
 ## Capabilities
 
-- `detect_by_extension`: `true`
+- `detect_by_signature`: `true`
 - `inspect_schema`: `true`
 - `preview_rows`: `true`
 - `import_full`: `true`
@@ -23,7 +23,7 @@
 
 ## Type Fidelity
 
-ODS cell values are read from cached XML data. Text, number, boolean, and date/time cells are inferred from samples and can be overridden before import. Formula cells import cached values when present.
+SpreadsheetML cell values are read from cached XML data. Text, number, boolean, and date/time cells are inferred from samples and can be overridden before import. Formula cells import cached values when present.
 
 ## Limitations
 

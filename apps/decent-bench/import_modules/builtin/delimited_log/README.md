@@ -2,26 +2,32 @@
 
 ## Status
 
-- Status: `investigate`
-- Priority: `P2`
-- Adapter: `none` (`none`)
+- Status: `complete`
+- Priority: `P1`
+- Adapter: `generic_delimited_log` (`dart_generic`)
 
 ## Extensions
 
-No extension-based detection yet.
+No filename extensions are registered. The module is selected by the structured-log import flow for template-driven log formats.
 
 ## Capabilities
 
-- `detect_by_extension`: `true`
+- `detect_by_extension`: `false`
+- `inspect_schema`: `true`
+- `preview_rows`: `true`
+- `import_full`: `true`
+- `supports_cancellation`: `true`
+- `supports_rejected_rows`: `true`
+- `can_export_recipe`: `true`
 
 ## Type Fidelity
 
-This module declares type mapping behavior in `module.toml`. Current built-in adapters preserve values according to the existing Decent Bench import path and surface warnings when conversion is lossy or unsupported.
+Recognized template fields are parsed as text or numbers and can be overridden before import.
 
 ## Limitations
 
-- Template parsing and timestamp rules are not implemented yet.
+- Template selection is required for IIS W3C, Apache/Nginx access, and key=value app logs; no filename extensions are registered.
 
 ## Fixtures
 
-Fixture metadata is declared in `module.toml`. See `fixtures/README.md` for executable fixtures or deterministic generation notes.
+The manifest declares a generated smoke fixture for catalog validation. See `fixtures/README.md` for the fixture contract and any future executable sample data.

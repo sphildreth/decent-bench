@@ -617,7 +617,7 @@ const List<SqlDumpImportFixtureEntry> sqlDumpImportRoundTripFixtures =
 const List<DetectionFixtureEntry> detectionFixtures = <DetectionFixtureEntry>[
   DetectionFixtureEntry(
     relativePath: 'test-data/text_seperated_values/employees_fixed_width.txt',
-    expectedFormatKey: ImportFormatKey.genericDelimited,
+    expectedFormatKey: ImportFormatKey.fixedWidth,
     expectedSupportState: ImportSupportState.complete,
     expectedImplementationKind: ImportImplementationKind.genericWizard,
   ),

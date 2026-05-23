@@ -2,26 +2,29 @@
 
 ## Status
 
-- Status: `investigate`
+- Status: `complete`
 - Priority: `P2`
-- Adapter: `none` (`none`)
+- Adapter: `xz_wrapper` (`wrapper`)
 
 ## Extensions
 
-`.tar.xz`, `.xz`
+`.tar.xz`, `.txz`, `.xz`
 
 ## Capabilities
 
 - `detect_by_extension`: `true`
+- `inspect_schema`: `true`
+- `supports_archives`: `true`
+- `supports_cancellation`: `true`
 
 ## Type Fidelity
 
-This module declares type mapping behavior in `module.toml`. Current built-in adapters preserve values according to the existing Decent Bench import path and surface warnings when conversion is lossy or unsupported.
+This wrapper does not import rows directly. It inspects the archive wrapper and hands the extracted inner source off to the normal import flow.
 
 ## Limitations
 
-- Cross-platform XZ extraction is not implemented yet.
+- No direct preview or import path is exposed for the wrapper itself.
 
 ## Fixtures
 
-Fixture metadata is declared in `module.toml`. See `fixtures/README.md` for executable fixtures or deterministic generation notes.
+The manifest declares a generated smoke fixture for catalog validation. See `fixtures/README.md` for the fixture contract and any future executable sample data.

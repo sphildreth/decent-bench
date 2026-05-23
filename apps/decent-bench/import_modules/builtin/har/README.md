@@ -1,19 +1,18 @@
-# Clipboard Table Import Module
+# HAR Import Module
 
 ## Status
 
 - Status: `complete`
 - Priority: `P1`
-- Adapter: `clipboard_table_source` (`dart_builtin`)
+- Adapter: `generic_har` (`dart_generic`)
 
 ## Extensions
 
-No extension-based detection. This module is reached through the explicit clipboard capture flow for tabular clipboard payloads.
+`.har`
 
 ## Capabilities
 
-- `detect_by_extension`: `false`
-- `detect_by_signature`: `false`
+- `detect_by_extension`: `true`
 - `inspect_schema`: `true`
 - `preview_rows`: `true`
 - `import_full`: `true`
@@ -24,11 +23,11 @@ No extension-based detection. This module is reached through the explicit clipbo
 
 ## Type Fidelity
 
-Clipboard table values are routed through the generic wizard flow and inferred with the normal DecentDB import rules.
+HAR request, response, timing, and header scalar values are mapped into linked tables and inferred from samples.
 
 ## Limitations
 
-- No filename or signature-based auto-detection is registered.
+- Response bodies and POST bodies are summarized by size and MIME metadata instead of being imported as full payload tables.
 
 ## Fixtures
 

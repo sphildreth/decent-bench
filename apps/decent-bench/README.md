@@ -15,9 +15,11 @@ Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
 - editor settings and SQL snippets persist in `config.toml`
 - SQLite, Excel, and SQL dump inspection plus import execution run off the UI
   thread
-- CSV, TSV, generic delimited text, JSON, NDJSON/JSONL, XML, HTML tables, and
-  ZIP/GZip/BZip2 wrapper routing are implemented; wrappers extract supported
-  inner files and route them into the normal generic or dedicated import path
+- CSV, TSV, generic delimited text, fixed-width text, JSON, NDJSON/JSONL, JSON
+  logs, XML, SpreadsheetML, HTML tables, Markdown tables, ODS, HAR, expanded
+  SQL dump support, clipboard table import, and ZIP/GZip/BZip2/XZ wrapper
+  routing are implemented; wrappers extract supported inner files and route
+  them into the normal generic or dedicated import path
 - desktop runner folders (`linux/`, `macos/`, `windows/`) are checked in
 - the DecentDB Dart package is pinned from the upstream Git tag
   (`https://github.com/sphildreth/decentdb`), currently `v2.6.0`, and desktop
@@ -26,10 +28,9 @@ Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
   release asset
 - Excel import currently supports `.xlsx`; legacy `.xls` files route through
   the existing conversion/normalization path and remain explicitly partial
-- SQL dump import currently targets the MVP-lite parser scope documented in
-  `design/SPEC.md`: common MariaDB/MySQL-style `CREATE TABLE` plus
-  `INSERT ... VALUES`, with unsupported statements surfaced as warnings rather
-  than hard failures when possible
+- SQL dump import currently supports the MVP-lite parser scope plus common
+  PostgreSQL plain dump patterns including `COPY FROM stdin`, with unsupported
+  statements surfaced as warnings rather than hard failures when possible
 - `apps/decent-bench/import_modules/builtin/` is the source of truth for
   built-in import modules; `assets/help/importing-data.md` lists formats users
   can import today, and `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md` is the

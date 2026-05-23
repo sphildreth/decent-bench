@@ -90,6 +90,10 @@ This file records notable project changes. It follows the
   documentation and fixture notes, adapter declarations, typed-batch placeholder
   models, module-driven import detection metadata, and docs/catalog validation
   tests.
+- Added several import-format expansion covering clipboard table paste,
+  fixed-width text, JSON log streams, common web/app log templates, Markdown
+  pipe tables, SpreadsheetML, XZ wrappers, OpenDocument Spreadsheet, expanded
+  PostgreSQL plain dumps, and HAR files.
 - Added planning alignment for the Data quality, profiling, and validation suite:
   accepted ADRs (`0046`, `0047`, `0048`), implementation source-of-truth plan
   link updates, and `design/SPEC.md` / `design/FUTURE_WINS.md` references.

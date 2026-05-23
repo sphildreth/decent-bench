@@ -1346,7 +1346,8 @@ class _GenericImportDialogState extends State<GenericImportDialog> {
     return switch (widget.initialFormat.key) {
       ImportFormatKey.csv ||
       ImportFormatKey.tsv ||
-      ImportFormatKey.genericDelimited => true,
+      ImportFormatKey.genericDelimited ||
+      ImportFormatKey.markdownTable => true,
       _ => false,
     };
   }

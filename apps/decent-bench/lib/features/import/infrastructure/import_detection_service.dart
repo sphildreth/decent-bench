@@ -5,7 +5,12 @@ import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 
 import '../domain/import_models.dart';
+import 'fixed_width_import_support.dart';
 import 'import_format_registry.dart';
+import 'log_import_support.dart';
+import 'spreadsheetml_import_support.dart';
+
+const int _maxSingleXzCompressedBytes = 64 * 1024 * 1024;
 
 class ImportDetectionService {
   ImportDetectionService({ImportFormatRegistry? registry})
@@ -15,8 +20,16 @@ class ImportDetectionService {
 
   Future<ImportDetectionResult> detect(String sourcePath) async {
     final file = File(sourcePath);
-    final format = _registry.detectByPath(sourcePath);
+    var format = _registry.detectByPath(sourcePath);
     final warnings = <String>[];
+    final contentFormat = await _detectContentRoutedFormat(
+      sourcePath: sourcePath,
+      file: file,
+      pathFormat: format,
+    );
+    if (contentFormat != null) {
+      format = contentFormat;
+    }
     if (format.key == ImportFormatKey.zipArchive) {
       final candidates = await _detectZipCandidates(sourcePath);
       if (candidates.isEmpty) {
@@ -87,6 +100,33 @@ class ImportDetectionService {
         moduleId: _moduleIdFor(format),
       );
     }
+    if (format.key == ImportFormatKey.xzArchive) {
+      final ext = p.extension(sourcePath).toLowerCase();
+      final innerName = p.basenameWithoutExtension(sourcePath);
+      if (ext == '.txz' || _looksLikeTar(innerName)) {
+        return _detectTarCandidates(
+          sourcePath: sourcePath,
+          format: format,
+          innerName: innerName,
+          listArgs: ['-tJf', sourcePath],
+          extractFlag: '-xJf',
+        );
+      }
+      final candidate = await _detectXzSingleFileCandidate(sourcePath);
+      return ImportDetectionResult(
+        sourcePath: sourcePath,
+        format: format,
+        warnings: candidate == null
+            ? <String>[
+                'The XZ filename does not indicate a supported inner source.',
+              ]
+            : warnings,
+        archiveCandidates: candidate == null
+            ? const <ImportArchiveCandidate>[]
+            : <ImportArchiveCandidate>[candidate],
+        moduleId: _moduleIdFor(format),
+      );
+    }
     if (format.key == ImportFormatKey.sqlite && file.existsSync()) {
       final header = await file
           .openRead(0, 16)
@@ -108,6 +148,64 @@ class ImportDetectionService {
       warnings: warnings,
       moduleId: _moduleIdFor(format),
     );
+  }
+
+  Future<ImportFormatDefinition?> _detectContentRoutedFormat({
+    required String sourcePath,
+    required File file,
+    required ImportFormatDefinition pathFormat,
+  }) async {
+    if (!file.existsSync()) {
+      return null;
+    }
+    final extension = p.extension(sourcePath).toLowerCase();
+    if (extension != '.xml' &&
+        extension != '.log' &&
+        extension != '.jsonl' &&
+        extension != '.ndjson' &&
+        extension != '.txt' &&
+        extension != '.dat') {
+      return null;
+    }
+    final sample = await _readTextSample(file);
+    if (sample.trim().isEmpty) {
+      return null;
+    }
+    if (extension == '.xml' && isSpreadsheetMlText(sample)) {
+      return _registry.forKey(ImportFormatKey.spreadsheetMl);
+    }
+    if ((extension == '.log' ||
+            extension == '.jsonl' ||
+            extension == '.ndjson' ||
+            extension == '.txt') &&
+        looksLikeJsonLogStream(sample)) {
+      return _registry.forKey(ImportFormatKey.jsonLogStream);
+    }
+    if ((extension == '.log' || extension == '.txt') &&
+        looksLikeSupportedLogTemplate(sample)) {
+      return _registry.forKey(ImportFormatKey.delimitedLog);
+    }
+    if ((extension == '.txt' || extension == '.dat') &&
+        pathFormat.key == ImportFormatKey.genericDelimited &&
+        looksLikeFixedWidthText(sample)) {
+      return _registry.forKey(ImportFormatKey.fixedWidth);
+    }
+    return null;
+  }
+
+  Future<String> _readTextSample(File file) async {
+    const maxBytes = 64 * 1024;
+    final opened = await file.open();
+    try {
+      final bytes = await opened.read(maxBytes);
+      try {
+        return utf8.decode(bytes);
+      } on FormatException {
+        return latin1.decode(bytes);
+      }
+    } finally {
+      await opened.close();
+    }
   }
 
   String _moduleIdFor(ImportFormatDefinition format) {
@@ -153,6 +251,12 @@ class ImportDetectionService {
       ).map((line) => line.trim()).where((line) => line.isNotEmpty).toList();
       for (final entryPath in lines) {
         if (entryPath.endsWith('/')) {
+          continue;
+        }
+        if (_isUnsafeArchiveEntry(entryPath)) {
+          warnings.add(
+            'Skipping unsafe archive entry path `$entryPath` during preview.',
+          );
           continue;
         }
         final innerFormat = _registry.detectByPath(entryPath);
@@ -220,6 +324,9 @@ class ImportDetectionService {
       if (!entry.isFile) {
         continue;
       }
+      if (_isUnsafeArchiveEntry(entry.name)) {
+        continue;
+      }
       final innerFormat = _registry.detectByPath(entry.name);
       if (innerFormat.key == ImportFormatKey.unknown) {
         continue;
@@ -255,6 +362,23 @@ class ImportDetectionService {
   }
 
   Future<ImportArchiveCandidate?> _detectBzip2SingleFileCandidate(
+    String sourcePath,
+  ) async {
+    final innerName = p.basenameWithoutExtension(sourcePath);
+    final innerFormat = _registry.detectByPath(innerName);
+    if (innerFormat.key == ImportFormatKey.unknown) {
+      return null;
+    }
+    return ImportArchiveCandidate(
+      entryPath: innerName,
+      displayName: innerName,
+      innerFormatKey: innerFormat.key,
+      innerFormatLabel: innerFormat.label,
+      supportState: innerFormat.supportState,
+    );
+  }
+
+  Future<ImportArchiveCandidate?> _detectXzSingleFileCandidate(
     String sourcePath,
   ) async {
     final innerName = p.basenameWithoutExtension(sourcePath);
@@ -343,6 +467,34 @@ class ImportDetectionService {
       return output.path;
     }
 
+    if (wrapperKey == ImportFormatKey.xzArchive) {
+      final ext = p.extension(archivePath).toLowerCase();
+      final innerName = p.basenameWithoutExtension(archivePath);
+      if (ext == '.txz' || _looksLikeTar(innerName)) {
+        return _extractTarEntry(
+          archivePath: archivePath,
+          tempDir: tempDir,
+          entryPath: candidate.entryPath,
+          extractFlag: '-xJf',
+        );
+      }
+      final input = File(archivePath);
+      final compressedBytes = input.lengthSync();
+      if (compressedBytes > _maxSingleXzCompressedBytes) {
+        throw StateError(
+          'Single-file XZ import is limited to '
+          '${_maxSingleXzCompressedBytes ~/ (1024 * 1024)} MiB compressed '
+          'input until a streaming XZ decoder is available.',
+        );
+      }
+      final outputPath = p.join(tempDir.path, entryBaseName);
+      final decoded = XZDecoder().decodeBytes(await input.readAsBytes());
+      final output = File(outputPath);
+      output.parent.createSync(recursive: true);
+      output.writeAsBytesSync(decoded, flush: true);
+      return output.path;
+    }
+
     throw StateError('Unsupported wrapper extraction for ${wrapperKey.name}.');
   }
 
@@ -352,6 +504,11 @@ class ImportDetectionService {
     required String entryPath,
     required String extractFlag,
   }) {
+    if (_isUnsafeArchiveEntry(entryPath)) {
+      throw StateError(
+        'Refusing to extract unsafe archive entry `$entryPath`.',
+      );
+    }
     final baseName = p.basename(entryPath);
     final inferredFormat = _inferFormatForExtensionlessTarEntry(entryPath);
     final extension = inferredFormat.extensions.isNotEmpty
@@ -387,5 +544,13 @@ class ImportDetectionService {
       return renamed;
     }
     return extractedPath;
+  }
+
+  bool _isUnsafeArchiveEntry(String entryPath) {
+    final normalized = p.posix.normalize(entryPath.replaceAll('\\', '/'));
+    return normalized.startsWith('/') ||
+        normalized == '..' ||
+        normalized.startsWith('../') ||
+        RegExp(r'^[A-Za-z]:').hasMatch(entryPath);
   }
 }

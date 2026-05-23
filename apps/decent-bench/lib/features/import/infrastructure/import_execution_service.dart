@@ -8,8 +8,14 @@ import '../../workspace/infrastructure/native_library_resolver.dart';
 import '../domain/import_transform_application.dart';
 import '../domain/import_models.dart';
 import 'delimited_import_support.dart';
+import 'fixed_width_import_support.dart';
+import 'har_import_support.dart';
 import 'html_import_support.dart';
 import 'import_format_registry.dart';
+import 'log_import_support.dart';
+import 'markdown_table_import_support.dart';
+import 'ods_import_support.dart';
+import 'spreadsheetml_import_support.dart';
 import 'structured_import_support.dart';
 import 'type_inference_service.dart';
 
@@ -95,6 +101,13 @@ class ImportExecutionService {
           options: request.options,
           typeInferenceService: _typeInferenceService,
         );
+      case ImportFormatKey.fixedWidth:
+        return materializeFixedWidthSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
       case ImportFormatKey.json:
       case ImportFormatKey.ndjson:
       case ImportFormatKey.xml:
@@ -104,8 +117,50 @@ class ImportExecutionService {
           options: request.options,
           typeInferenceService: _typeInferenceService,
         );
+      case ImportFormatKey.spreadsheetMl:
+        return materializeSpreadsheetMlSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
+      case ImportFormatKey.ods:
+        return materializeOdsSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
       case ImportFormatKey.htmlTable:
         return materializeHtmlTableSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
+      case ImportFormatKey.markdownTable:
+        return materializeMarkdownTableSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
+      case ImportFormatKey.jsonLogStream:
+        return materializeJsonLogStreamSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
+      case ImportFormatKey.delimitedLog:
+        return materializeDelimitedLogSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
+      case ImportFormatKey.har:
+        return materializeHarSourceSync(
           sourcePath: request.sourcePath,
           format: format,
           options: request.options,

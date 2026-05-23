@@ -30,14 +30,54 @@ class ImportModuleAdapterRegistry {
           description: 'Uses the generic delimited text preview/import path.',
         ),
         ImportModuleAdapterDefinition(
+          id: 'generic_fixed_width',
+          kind: ImportModuleAdapterKind.dartGeneric,
+          description: 'Uses the generic fixed-width text import path.',
+        ),
+        ImportModuleAdapterDefinition(
           id: 'generic_structured',
           kind: ImportModuleAdapterKind.dartGeneric,
           description: 'Uses the generic structured document path.',
         ),
         ImportModuleAdapterDefinition(
+          id: 'generic_spreadsheetml',
+          kind: ImportModuleAdapterKind.dartGeneric,
+          description: 'Uses the generic SpreadsheetML import path.',
+        ),
+        ImportModuleAdapterDefinition(
+          id: 'generic_ods',
+          kind: ImportModuleAdapterKind.dartGeneric,
+          description: 'Uses the generic ODS workbook import path.',
+        ),
+        ImportModuleAdapterDefinition(
           id: 'generic_html_table',
           kind: ImportModuleAdapterKind.dartGeneric,
           description: 'Uses the generic HTML table extraction path.',
+        ),
+        ImportModuleAdapterDefinition(
+          id: 'generic_markdown_table',
+          kind: ImportModuleAdapterKind.dartGeneric,
+          description: 'Uses the generic Markdown table extraction path.',
+        ),
+        ImportModuleAdapterDefinition(
+          id: 'generic_json_log_stream',
+          kind: ImportModuleAdapterKind.dartGeneric,
+          description: 'Uses the generic JSON log stream import path.',
+        ),
+        ImportModuleAdapterDefinition(
+          id: 'generic_delimited_log',
+          kind: ImportModuleAdapterKind.dartGeneric,
+          description: 'Uses the generic structured log import path.',
+        ),
+        ImportModuleAdapterDefinition(
+          id: 'generic_har',
+          kind: ImportModuleAdapterKind.dartGeneric,
+          description: 'Uses the generic HAR import path.',
+        ),
+        ImportModuleAdapterDefinition(
+          id: 'clipboard_table_source',
+          kind: ImportModuleAdapterKind.dartBuiltin,
+          description: 'Captures an explicit clipboard payload for import.',
         ),
         ImportModuleAdapterDefinition(
           id: 'legacy_excel',
@@ -68,6 +108,11 @@ class ImportModuleAdapterRegistry {
           id: 'bzip2_wrapper',
           kind: ImportModuleAdapterKind.wrapper,
           description: 'Unwraps BZip2 and tar+bzip2 sources.',
+        ),
+        ImportModuleAdapterDefinition(
+          id: 'xz_wrapper',
+          kind: ImportModuleAdapterKind.wrapper,
+          description: 'Unwraps XZ and tar+xz sources.',
         ),
         ImportModuleAdapterDefinition(
           id: 'none',

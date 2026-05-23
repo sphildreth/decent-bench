@@ -2,7 +2,7 @@
 
 ## Status
 
-- Status: `planned`
+- Status: `investigate`
 - Priority: `P1`
 - Adapter: `none` (`none`)
 
@@ -20,7 +20,7 @@ This module declares type mapping behavior in `module.toml`. Current built-in ad
 
 ## Limitations
 
-- An Apache-compatible Parquet reader decision is required.
+- An Apache-compatible Parquet reader/runtime decision is required.
 
 ## Fixtures
 

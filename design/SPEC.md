@@ -76,6 +76,11 @@ formatter, JSON/Parquet/Excel export, and multi-tab editing.
 - SQLite (`.db`, `.sqlite`, `.sqlite3`)
 - MariaDB/MySQL-style `.sql` dump (**MVP-lite**; common `CREATE TABLE` +
   `INSERT` patterns)
+- Additional module-backed imports now include clipboard tables, fixed-width
+  text, JSON log streams, common web/app log templates, Markdown tables,
+  SpreadsheetML, XZ wrappers, ODS, PostgreSQL plain dump expansion, and HAR.
+  These follow the same preview, type override, background execution, and
+  warning contracts as the original import wizard paths.
 - Import transforms before commit:
   - Rename columns
   - Type overrides
@@ -609,12 +614,13 @@ Edge cases:
 - SQLite virtual generated columns are imported as regular value columns with
   warnings because DecentDB currently supports stored generated columns
 
-### 7.4 SQL dump import (MariaDB/MySQL style)
+### 7.4 SQL dump import (MariaDB/MySQL style plus PostgreSQL plain dumps)
 
 MVP-lite parsing scope:
 
 - `CREATE TABLE`
 - `INSERT INTO`
+- PostgreSQL plain dump `COPY FROM stdin`
 - common scalar types
 - unsupported statements may be skipped with warnings
 

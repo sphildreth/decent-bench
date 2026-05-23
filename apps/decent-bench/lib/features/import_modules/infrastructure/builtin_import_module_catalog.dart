@@ -80,20 +80,24 @@ final List<ImportModuleManifest> builtinImportModules = <ImportModuleManifest>[
   _module(
     id: 'fixed_width',
     legacyFormatKey: 'fixedWidth',
-    status: ImportModuleStatus.planned,
+    status: ImportModuleStatus.complete,
     priority: ImportModulePriority.p1,
     name: 'Fixed-width Text',
     family: ImportModuleFamily.delimitedText,
-    summary: 'Legacy fixed-width line parsing.',
-    description: 'Planned importer for fixed-width text records.',
-    implementation: ImportModuleImplementation.recognizedUnsupported,
-    adapterId: 'none',
-    adapterKind: ImportModuleAdapterKind.none,
-    note: 'Recognized in the roadmap, but not implemented yet.',
-    limitations: _unavailableLimitations(
-      'fixed_width.not_implemented',
-      'Column-boundary editing is not implemented yet.',
-    ),
+    summary: 'Legacy fixed-width line parsing with inferred boundaries.',
+    description:
+        'Fixed-width text import with whitespace-aligned boundary inference, '
+        'preview, transforms, and malformed-row handling.',
+    extensions: <String>['.fwf'],
+    implementation: ImportModuleImplementation.genericWizard,
+    adapterId: 'generic_fixed_width',
+    adapterKind: ImportModuleAdapterKind.dartGeneric,
+    note:
+        '`.txt` and `.dat` files are routed here when content sniffing finds '
+        'fixed-width boundaries; otherwise they use Generic Delimited Text.',
+    capabilities: _genericSingleTableCapabilities,
+    options: _delimitedOptions(delimiter: ''),
+    typeMappings: _sampledTextTypeMappings,
   ),
   _module(
     id: 'xlsx',
@@ -136,20 +140,21 @@ final List<ImportModuleManifest> builtinImportModules = <ImportModuleManifest>[
   _module(
     id: 'ods',
     legacyFormatKey: 'ods',
-    status: ImportModuleStatus.planned,
+    status: ImportModuleStatus.complete,
     priority: ImportModulePriority.p1,
     name: 'OpenDocument Spreadsheet',
     family: ImportModuleFamily.spreadsheet,
     summary: 'LibreOffice/OpenOffice spreadsheet import.',
-    description: 'Planned importer for `.ods` workbooks.',
+    description:
+        'ODS workbook import with worksheet selection through the generic '
+        'multi-table import flow.',
     extensions: <String>['.ods'],
-    implementation: ImportModuleImplementation.recognizedUnsupported,
-    adapterId: 'none',
-    adapterKind: ImportModuleAdapterKind.none,
-    limitations: _unavailableLimitations(
-      'ods.not_implemented',
-      'ODS workbook parsing has not been implemented yet.',
-    ),
+    implementation: ImportModuleImplementation.genericWizard,
+    adapterId: 'generic_ods',
+    adapterKind: ImportModuleAdapterKind.dartGeneric,
+    capabilities: _genericStructuredCapabilities,
+    options: _delimitedOptions(delimiter: ''),
+    typeMappings: _sampledTextTypeMappings,
   ),
   _module(
     id: 'json',
@@ -204,6 +209,26 @@ final List<ImportModuleManifest> builtinImportModules = <ImportModuleManifest>[
     capabilities: _genericStructuredCapabilities,
     options: _structuredOptions(defaultStrategy: 'flatten'),
     typeMappings: _structuredTypeMappings,
+  ),
+  _module(
+    id: 'spreadsheetml',
+    legacyFormatKey: 'spreadsheetMl',
+    status: ImportModuleStatus.complete,
+    priority: ImportModulePriority.p1,
+    name: 'SpreadsheetML / Excel XML Spreadsheet',
+    family: ImportModuleFamily.spreadsheet,
+    summary: 'Excel XML Spreadsheet import.',
+    description:
+        'Strict SpreadsheetML import for Excel XML Spreadsheet workbooks.',
+    implementation: ImportModuleImplementation.genericWizard,
+    adapterId: 'generic_spreadsheetml',
+    adapterKind: ImportModuleAdapterKind.dartGeneric,
+    note:
+        '`.xml` files are routed here only when the SpreadsheetML workbook '
+        'signature is present; other XML files keep using XML import.',
+    capabilities: _signatureStructuredCapabilities,
+    options: _delimitedOptions(delimiter: ''),
+    typeMappings: _sampledTextTypeMappings,
   ),
   _module(
     id: 'yaml',
@@ -264,20 +289,21 @@ final List<ImportModuleManifest> builtinImportModules = <ImportModuleManifest>[
   _module(
     id: 'markdown_table',
     legacyFormatKey: 'markdownTable',
-    status: ImportModuleStatus.investigate,
-    priority: ImportModulePriority.p2,
+    status: ImportModuleStatus.complete,
+    priority: ImportModulePriority.p1,
     name: 'Markdown Tables',
     family: ImportModuleFamily.webMarkup,
     summary: 'Markdown table import.',
-    description: 'Investigate Markdown table extraction from `.md` files.',
+    description:
+        'Markdown pipe-table import with multiple-table extraction and '
+        'malformed-row warnings.',
     extensions: <String>['.md'],
-    implementation: ImportModuleImplementation.recognizedUnsupported,
-    adapterId: 'none',
-    adapterKind: ImportModuleAdapterKind.none,
-    limitations: _unavailableLimitations(
-      'markdown_table.not_implemented',
-      'Markdown table parsing is not implemented yet.',
-    ),
+    implementation: ImportModuleImplementation.genericWizard,
+    adapterId: 'generic_markdown_table',
+    adapterKind: ImportModuleAdapterKind.dartGeneric,
+    capabilities: _genericStructuredCapabilities,
+    options: _delimitedOptions(delimiter: '|'),
+    typeMappings: _sampledTextTypeMappings,
   ),
   _module(
     id: 'sqlite',
@@ -391,77 +417,104 @@ final List<ImportModuleManifest> builtinImportModules = <ImportModuleManifest>[
     implementation: ImportModuleImplementation.dedicatedWizard,
     adapterId: 'legacy_sql_dump',
     adapterKind: ImportModuleAdapterKind.legacyWizard,
-    capabilities: _multiTableCapabilities,
+    capabilities: _contentRoutedMultiTableCapabilities,
     typeMappings: _databaseTypeMappings,
   ),
   _module(
     id: 'postgres_plain_dump',
     legacyFormatKey: 'postgresPlainDump',
-    status: ImportModuleStatus.planned,
+    status: ImportModuleStatus.complete,
     priority: ImportModulePriority.p1,
     name: 'PostgreSQL Plain SQL Dump',
     family: ImportModuleFamily.databaseDump,
     summary: 'PostgreSQL plain dump expansion.',
-    description: 'Broader plain SQL dump import beyond current MVP-lite scope.',
-    implementation: ImportModuleImplementation.recognizedUnsupported,
-    adapterId: 'none',
-    adapterKind: ImportModuleAdapterKind.none,
-    limitations: _unavailableLimitations(
-      'postgres_plain_dump.copy_not_implemented',
-      'PostgreSQL COPY and dialect expansion are not implemented yet.',
-    ),
+    description:
+        'PostgreSQL plain SQL dump coverage through the existing SQL dump '
+        'wizard, including COPY FROM stdin and PostgreSQL identifier/type '
+        'handling.',
+    implementation: ImportModuleImplementation.dedicatedWizard,
+    adapterId: 'legacy_sql_dump',
+    adapterKind: ImportModuleAdapterKind.legacyWizard,
+    note:
+        '`.sql` files continue to route through the SQL Dump module; this '
+        'module documents the PostgreSQL dialect expansion within that path.',
+    capabilities: _multiTableCapabilities,
+    typeMappings: _databaseTypeMappings,
   ),
   _module(
     id: 'parquet',
     legacyFormatKey: 'parquet',
-    status: ImportModuleStatus.planned,
+    status: ImportModuleStatus.investigate,
     priority: ImportModulePriority.p1,
     name: 'Parquet',
     family: ImportModuleFamily.analytical,
     summary: 'Columnar Parquet import.',
-    description: 'Planned columnar Parquet import.',
+    description:
+        'Investigate columnar Parquet import after the reader/runtime path '
+        'and packaging contract are accepted.',
     extensions: <String>['.parquet'],
     implementation: ImportModuleImplementation.recognizedUnsupported,
     adapterId: 'none',
     adapterKind: ImportModuleAdapterKind.none,
     limitations: _unavailableLimitations(
       'parquet.reader_dependency',
-      'An Apache-compatible Parquet reader decision is required.',
+      'An Apache-compatible Parquet reader/runtime decision is required.',
     ),
   ),
   _module(
     id: 'json_log_stream',
     legacyFormatKey: 'jsonLogStream',
-    status: ImportModuleStatus.planned,
+    status: ImportModuleStatus.complete,
     priority: ImportModulePriority.p1,
     name: 'JSON Log Stream',
     family: ImportModuleFamily.logsEvents,
     summary: 'Operational log ingestion built on NDJSON support.',
-    description: 'Planned log-focused workflow over JSON line streams.',
-    implementation: ImportModuleImplementation.recognizedUnsupported,
-    adapterId: 'none',
-    adapterKind: ImportModuleAdapterKind.none,
-    limitations: _unavailableLimitations(
-      'json_log_stream.template_not_implemented',
-      'Timestamp extraction and log templates are not implemented yet.',
-    ),
+    description:
+        'Log-focused JSON line import with source-line provenance and '
+        'timestamp extraction.',
+    implementation: ImportModuleImplementation.genericWizard,
+    adapterId: 'generic_json_log_stream',
+    adapterKind: ImportModuleAdapterKind.dartGeneric,
+    capabilities: _contentRoutedSingleTableCapabilities,
+    options: _structuredOptions(defaultStrategy: 'flatten'),
+    typeMappings: _structuredTypeMappings,
   ),
   _module(
     id: 'delimited_log',
     legacyFormatKey: 'delimitedLog',
-    status: ImportModuleStatus.investigate,
-    priority: ImportModulePriority.p2,
+    status: ImportModuleStatus.complete,
+    priority: ImportModulePriority.p1,
     name: 'Delimited Log File',
     family: ImportModuleFamily.logsEvents,
     summary: 'Template-based delimited log import.',
-    description: 'Investigate delimited log templates.',
-    implementation: ImportModuleImplementation.recognizedUnsupported,
-    adapterId: 'none',
-    adapterKind: ImportModuleAdapterKind.none,
-    limitations: _unavailableLimitations(
-      'delimited_log.template_not_implemented',
-      'Template parsing and timestamp rules are not implemented yet.',
-    ),
+    description:
+        'Template-based import for IIS W3C, Apache/Nginx access, and '
+        'key=value app logs.',
+    implementation: ImportModuleImplementation.genericWizard,
+    adapterId: 'generic_delimited_log',
+    adapterKind: ImportModuleAdapterKind.dartGeneric,
+    capabilities: _contentRoutedSingleTableCapabilities,
+    options: _delimitedOptions(delimiter: ''),
+    typeMappings: _sampledTextTypeMappings,
+  ),
+  _module(
+    id: 'har',
+    legacyFormatKey: 'har',
+    status: ImportModuleStatus.complete,
+    priority: ImportModulePriority.p1,
+    name: 'HAR',
+    family: ImportModuleFamily.logsEvents,
+    summary: 'Browser HTTP archive import.',
+    description:
+        'HAR import that maps requests, responses, timings, and headers into '
+        'linked DecentDB tables.',
+    extensions: <String>['.har'],
+    implementation: ImportModuleImplementation.genericWizard,
+    adapterId: 'generic_har',
+    adapterKind: ImportModuleAdapterKind.dartGeneric,
+    capabilities: _genericStructuredCapabilities,
+    options: _structuredOptions(defaultStrategy: 'flatten'),
+    typeMappings: _structuredTypeMappings,
   ),
   _module(
     id: 'zip_archive',
@@ -524,37 +577,39 @@ final List<ImportModuleManifest> builtinImportModules = <ImportModuleManifest>[
     id: 'xz_archive',
     legacyFormatKey: 'xzArchive',
     kind: ImportModuleKind.wrapper,
-    status: ImportModuleStatus.investigate,
-    priority: ImportModulePriority.p2,
+    status: ImportModuleStatus.complete,
+    priority: ImportModulePriority.p1,
     name: 'XZ Wrapper',
     family: ImportModuleFamily.compressedArchive,
     summary: 'XZ compressed wrapper support.',
-    description: 'Investigate XZ and tar+xz wrapper support.',
-    extensions: <String>['.tar.xz', '.xz'],
-    implementation: ImportModuleImplementation.recognizedUnsupported,
-    adapterId: 'none',
-    adapterKind: ImportModuleAdapterKind.none,
-    limitations: _unavailableLimitations(
-      'xz_archive.not_implemented',
-      'Cross-platform XZ extraction is not implemented yet.',
-    ),
+    description: 'XZ single-file and tar+xz wrapper support.',
+    extensions: <String>['.tar.xz', '.txz', '.xz'],
+    implementation: ImportModuleImplementation.wrapper,
+    adapterId: 'xz_wrapper',
+    adapterKind: ImportModuleAdapterKind.wrapper,
+    capabilities: _wrapperCapabilities,
+    actions: _actions(<String>['inspect_archive', 'extract_inner_source']),
   ),
   _module(
     id: 'clipboard_table',
     legacyFormatKey: 'clipboardTable',
-    status: ImportModuleStatus.investigate,
+    status: ImportModuleStatus.complete,
     priority: ImportModulePriority.p1,
     name: 'Clipboard Table',
     family: ImportModuleFamily.webMarkup,
-    summary: 'Clipboard HTML/pasted table capture.',
-    description: 'Investigate pasted table import.',
-    implementation: ImportModuleImplementation.recognizedUnsupported,
-    adapterId: 'none',
-    adapterKind: ImportModuleAdapterKind.none,
-    limitations: _unavailableLimitations(
-      'clipboard_table.not_implemented',
-      'Clipboard capture is not implemented yet.',
-    ),
+    summary: 'Explicit clipboard table capture.',
+    description:
+        'Explicit clipboard import action for TSV, CSV, Markdown pipe-table, '
+        'and HTML table payloads.',
+    implementation: ImportModuleImplementation.genericWizard,
+    adapterId: 'clipboard_table_source',
+    adapterKind: ImportModuleAdapterKind.dartBuiltin,
+    capabilities: _contentRoutedStructuredCapabilities,
+    actions: _actions(<String>[
+      'capture_clipboard',
+      'preview_rows',
+      'import_full',
+    ]),
   ),
   _module(
     id: 'pdf_tables',
@@ -611,6 +666,42 @@ const ImportModuleCapabilities _genericStructuredCapabilities =
       canExportRecipe: true,
     );
 
+const ImportModuleCapabilities _contentRoutedSingleTableCapabilities =
+    ImportModuleCapabilities(
+      detectByExtension: false,
+      inspectSchema: true,
+      previewRows: true,
+      importFull: true,
+      supportsCancellation: true,
+      supportsRejectedRows: true,
+      canExportRecipe: true,
+    );
+
+const ImportModuleCapabilities _contentRoutedStructuredCapabilities =
+    ImportModuleCapabilities(
+      detectByExtension: false,
+      inspectSchema: true,
+      previewRows: true,
+      importFull: true,
+      supportsMultipleTables: true,
+      supportsCancellation: true,
+      supportsRejectedRows: true,
+      canExportRecipe: true,
+    );
+
+const ImportModuleCapabilities _signatureStructuredCapabilities =
+    ImportModuleCapabilities(
+      detectByExtension: false,
+      detectBySignature: true,
+      inspectSchema: true,
+      previewRows: true,
+      importFull: true,
+      supportsMultipleTables: true,
+      supportsCancellation: true,
+      supportsRejectedRows: true,
+      canExportRecipe: true,
+    );
+
 const ImportModuleCapabilities _multiTableCapabilities =
     ImportModuleCapabilities(
       inspectSchema: true,
@@ -620,6 +711,20 @@ const ImportModuleCapabilities _multiTableCapabilities =
       supportsMultipleTables: true,
       supportsCancellation: true,
       preservesLogicalTypes: true,
+      canExportRecipe: true,
+    );
+
+const ImportModuleCapabilities _contentRoutedMultiTableCapabilities =
+    ImportModuleCapabilities(
+      detectByExtension: false,
+      inspectSchema: true,
+      previewRows: true,
+      importFull: true,
+      importSelectedTables: true,
+      supportsMultipleTables: true,
+      supportsCancellation: true,
+      preservesLogicalTypes: true,
+      preservesConstraints: true,
       canExportRecipe: true,
     );
 
@@ -893,6 +998,7 @@ String _labelForAction(String id) {
     'import_selected_tables' => 'Import Selected Tables',
     'inspect_archive' => 'Inspect Archive',
     'extract_inner_source' => 'Extract Inner Source',
+    'capture_clipboard' => 'Capture Clipboard',
     'recognize_source' => 'Recognize Source',
     'show_unknown_source_message' => 'Show Unknown Source Message',
     _ => id,
