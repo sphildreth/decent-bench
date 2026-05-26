@@ -423,7 +423,7 @@ class WorkspaceController extends ChangeNotifier {
       _restoreTabs(restoredState, notify: false);
       await refreshSchema(showLoadingState: false);
       branch.attachWorkspace(databasePath: session.path);
-      await refreshBranchState(showLoadingState: false);
+      unawaited(refreshBranchState(showLoadingState: false));
       if (restoreStartupQuery) {
         await _restoreStartupQueryState();
       }

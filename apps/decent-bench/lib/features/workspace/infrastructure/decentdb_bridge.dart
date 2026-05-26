@@ -529,7 +529,7 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
 
   @override
   Future<List<WorkspaceBranchInfo>> listBranches() async {
-    final data = await _request('listBranches');
+    final data = await _request('listBranches', const <String, Object?>{}, _branchRequestTimeout);
     return _bridgeMapList(
       data['branches'],
     ).map(WorkspaceBranchInfo.fromMap).toList(growable: false);
@@ -543,7 +543,7 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
     final data = await _request('createBranch', <String, Object?>{
       'branchName': branchName,
       'fromRef': fromRef,
-    });
+    }, _branchRequestTimeout);
     return WorkspaceBranchInfo.fromMap(
       (data['branch']! as Map<Object?, Object?>).map(
         (key, value) => MapEntry(key as String, value),
@@ -553,12 +553,12 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
 
   @override
   Future<void> deleteBranch({required String branchName}) async {
-    await _request('deleteBranch', <String, Object?>{'branchName': branchName});
+    await _request('deleteBranch', <String, Object?>{'branchName': branchName}, _branchRequestTimeout);
   }
 
   @override
   Future<List<WorkspaceSnapshotInfo>> listSnapshots() async {
-    final data = await _request('listSnapshots');
+    final data = await _request('listSnapshots', const <String, Object?>{}, _branchRequestTimeout);
     return _bridgeMapList(
       data['snapshots'],
     ).map(WorkspaceSnapshotInfo.fromMap).toList(growable: false);
@@ -568,7 +568,7 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   Future<WorkspaceSnapshotInfo> createSnapshot({required String name}) async {
     final data = await _request('createSnapshot', <String, Object?>{
       'name': name,
-    });
+    }, _branchRequestTimeout);
     return WorkspaceSnapshotInfo.fromMap(
       (data['snapshot']! as Map<Object?, Object?>).map(
         (key, value) => MapEntry(key as String, value),
@@ -578,7 +578,7 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
 
   @override
   Future<void> deleteSnapshot({required String ref}) async {
-    await _request('deleteSnapshot', <String, Object?>{'ref': ref});
+    await _request('deleteSnapshot', <String, Object?>{'ref': ref}, _branchRequestTimeout);
   }
 
   @override
@@ -593,7 +593,7 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       'branchName': branchName,
       'params': params,
       'pageSize': pageSize,
-    });
+    }, _branchRequestTimeout);
     return QueryResultPage.fromMap(data);
   }
 
@@ -605,7 +605,7 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
     final data = await _request('branchDiff', <String, Object?>{
       'leftRef': leftRef,
       'rightRef': rightRef,
-    });
+    }, _branchRequestTimeout);
     return WorkspaceBranchDiff.fromMap(data);
   }
 
@@ -619,7 +619,7 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       'branchName': branchName,
       'targetRef': targetRef,
       'dryRun': dryRun,
-    });
+    }, _branchRequestTimeout);
     return WorkspaceBranchDiff.fromMap(data);
   }
 
@@ -633,11 +633,12 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       'sourceBranch': sourceBranch,
       'targetBranch': targetBranch,
       'dryRun': dryRun,
-    });
+    }, _branchRequestTimeout);
     return WorkspaceBranchDiff.fromMap(data);
   }
 
   static const Duration _requestTimeout = Duration(seconds: 30);
+  static const Duration _branchRequestTimeout = Duration(seconds: 10);
 
   Future<Map<String, Object?>> _request(
     String action, [
