@@ -100,6 +100,7 @@ class _TrackingWorkspaceGateway extends FakeWorkspaceGateway {
     required String sql,
     required List<Object?> params,
     required int pageSize,
+    Duration? timeout,
   }) async {
     runQueryCallCount += 1;
     lastRunParams = <Object?>[...params];

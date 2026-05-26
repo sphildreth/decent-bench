@@ -119,8 +119,18 @@ This file records notable project changes. It follows the
   `DataQualityController` pattern, owning branch/snapshot state, workflow logic,
   and gateway interactions. `WorkspaceController` now delegates all branch
   operations to `branch.*` methods while maintaining backward-compatible public API.
+- Added configurable query timeout via `query_timeout_seconds` TOML setting
+  (default: 60 seconds). All query execution, page fetching, and export operations
+  now enforce a timeout to prevent indefinite hangs on unresponsive worker isolates.
+  Branch operations use a shorter 10-second timeout. Configurable through the
+  preferences UI or by editing `config.toml` directly.
+- Added request timeout mechanism to `DecentDbBridge` with per-operation timeout
+  support, preventing infinite hangs when the worker isolate becomes unresponsive.
 
 ### Changed
+
+- Bumped TOML config version from 3 to 4 to accommodate the new
+  `query_timeout_seconds` setting. Existing configs are migrated automatically.
 
 - Updated the pinned DecentDB Dart binding/runtime dependency from v2.6.0 to
   v2.7.0, adopting ABI v5 with stable `ddb_db_execute_on_branch` entry point,

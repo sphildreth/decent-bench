@@ -39,10 +39,12 @@ abstract class QueryExecutionGateway {
     required String sql,
     required List<Object?> params,
     required int pageSize,
+    Duration? timeout,
   });
   Future<QueryResultPage> fetchNextPage({
     required String cursorId,
     required int pageSize,
+    Duration? timeout,
   });
   Future<void> cancelQuery(String cursorId);
   Future<QueuedWriteResult> executeQueuedWrite({
@@ -60,6 +62,7 @@ abstract class ExportGateway {
     required String path,
     required String delimiter,
     required bool includeHeaders,
+    Duration? timeout,
   });
   Future<JsonExportResult> exportJson({
     required String sql,
@@ -69,6 +72,7 @@ abstract class ExportGateway {
     required String format,
     required bool pretty,
     required bool includeMetadata,
+    Duration? timeout,
   });
   Future<ExcelExportResult> exportExcel({
     required String sql,
@@ -76,6 +80,7 @@ abstract class ExportGateway {
     required int pageSize,
     required String path,
     required bool includeHeaders,
+    Duration? timeout,
   });
 }
 
@@ -290,12 +295,13 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
     required String sql,
     required List<Object?> params,
     required int pageSize,
+    Duration? timeout,
   }) async {
     final data = await _request('runQuery', <String, Object?>{
       'sql': sql,
       'params': params,
       'pageSize': pageSize,
-    });
+    }, timeout);
     return QueryResultPage.fromMap(data);
   }
 
@@ -303,11 +309,12 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   Future<QueryResultPage> fetchNextPage({
     required String cursorId,
     required int pageSize,
+    Duration? timeout,
   }) async {
     final data = await _request('fetchNextPage', <String, Object?>{
       'cursorId': cursorId,
       'pageSize': pageSize,
-    });
+    }, timeout);
     return QueryResultPage.fromMap(data);
   }
 
@@ -338,6 +345,7 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
     required String path,
     required String delimiter,
     required bool includeHeaders,
+    Duration? timeout,
   }) async {
     final data = await _request('exportCsv', <String, Object?>{
       'sql': sql,
@@ -346,7 +354,7 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       'path': path,
       'delimiter': delimiter,
       'includeHeaders': includeHeaders,
-    });
+    }, timeout);
     return CsvExportResult.fromMap(data);
   }
 
@@ -359,6 +367,7 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
     required String format,
     required bool pretty,
     required bool includeMetadata,
+    Duration? timeout,
   }) async {
     final data = await _request('exportJson', <String, Object?>{
       'sql': sql,
@@ -368,7 +377,7 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       'format': format,
       'pretty': pretty,
       'includeMetadata': includeMetadata,
-    });
+    }, timeout);
     return JsonExportResult.fromMap(data);
   }
 
@@ -379,6 +388,7 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
     required int pageSize,
     required String path,
     required bool includeHeaders,
+    Duration? timeout,
   }) async {
     final data = await _request('exportExcel', <String, Object?>{
       'sql': sql,
@@ -386,7 +396,7 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       'pageSize': pageSize,
       'path': path,
       'includeHeaders': includeHeaders,
-    });
+    }, timeout);
     return ExcelExportResult.fromMap(data);
   }
 

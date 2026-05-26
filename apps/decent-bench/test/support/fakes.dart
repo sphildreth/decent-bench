@@ -570,6 +570,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
     required String path,
     required String delimiter,
     required bool includeHeaders,
+    Duration? timeout,
   }) async {
     lastExportPath = path;
     return CsvExportResult(rowCount: 2, path: path);
@@ -584,6 +585,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
     required String format,
     required bool pretty,
     required bool includeMetadata,
+    Duration? timeout,
   }) async {
     lastExportPath = path;
     return JsonExportResult(rowCount: 2, path: path);
@@ -596,6 +598,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
     required int pageSize,
     required String path,
     required bool includeHeaders,
+    Duration? timeout,
   }) async {
     lastExportPath = path;
     lastExcelIncludeHeaders = includeHeaders;
@@ -606,6 +609,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   Future<QueryResultPage> fetchNextPage({
     required String cursorId,
     required int pageSize,
+    Duration? timeout,
   }) async {
     return switch (cursorId) {
       'cursor-projects' => QueryResultPage(
@@ -960,6 +964,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
     required String sql,
     required List<Object?> params,
     required int pageSize,
+    Duration? timeout,
   }) async {
     lastRunQuerySql = sql;
     lastRunQueryParams = <Object?>[...params];

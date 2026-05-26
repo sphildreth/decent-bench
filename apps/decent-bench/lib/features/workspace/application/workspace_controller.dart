@@ -1501,6 +1501,7 @@ class WorkspaceController extends ChangeNotifier {
           sql: trimmedSql,
           params: params,
           pageSize: config.defaultPageSize,
+          timeout: Duration(seconds: config.queryTimeoutSeconds),
         );
         if (!_isCurrentGeneration(tabId, generation)) {
           if (page.cursorId != null) {
@@ -1695,6 +1696,7 @@ class WorkspaceController extends ChangeNotifier {
       final page = await _gateway.fetchNextPage(
         cursorId: tab.cursorId!,
         pageSize: config.defaultPageSize,
+        timeout: Duration(seconds: config.queryTimeoutSeconds),
       );
       if (!_isCurrentGeneration(resolvedTabId, generation)) {
         if (page.cursorId != null) {
@@ -2040,6 +2042,7 @@ class WorkspaceController extends ChangeNotifier {
         path: exportPath,
         delimiter: config.csvDelimiter,
         includeHeaders: config.csvIncludeHeaders,
+        timeout: Duration(seconds: config.queryTimeoutSeconds),
       );
       _mutateTab(tabId, (current) {
         final statusMessage =
@@ -2174,6 +2177,7 @@ class WorkspaceController extends ChangeNotifier {
         format: format,
         pretty: pretty,
         includeMetadata: includeMetadata,
+        timeout: Duration(seconds: config.queryTimeoutSeconds),
       );
       _mutateTab(tabId, (current) {
         final statusMessage =
@@ -2308,6 +2312,7 @@ class WorkspaceController extends ChangeNotifier {
         pageSize: config.defaultPageSize,
         path: exportPath,
         includeHeaders: includeHeaders,
+        timeout: Duration(seconds: config.queryTimeoutSeconds),
       );
       _mutateTab(tabId, (current) {
         final statusMessage =
@@ -2378,6 +2383,17 @@ class WorkspaceController extends ChangeNotifier {
 
     config = config.copyWith(defaultPageSize: parsed);
     await _persistConfig('Updated default page size to $parsed rows.');
+  }
+
+  Future<void> updateQueryTimeout(String rawValue) async {
+    final parsed = int.tryParse(rawValue.trim());
+    if (parsed == null || parsed <= 0) {
+      _setWorkspaceError('Query timeout must be a positive integer.');
+      return;
+    }
+
+    config = config.copyWith(queryTimeoutSeconds: parsed);
+    await _persistConfig('Updated query timeout to $parsed seconds.');
   }
 
   Future<void> updateCsvDelimiter(String rawValue) async {
@@ -4512,6 +4528,7 @@ class WorkspaceController extends ChangeNotifier {
       sql: sql,
       params: params,
       pageSize: config.defaultPageSize,
+      timeout: Duration(seconds: config.queryTimeoutSeconds),
     );
     return page.rowsAffected;
   }
@@ -4941,6 +4958,7 @@ class WorkspaceController extends ChangeNotifier {
         sql: 'EXPLAIN $sql',
         params: params,
         pageSize: config.defaultPageSize,
+        timeout: Duration(seconds: config.queryTimeoutSeconds),
       );
       if (!_isCurrentGeneration(tabId, generation)) {
         if (planPage.cursorId != null) {
@@ -4955,6 +4973,7 @@ class WorkspaceController extends ChangeNotifier {
         planPage = await _gateway.fetchNextPage(
           cursorId: planPage.cursorId!,
           pageSize: config.defaultPageSize,
+          timeout: Duration(seconds: config.queryTimeoutSeconds),
         );
         if (!_isCurrentGeneration(tabId, generation)) {
           if (planPage.cursorId != null) {
@@ -5577,6 +5596,15 @@ class WorkspaceController extends ChangeNotifier {
   Future<void> _restoreStartupQueryState() async {
     final replay = _latestRestorableQuery();
     if (replay != null) {
+      _logInfo(
+        'restore_startupup_query',
+        'Replaying saved query from history.',
+        sql: replay.entry.sql,
+        details: <String, Object?>{
+          'tab_id': replay.tabId,
+          'ran_at': replay.entry.ranAt.toIso8601String(),
+        },
+      );
       _activeTabId = replay.tabId;
       loadHistoryEntryIntoTab(replay.tabId, replay.entry);
       await runTab(replay.tabId);
@@ -5591,6 +5619,12 @@ class WorkspaceController extends ChangeNotifier {
         'SELECT *\n'
         'FROM ${_quoteIdentifier(firstTable)}\n'
         'LIMIT ${config.defaultPageSize};';
+    _logInfo(
+      'restore_startup_query',
+      'No restorable query found, running fallback table preview.',
+      sql: fallbackSql,
+      details: <String, Object?>{'table': firstTable},
+    );
     _mutateActiveTab(
       (tab) => tab.copyWith(sql: fallbackSql, parameterJson: ''),
       persist: true,

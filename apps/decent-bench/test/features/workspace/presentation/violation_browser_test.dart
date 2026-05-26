@@ -118,6 +118,7 @@ class _PagedViolationGateway extends FakeWorkspaceGateway {
     required String sql,
     required List<Object?> params,
     required int pageSize,
+    Duration? timeout,
   }) async {
     lastRunQuerySql = sql;
     lastRunQueryParams = <Object?>[...params];

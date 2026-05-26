@@ -354,9 +354,10 @@ class WindowPlacement {
 }
 
 class AppConfig {
-  static const int currentConfigVersion = 3;
+  static const int currentConfigVersion = 4;
   static const int defaultPageSizeValue = 1000;
   static const int defaultQueryHistoryLimitValue = 40;
+  static const int defaultQueryTimeoutSeconds = 60;
   static const String defaultCsvDelimiter = ',';
   static const bool defaultCsvIncludeHeaders = true;
   static const int maxRecentFiles = 8;
@@ -370,6 +371,7 @@ class AppConfig {
     required this.recentFiles,
     required this.defaultPageSize,
     required this.queryHistoryLimit,
+    required this.queryTimeoutSeconds,
     required this.csvDelimiter,
     required this.csvIncludeHeaders,
     required this.editorSettings,
@@ -386,6 +388,7 @@ class AppConfig {
   final List<String> recentFiles;
   final int defaultPageSize;
   final int queryHistoryLimit;
+  final int queryTimeoutSeconds;
   final String csvDelimiter;
   final bool csvIncludeHeaders;
   final EditorSettings editorSettings;
@@ -403,6 +406,7 @@ class AppConfig {
       recentFiles: const <String>[],
       defaultPageSize: defaultPageSizeValue,
       queryHistoryLimit: defaultQueryHistoryLimitValue,
+      queryTimeoutSeconds: defaultQueryTimeoutSeconds,
       csvDelimiter: defaultCsvDelimiter,
       csvIncludeHeaders: defaultCsvIncludeHeaders,
       editorSettings: EditorSettings.defaults(),
@@ -421,6 +425,7 @@ class AppConfig {
     List<String>? recentFiles,
     int? defaultPageSize,
     int? queryHistoryLimit,
+    int? queryTimeoutSeconds,
     String? csvDelimiter,
     bool? csvIncludeHeaders,
     EditorSettings? editorSettings,
@@ -437,6 +442,7 @@ class AppConfig {
       recentFiles: recentFiles ?? this.recentFiles,
       defaultPageSize: defaultPageSize ?? this.defaultPageSize,
       queryHistoryLimit: queryHistoryLimit ?? this.queryHistoryLimit,
+      queryTimeoutSeconds: queryTimeoutSeconds ?? this.queryTimeoutSeconds,
       csvDelimiter: csvDelimiter ?? this.csvDelimiter,
       csvIncludeHeaders: csvIncludeHeaders ?? this.csvIncludeHeaders,
       editorSettings: editorSettings ?? this.editorSettings,
@@ -482,6 +488,7 @@ class AppConfig {
       ..writeln('config_version = $configVersion')
       ..writeln('default_page_size = $defaultPageSize')
       ..writeln('query_history_limit = $queryHistoryLimit')
+      ..writeln('query_timeout_seconds = $queryTimeoutSeconds')
       ..writeln('csv_delimiter = ${jsonEncode(csvDelimiter)}')
       ..writeln('csv_include_headers = $csvIncludeHeaders')
       ..writeln('recent_files = ${jsonEncode(recentFiles)}')

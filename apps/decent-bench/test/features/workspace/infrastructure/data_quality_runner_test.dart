@@ -522,6 +522,7 @@ class _QualityFakeGateway extends FakeWorkspaceGateway {
     required String sql,
     required List<Object?> params,
     required int pageSize,
+    Duration? timeout,
   }) async {
     lastRunQuerySql = sql;
     executedSql.add(sql);
@@ -663,6 +664,7 @@ class _PassingQualityFakeGateway extends _QualityFakeGateway {
     required String sql,
     required List<Object?> params,
     required int pageSize,
+    Duration? timeout,
   }) async {
     final normalized = sql.replaceAll(RegExp(r'\s+'), ' ');
     if (normalized.contains('COUNT(*) AS failure_count')) {
