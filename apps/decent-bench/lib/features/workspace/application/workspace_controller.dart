@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 
 import '../../../app/logging/app_logger.dart';
 import '../../../app/logging/import_log_details.dart';
+import 'branch_controller.dart';
 import 'data_quality_controller.dart';
 import '../domain/app_config.dart';
 import '../domain/data_quality_models.dart';
@@ -28,10 +29,6 @@ import '../infrastructure/workspace_state_store.dart';
 
 class WorkspaceController extends ChangeNotifier {
   static const int _maxMessageHistoryEntries = 80;
-  static const String nativeBranchApiUnavailableReason =
-      'Native DecentDB branch and snapshot operations require a public Dart '
-      'binding API. Decent Bench does not call private binding internals or '
-      'C ABI surfaces that are not exported by the public Dart package.';
 
   WorkspaceController({
     WorkspaceDatabaseGateway? gateway,
@@ -60,6 +57,20 @@ class WorkspaceController extends ChangeNotifier {
       ),
       repository: dataQualityRepository,
     );
+    branch = BranchController(
+      gateway: _gateway,
+      logger: _logger,
+      onSchemaRefreshNeeded: () => refreshSchema(showLoadingState: false),
+      onStatusMessage: (message) {
+        workspaceMessage = message;
+        workspaceError = null;
+      },
+      onError: (error) {
+        workspaceError = error;
+        workspaceMessage = null;
+      },
+    );
+    branch.addListener(_safeNotify);
     _resetTabs(notify: false, resetCounters: true);
   }
 
@@ -73,10 +84,7 @@ class WorkspaceController extends ChangeNotifier {
   AppConfig config = AppConfig.defaults();
   SchemaSnapshot schema = SchemaSnapshot.empty();
   ToolingMetadata? toolingMetadata;
-  WorkspaceBranchState branchState = WorkspaceBranchState.unavailable(
-    nativeBranchApiUnavailableReason,
-  );
-  WorkspaceBranchDiff? lastBranchDiff;
+  late final BranchController branch;
   SavedQueryLibrary savedQueryLibrary = SavedQueryLibrary.empty;
   List<QueryTabState> tabs = const <QueryTabState>[];
   ExcelImportSession? excelImportSession;
@@ -92,7 +100,11 @@ class WorkspaceController extends ChangeNotifier {
   bool isInitializing = true;
   bool isSchemaLoading = false;
   bool isOpeningDatabase = false;
-  bool isBranchStateLoading = false;
+
+  WorkspaceBranchState get branchState => branch.branchState;
+  WorkspaceBranchDiff? get lastBranchDiff => branch.lastBranchDiff;
+  bool get isBranchStateLoading => branch.isBranchStateLoading;
+  bool get canUseNativeBranchWorkflow => branch.canUseNativeBranchWorkflow;
 
   int _nextTabIdCounter = 1;
   int _nextTabTitleCounter = 1;
@@ -145,9 +157,6 @@ class WorkspaceController extends ChangeNotifier {
   bool get canRunActiveTab => canRunTab(activeTabId);
 
   bool get canCancelActiveTab => tabById(activeTabId)?.canCancel ?? false;
-
-  bool get canUseNativeBranchWorkflow =>
-      hasOpenDatabase && branchState.isNativeBranchApiAvailable;
 
   AppLogger get logger => _logger;
 
@@ -383,10 +392,7 @@ class WorkspaceController extends ChangeNotifier {
     isSchemaLoading = true;
     schema = SchemaSnapshot.empty();
     toolingMetadata = null;
-    branchState = WorkspaceBranchState.unavailable(
-      nativeBranchApiUnavailableReason,
-    );
-    lastBranchDiff = null;
+    branch.attachWorkspace(databasePath: null);
     workspaceError = null;
     workspaceMessage = createIfMissing
         ? 'Creating database...'
@@ -416,6 +422,7 @@ class WorkspaceController extends ChangeNotifier {
       await _loadSavedQueryLibrary(session.path);
       _restoreTabs(restoredState, notify: false);
       await refreshSchema(showLoadingState: false);
+      branch.attachWorkspace(databasePath: session.path);
       await refreshBranchState(showLoadingState: false);
       if (restoreStartupQuery) {
         await _restoreStartupQueryState();
@@ -445,10 +452,7 @@ class WorkspaceController extends ChangeNotifier {
       schema = SchemaSnapshot.empty();
       toolingMetadata = null;
       await dataQuality.attachWorkspace(databasePath: null, schema: schema);
-      branchState = WorkspaceBranchState.unavailable(
-        nativeBranchApiUnavailableReason,
-      );
-      lastBranchDiff = null;
+      branch.attachWorkspace(databasePath: null);
       savedQueryLibrary = SavedQueryLibrary.empty;
       _setWorkspaceError(error.toString());
       _resetTabs(notify: false, resetCounters: true);
@@ -639,10 +643,7 @@ class WorkspaceController extends ChangeNotifier {
     engineVersion = null;
     schema = SchemaSnapshot.empty();
     toolingMetadata = null;
-    branchState = WorkspaceBranchState.unavailable(
-      nativeBranchApiUnavailableReason,
-    );
-    lastBranchDiff = null;
+    branch.attachWorkspace(databasePath: null);
     savedQueryLibrary = SavedQueryLibrary.empty;
     await dataQuality.attachWorkspace(databasePath: null, schema: schema);
     workspaceMessage = 'Workspace closed.';
@@ -768,346 +769,53 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
-  Future<void> refreshBranchState({bool showLoadingState = true}) async {
-    if (!hasOpenDatabase) {
-      branchState = WorkspaceBranchState.unavailable('Open a database first.');
-      lastBranchDiff = null;
-      if (showLoadingState) {
-        _safeNotify();
-      }
-      return;
-    }
+  Future<void> refreshBranchState({bool showLoadingState = true}) =>
+      branch.refreshBranchState(showLoadingState: showLoadingState);
 
-    if (showLoadingState) {
-      isBranchStateLoading = true;
-      workspaceError = null;
-      workspaceMessage = 'Refreshing branch and snapshot state...';
-      _safeNotify();
-    }
-
-    try {
-      final branches = await _gateway.listBranches();
-      final snapshots = await _gateway.listSnapshots();
-      final currentBranch = _currentBranchName(branches);
-      branchState = WorkspaceBranchState(
-        currentBranch: currentBranch,
-        isNativeBranchApiAvailable: true,
-        nativeBranchApiUnavailableReason: '',
-        branches: branches,
-        snapshots: snapshots,
-      );
-      workspaceError = null;
-      if (showLoadingState) {
-        workspaceMessage =
-            'Loaded ${branches.length} branches and '
-            '${snapshots.length} snapshots.';
-      }
-      _logInfo(
-        'refresh_branch_state',
-        'Loaded branch and snapshot state.',
-        databasePath: databasePath,
-        details: <String, Object?>{
-          'current_branch': currentBranch,
-          'branch_count': branches.length,
-          'snapshot_count': snapshots.length,
-        },
-      );
-    } on BranchWorkflowUnavailable catch (error) {
-      _setBranchWorkflowUnavailable(
-        error.message ?? nativeBranchApiUnavailableReason,
-        setMessage: showLoadingState,
-        notify: false,
-      );
-    } catch (error, stackTrace) {
-      _setBranchWorkflowUnavailable(
-        'Could not load native branch and snapshot state: $error',
-        setMessage: showLoadingState,
-        notify: false,
-      );
-      _logWarning(
-        'refresh_branch_state',
-        'Branch and snapshot state refresh failed.',
-        databasePath: databasePath,
-        error: error,
-        stackTrace: stackTrace,
-      );
-    } finally {
-      isBranchStateLoading = false;
-      _safeNotify();
-    }
-  }
-
-  Future<WorkspaceSnapshotInfo?> createSnapshot(String name) async {
-    final trimmed = name.trim();
-    if (trimmed.isEmpty) {
-      workspaceMessage = 'Snapshot name cannot be empty.';
-      _safeNotify();
-      return null;
-    }
-    if (!canUseNativeBranchWorkflow) {
-      _setBranchWorkflowUnavailable(
-        branchState.nativeBranchApiUnavailableReason,
-      );
-      return null;
-    }
-    try {
-      workspaceMessage = 'Creating snapshot "$trimmed"...';
-      _safeNotify();
-      final snapshot = await _gateway.createSnapshot(name: trimmed);
-      workspaceMessage = 'Created snapshot ${snapshot.name}.';
-      await refreshBranchState(showLoadingState: false);
-      _safeNotify();
-      return snapshot;
-    } on BranchWorkflowUnavailable catch (error) {
-      _setBranchWorkflowUnavailable(
-        error.message ?? nativeBranchApiUnavailableReason,
-      );
-      return null;
-    } catch (error) {
-      _setWorkspaceError(error.toString());
-      return null;
-    }
-  }
+  Future<WorkspaceSnapshotInfo?> createSnapshot(String name) =>
+      branch.createSnapshot(name);
 
   Future<WorkspaceBranchInfo?> createBranch({
     required String branchName,
     String fromRef = 'main',
-  }) async {
-    final trimmed = branchName.trim();
-    final sourceRef = fromRef.trim().isEmpty ? 'main' : fromRef.trim();
-    if (trimmed.isEmpty) {
-      workspaceMessage = 'Branch name cannot be empty.';
-      _safeNotify();
-      return null;
-    }
-    if (!canUseNativeBranchWorkflow) {
-      _setBranchWorkflowUnavailable(
-        branchState.nativeBranchApiUnavailableReason,
-      );
-      return null;
-    }
-    try {
-      workspaceMessage = 'Creating branch "$trimmed"...';
-      _safeNotify();
-      final branch = await _gateway.createBranch(
-        branchName: trimmed,
-        fromRef: sourceRef,
-      );
-      workspaceMessage = 'Created branch ${branch.name}.';
-      await refreshBranchState(showLoadingState: false);
-      _safeNotify();
-      return branch;
-    } on BranchWorkflowUnavailable catch (error) {
-      _setBranchWorkflowUnavailable(
-        error.message ?? nativeBranchApiUnavailableReason,
-      );
-      return null;
-    } catch (error) {
-      _setWorkspaceError(error.toString());
-      return null;
-    }
-  }
+  }) =>
+      branch.createBranch(branchName: branchName, fromRef: fromRef);
 
   Future<WorkspaceBranchDiff?> previewBranchDiff({
     required String leftRef,
     required String rightRef,
-  }) async {
-    if (!canUseNativeBranchWorkflow) {
-      _setBranchWorkflowUnavailable(
-        branchState.nativeBranchApiUnavailableReason,
-      );
-      return null;
-    }
-    try {
-      final diff = await _gateway.branchDiff(
-        leftRef: leftRef.trim(),
-        rightRef: rightRef.trim(),
-      );
-      lastBranchDiff = diff;
-      workspaceMessage =
-          'Diff loaded: ${diff.totalChanges} row changes across '
-          '${diff.rows.map((row) => row.tableName).toSet().length} tables.';
-      _safeNotify();
-      return diff;
-    } on BranchWorkflowUnavailable catch (error) {
-      _setBranchWorkflowUnavailable(
-        error.message ?? nativeBranchApiUnavailableReason,
-      );
-      return null;
-    } catch (error) {
-      _setWorkspaceError(error.toString());
-      return null;
-    }
-  }
+  }) =>
+      branch.previewBranchDiff(leftRef: leftRef, rightRef: rightRef);
 
   Future<WorkspaceBranchDiff?> previewRestoreBranch({
     required String branchName,
     required String targetRef,
-  }) async {
-    return _restoreBranch(
-      branchName: branchName,
-      targetRef: targetRef,
-      dryRun: true,
-    );
-  }
+  }) =>
+      branch.previewRestoreBranch(branchName: branchName, targetRef: targetRef);
 
   Future<WorkspaceBranchDiff?> applyRestoreBranch({
     required String branchName,
     required String targetRef,
-  }) async {
-    return _restoreBranch(
-      branchName: branchName,
-      targetRef: targetRef,
-      dryRun: false,
-    );
-  }
+  }) =>
+      branch.applyRestoreBranch(branchName: branchName, targetRef: targetRef);
 
   Future<WorkspaceBranchDiff?> previewMergeBranch({
     required String sourceBranch,
     required String targetBranch,
-  }) async {
-    return _mergeBranch(
-      sourceBranch: sourceBranch,
-      targetBranch: targetBranch,
-      dryRun: true,
-    );
-  }
+  }) =>
+      branch.previewMergeBranch(
+        sourceBranch: sourceBranch,
+        targetBranch: targetBranch,
+      );
 
   Future<WorkspaceBranchDiff?> applyMergeBranch({
     required String sourceBranch,
     required String targetBranch,
-  }) async {
-    return _mergeBranch(
-      sourceBranch: sourceBranch,
-      targetBranch: targetBranch,
-      dryRun: false,
-    );
-  }
-
-  Future<WorkspaceBranchDiff?> _restoreBranch({
-    required String branchName,
-    required String targetRef,
-    required bool dryRun,
-  }) async {
-    if (!canUseNativeBranchWorkflow) {
-      _setBranchWorkflowUnavailable(
-        branchState.nativeBranchApiUnavailableReason,
+  }) =>
+      branch.applyMergeBranch(
+        sourceBranch: sourceBranch,
+        targetBranch: targetBranch,
       );
-      return null;
-    }
-    try {
-      if (!dryRun) {
-        await _gateway.createSnapshot(name: _preRestoreSnapshotName());
-      }
-      final diff = await _gateway.restoreBranch(
-        branchName: branchName.trim(),
-        targetRef: targetRef.trim(),
-        dryRun: dryRun,
-      );
-      lastBranchDiff = diff;
-      workspaceMessage = dryRun
-          ? 'Restore dry run loaded ${diff.totalChanges} row changes.'
-          : 'Restored ${branchName.trim()} to ${targetRef.trim()}.';
-      if (!dryRun) {
-        await refreshSchema(showLoadingState: false);
-        await refreshBranchState(showLoadingState: false);
-      }
-      _safeNotify();
-      return diff;
-    } on BranchWorkflowUnavailable catch (error) {
-      _setBranchWorkflowUnavailable(
-        error.message ?? nativeBranchApiUnavailableReason,
-      );
-      return null;
-    } catch (error) {
-      _setWorkspaceError(error.toString());
-      return null;
-    }
-  }
-
-  Future<WorkspaceBranchDiff?> _mergeBranch({
-    required String sourceBranch,
-    required String targetBranch,
-    required bool dryRun,
-  }) async {
-    if (!canUseNativeBranchWorkflow) {
-      _setBranchWorkflowUnavailable(
-        branchState.nativeBranchApiUnavailableReason,
-      );
-      return null;
-    }
-    try {
-      final diff = await _gateway.mergeBranch(
-        sourceBranch: sourceBranch.trim(),
-        targetBranch: targetBranch.trim(),
-        dryRun: dryRun,
-      );
-      lastBranchDiff = diff;
-      workspaceMessage = dryRun
-          ? 'Merge dry run loaded ${diff.totalChanges} row changes.'
-          : 'Merged ${sourceBranch.trim()} into ${targetBranch.trim()}.';
-      if (!dryRun) {
-        await refreshSchema(showLoadingState: false);
-        await refreshBranchState(showLoadingState: false);
-      }
-      _safeNotify();
-      return diff;
-    } on BranchWorkflowUnavailable catch (error) {
-      _setBranchWorkflowUnavailable(
-        error.message ?? nativeBranchApiUnavailableReason,
-      );
-      return null;
-    } catch (error) {
-      _setWorkspaceError(error.toString());
-      return null;
-    }
-  }
-
-  String _currentBranchName(List<WorkspaceBranchInfo> branches) {
-    for (final branch in branches) {
-      if (branch.isCurrent) {
-        return branch.name;
-      }
-    }
-    return branches.isEmpty ? 'main' : branches.first.name;
-  }
-
-  String _preRestoreSnapshotName() {
-    final stamp = DateTime.now()
-        .toUtc()
-        .toIso8601String()
-        .replaceAll(RegExp(r'[^0-9A-Za-z]+'), '_')
-        .replaceAll(RegExp(r'_+$'), '');
-    return 'pre_restore_$stamp';
-  }
-
-  void _setBranchWorkflowUnavailable(
-    String reason, {
-    bool setMessage = true,
-    bool notify = true,
-  }) {
-    branchState = WorkspaceBranchState.unavailable(
-      reason.trim().isEmpty ? nativeBranchApiUnavailableReason : reason,
-    );
-    lastBranchDiff = null;
-    if (setMessage) {
-      workspaceMessage =
-          'Native branch workflow unavailable: '
-          '${branchState.nativeBranchApiUnavailableReason}';
-      workspaceError = null;
-    }
-    _logInfo(
-      'branch_workflow_unavailable',
-      'Native branch workflow unavailable.',
-      databasePath: databasePath,
-      details: <String, Object?>{
-        'reason': branchState.nativeBranchApiUnavailableReason,
-      },
-    );
-    if (notify) {
-      _safeNotify();
-    }
-  }
 
   void updateActiveSql(String value) {
     _mutateActiveTab((tab) => tab.copyWith(sql: value), persist: true);
@@ -1439,14 +1147,11 @@ class WorkspaceController extends ChangeNotifier {
       return;
     }
     if (!canUseNativeBranchWorkflow) {
-      _setBranchWorkflowUnavailable(
-        branchState.nativeBranchApiUnavailableReason,
-      );
       _setTabError(
         tabId,
         QueryErrorDetails(
           stage: QueryErrorStage.validation,
-          message: branchState.nativeBranchApiUnavailableReason,
+          message: BranchController.nativeBranchApiUnavailableReason,
         ),
       );
       return;
@@ -5199,6 +4904,8 @@ class WorkspaceController extends ChangeNotifier {
     if (hasOpenDatabase) {
       unawaited(_persistWorkspaceStateNow());
     }
+    branch.removeListener(_safeNotify);
+    branch.dispose();
     dataQuality.dispose();
     unawaited(_gateway.dispose());
     super.dispose();

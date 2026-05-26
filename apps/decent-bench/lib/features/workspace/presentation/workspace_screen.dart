@@ -20,6 +20,7 @@ import '../../import/domain/import_models.dart';
 import '../../import_modules/domain/import_module_manifest.dart';
 import '../../import/presentation/generic_import_dialog.dart';
 import '../../import/presentation/import_archive_chooser_dialog.dart';
+import '../application/branch_controller.dart';
 import '../application/menu_command_registry.dart';
 import '../application/workspace_controller.dart';
 import '../application/workspace_shell_controller.dart';
@@ -2456,7 +2457,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           content: Text(
             'This will run generated SQL directly against the current '
             'database because branch-safe editing is unavailable.\n\n'
-            '${WorkspaceController.nativeBranchApiUnavailableReason}',
+            '${BranchController.nativeBranchApiUnavailableReason}',
           ),
           actions: <Widget>[
             TextButton(

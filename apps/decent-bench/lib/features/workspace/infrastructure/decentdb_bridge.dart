@@ -17,43 +17,42 @@ import 'sql_dump_import_support.dart';
 import 'sqlite_import_support.dart';
 import 'xlsx_export_support.dart';
 
-abstract class WorkspaceDatabaseGateway {
+abstract class DatabaseLifecycleGateway {
   String? get resolvedLibraryPath;
-
   Future<String> initialize();
-
   Future<DatabaseSession> openDatabase(
     String path, {
     WriteQueueSettings? writeQueue,
   });
+  Future<void> dispose();
+}
 
+abstract class SchemaIntrospectionGateway {
   Future<SchemaSnapshot> loadSchema();
-
   Future<OperationalMetricsSnapshot> loadOperationalMetrics({int maxRows});
-
   Future<ToolingMetadata> getToolingMetadata();
-
   Future<QueryContract> describeQueryContract(String sql);
+}
 
+abstract class QueryExecutionGateway {
   Future<QueryResultPage> runQuery({
     required String sql,
     required List<Object?> params,
     required int pageSize,
   });
-
   Future<QueryResultPage> fetchNextPage({
     required String cursorId,
     required int pageSize,
   });
-
   Future<void> cancelQuery(String cursorId);
-
   Future<QueuedWriteResult> executeQueuedWrite({
     required String sql,
     required List<Object?> params,
     int? timeoutMs,
   });
+}
 
+abstract class ExportGateway {
   Future<CsvExportResult> exportCsv({
     required String sql,
     required List<Object?> params,
@@ -62,7 +61,6 @@ abstract class WorkspaceDatabaseGateway {
     required String delimiter,
     required bool includeHeaders,
   });
-
   Future<JsonExportResult> exportJson({
     required String sql,
     required List<Object?> params,
@@ -72,7 +70,6 @@ abstract class WorkspaceDatabaseGateway {
     required bool pretty,
     required bool includeMetadata,
   });
-
   Future<ExcelExportResult> exportExcel({
     required String sql,
     required List<Object?> params,
@@ -80,80 +77,75 @@ abstract class WorkspaceDatabaseGateway {
     required String path,
     required bool includeHeaders,
   });
+}
 
+abstract class ImportGateway {
   Future<SqliteImportInspection> inspectSqliteSource({
     required String sourcePath,
   });
-
   Future<ExcelImportInspection> inspectExcelSource({
     required String sourcePath,
     required bool headerRow,
   });
-
   Future<SqlDumpImportInspection> inspectSqlDumpSource({
     required String sourcePath,
     required String encoding,
   });
-
   Future<SqliteImportPreview> loadSqlitePreview({
     required String sourcePath,
     required String tableName,
     int limit,
   });
-
   Stream<SqliteImportUpdate> importSqlite({
     required SqliteImportRequest request,
   });
-
   Stream<ExcelImportUpdate> importExcel({required ExcelImportRequest request});
-
   Stream<SqlDumpImportUpdate> importSqlDump({
     required SqlDumpImportRequest request,
   });
-
   Future<void> cancelImport(String jobId);
+}
 
+abstract class BranchWorkflowGateway {
   Future<List<WorkspaceBranchInfo>> listBranches();
-
   Future<WorkspaceBranchInfo> createBranch({
     required String branchName,
     required String fromRef,
   });
-
   Future<void> deleteBranch({required String branchName});
-
   Future<List<WorkspaceSnapshotInfo>> listSnapshots();
-
   Future<WorkspaceSnapshotInfo> createSnapshot({required String name});
-
   Future<void> deleteSnapshot({required String ref});
-
   Future<QueryResultPage> runQueryOnBranch({
     required String sql,
     required String branchName,
     required List<Object?> params,
     required int pageSize,
   });
-
   Future<WorkspaceBranchDiff> branchDiff({
     required String leftRef,
     required String rightRef,
   });
-
   Future<WorkspaceBranchDiff> restoreBranch({
     required String branchName,
     required String targetRef,
     required bool dryRun,
   });
-
   Future<WorkspaceBranchDiff> mergeBranch({
     required String sourceBranch,
     required String targetBranch,
     required bool dryRun,
   });
-
-  Future<void> dispose();
 }
+
+abstract class WorkspaceDatabaseGateway
+    implements
+        DatabaseLifecycleGateway,
+        SchemaIntrospectionGateway,
+        QueryExecutionGateway,
+        ExportGateway,
+        ImportGateway,
+        BranchWorkflowGateway {}
 
 class DecentDbBridge implements WorkspaceDatabaseGateway {
   DecentDbBridge({NativeLibraryResolver? resolver})
@@ -252,8 +244,21 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
 
   @override
   Future<SchemaSnapshot> loadSchema() async {
-    final data = await _request('loadSchema');
-    return SchemaSnapshot.fromMap(data);
+    final stopwatch = Stopwatch()..start();
+    final data = await _request('loadSchema', const <String, Object?>{}, const Duration(seconds: 60));
+    final elapsed = stopwatch.elapsed;
+    if (elapsed.inMilliseconds > 1000) {
+      // ignore: avoid_print
+      print('[DecentDB Bridge] loadSchema request took ${elapsed.inMilliseconds}ms');
+    }
+    final parseStopwatch = Stopwatch()..start();
+    final result = SchemaSnapshot.fromMap(data);
+    final parseElapsed = parseStopwatch.elapsed;
+    if (parseElapsed.inMilliseconds > 500) {
+      // ignore: avoid_print
+      print('[DecentDB Bridge] SchemaSnapshot.fromMap took ${parseElapsed.inMilliseconds}ms');
+    }
+    return result;
   }
 
   @override
@@ -632,9 +637,12 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
     return WorkspaceBranchDiff.fromMap(data);
   }
 
+  static const Duration _requestTimeout = Duration(seconds: 30);
+
   Future<Map<String, Object?>> _request(
     String action, [
     Map<String, Object?> payload = const <String, Object?>{},
+    Duration? timeout,
   ]) async {
     await initialize();
     final workerPort = _workerPort;
@@ -654,7 +662,17 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       'payload': payload,
     });
 
-    return completer.future;
+    final effectiveTimeout = timeout ?? _requestTimeout;
+    try {
+      return await completer.future.timeout(effectiveTimeout);
+    } on TimeoutException {
+      _pending.remove(requestId);
+      throw BridgeFailure(
+        'DecentDB worker request "$action" timed out after ${effectiveTimeout.inSeconds}s. '
+        'The worker isolate may be unresponsive or the operation is taking too long.',
+        code: 'DDB_ERR_TIMEOUT',
+      );
+    }
   }
 
   Future<void> _startImportOperation(
@@ -1062,7 +1080,13 @@ class _BridgeWorkerState {
 
   Future<Map<String, Object?>> _handleLoadSchema() async {
     final db = _requireDatabase();
+    final totalStopwatch = Stopwatch()..start();
+    
+    final nativeStopwatch = Stopwatch()..start();
     final snapshot = db.schema.getSchemaSnapshot();
+    final nativeElapsed = nativeStopwatch.elapsed;
+    
+    final serializeStopwatch = Stopwatch()..start();
     final tables = [...snapshot.tables]
       ..sort((left, right) => left.name.compareTo(right.name));
     final views = [...snapshot.views]
@@ -1096,7 +1120,8 @@ class _BridgeWorkerState {
         final byTarget = left.targetName.compareTo(right.targetName);
         return byTarget != 0 ? byTarget : left.name.compareTo(right.name);
       });
-    return <String, Object?>{
+    final serializeElapsed = serializeStopwatch.elapsed;
+    final result = <String, Object?>{
       'objects': objects,
       'indexes': <Map<String, Object?>>[
         for (final index in indexes)
@@ -1114,6 +1139,18 @@ class _BridgeWorkerState {
       'triggers': _serializeTriggers(triggers),
       'loadedAt': DateTime.now().toUtc().toIso8601String(),
     };
+    final totalElapsed = totalStopwatch.elapsed;
+    if (totalElapsed.inMilliseconds > 1000) {
+      // ignore: avoid_print
+      print(
+        '[DecentDB Worker] loadSchema: native=${nativeElapsed.inMilliseconds}ms, '
+        'serialize=${serializeElapsed.inMilliseconds}ms, '
+        'total=${totalElapsed.inMilliseconds}ms, '
+        'tables=${tables.length}, views=${views.length}, '
+        'indexes=${indexes.length}, triggers=${triggers.length}',
+      );
+    }
+    return result;
   }
 
   Future<Map<String, Object?>> _handleLoadOperationalMetrics(

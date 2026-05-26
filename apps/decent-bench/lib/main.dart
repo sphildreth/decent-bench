@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'app/app.dart';
@@ -14,6 +15,7 @@ Future<void> main(List<String> args) async {
   switch (cliDecision.behavior) {
     case StartupCliBehavior.launchApp:
       WidgetsFlutterBinding.ensureInitialized();
+      _installGlobalErrorBoundary();
       final configStore = AppConfigStore();
       final initialConfig = await configStore.load();
       await const WindowPlacementService().restore(
@@ -39,4 +41,20 @@ Future<void> main(List<String> args) async {
       exitCode = cliDecision.exitCode;
       return;
   }
+}
+
+void _installGlobalErrorBoundary() {
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    stderr.writeln(
+      '[DecentBench] Unhandled Flutter error: ${details.exception}\n'
+      '${details.stack ?? ''}',
+    );
+  };
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    stderr.writeln(
+      '[DecentBench] Unhandled async error: $error\n$stack',
+    );
+    return true;
+  };
 }

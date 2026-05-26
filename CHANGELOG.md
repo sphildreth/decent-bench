@@ -107,11 +107,33 @@ This file records notable project changes. It follows the
 - Added desktop window placement persistence for Linux, macOS, and Windows,
   including restored size, maximized/fullscreen state, and best-effort monitor
   placement through the TOML application config.
+- Added global error boundary in `main.dart` with `FlutterError.onError` and
+  `PlatformDispatcher.instance.onError` handlers to capture unhandled Flutter
+  and async errors, preventing silent crashes and improving diagnostic visibility.
+- Added focused gateway interfaces (`DatabaseLifecycleGateway`,
+  `SchemaIntrospectionGateway`, `QueryExecutionGateway`, `ExportGateway`,
+  `ImportGateway`, `BranchWorkflowGateway`) to decompose the monolithic
+  `WorkspaceDatabaseGateway` into single-responsibility contracts, improving
+  testability and enabling targeted dependency injection for extracted controllers.
+- Added `BranchController` as an extracted `ChangeNotifier` following the
+  `DataQualityController` pattern, owning branch/snapshot state, workflow logic,
+  and gateway interactions. `WorkspaceController` now delegates all branch
+  operations to `branch.*` methods while maintaining backward-compatible public API.
 
 ### Changed
 
-- Updated the pinned DecentDB Dart binding/runtime dependency from v2.5.1 to
-  v2.6.0.
+- Updated the pinned DecentDB Dart binding/runtime dependency from v2.6.0 to
+  v2.7.0, adopting ABI v5 with stable `ddb_db_execute_on_branch` entry point,
+  Dart `Database.branchWorkflow` APIs for named snapshots and branch-local SQL
+  execution, and fixed canonical `sys.*` inspection query execution through
+  prepared statements.
+- Updated README badge to reflect DecentDB v2.7.0 alignment.
+- Refactored `WorkspaceController` to extract branch/snapshot workflow logic into
+  a dedicated `BranchController`, reducing the monolithic controller by ~300 lines
+  and establishing the extraction pattern for future import/export controller work.
+- Updated `WorkspaceController` lifecycle methods (`openDatabase`, `closeWorkspace`,
+  `dispose`) to properly wire `BranchController` through `attachWorkspace` calls
+  and cleanup, ensuring branch state resets on database transitions.
 - Updated the desktop runtime/app icons to use the Decent Bench logo instead
   of the default Flutter logo.
 - Updated the About dialog to use the Decent Bench logo, branded layout, and

@@ -92,9 +92,11 @@ packages:
   decentdb:
     dependency: "direct main"
     description:
-      path: "../../../decentdb/bindings/dart/dart"
-      relative: true
-    source: path
+      path: "bindings/dart/dart"
+      ref: "v2.7.0"
+      resolved-ref: ee9d4fbac58ec584e5771dc775b661363025d21d
+      url: "https://github.com/sphildreth/decentdb.git"
+    source: git
     version: "2.7.0"
   desktop_drop:
     dependency: "direct main"
