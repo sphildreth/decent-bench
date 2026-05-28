@@ -1,6 +1,6 @@
 ## Type-Aware, Branch-Safe Table Data Editor
 **Date:** 2026-05-19
-**Status:** Proposed
+**Status:** Accepted
 
 ### Decision
 

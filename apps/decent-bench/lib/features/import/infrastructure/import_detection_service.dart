@@ -11,6 +11,7 @@ import 'log_import_support.dart';
 import 'spreadsheetml_import_support.dart';
 
 const int _maxSingleXzCompressedBytes = 64 * 1024 * 1024;
+const int _maxZipArchiveBytes = 256 * 1024 * 1024;
 
 class ImportDetectionService {
   ImportDetectionService({ImportFormatRegistry? registry})
@@ -318,6 +319,14 @@ class ImportDetectionService {
     if (!file.existsSync()) {
       return const <ImportArchiveCandidate>[];
     }
+    final fileLength = await file.length();
+    if (fileLength > _maxZipArchiveBytes) {
+      throw StateError(
+        'ZIP archive exceeds the ${_maxZipArchiveBytes ~/ (1024 * 1024)} MiB '
+        'size limit for in-memory processing. Please extract the archive '
+        'and import the contents directly.',
+      );
+    }
     final archive = ZipDecoder().decodeBytes(await file.readAsBytes());
     final candidates = <ImportArchiveCandidate>[];
     for (final entry in archive) {
@@ -407,8 +416,17 @@ class ImportDetectionService {
 
     if (wrapperKey == ImportFormatKey.zipArchive) {
       final outputPath = p.join(tempDir.path, entryBaseName);
+      final archiveFile = File(archivePath);
+      final fileLength = await archiveFile.length();
+      if (fileLength > _maxZipArchiveBytes) {
+        throw StateError(
+          'ZIP archive exceeds the ${_maxZipArchiveBytes ~/ (1024 * 1024)} MiB '
+          'size limit for in-memory processing. Please extract the archive '
+          'and import the contents directly.',
+        );
+      }
       final archive = ZipDecoder().decodeBytes(
-        await File(archivePath).readAsBytes(),
+        await archiveFile.readAsBytes(),
       );
       for (final entry in archive) {
         if (entry.isFile && entry.name == candidate.entryPath) {
@@ -429,7 +447,7 @@ class ImportDetectionService {
       final ext = p.extension(archivePath).toLowerCase();
       final innerName = p.basenameWithoutExtension(archivePath);
       if (ext == '.tgz' || _looksLikeTar(innerName)) {
-        return _extractTarEntry(
+        return await _extractTarEntry(
           archivePath: archivePath,
           tempDir: tempDir,
           entryPath: candidate.entryPath,
@@ -450,7 +468,7 @@ class ImportDetectionService {
       final ext = p.extension(archivePath).toLowerCase();
       final innerName = p.basenameWithoutExtension(archivePath);
       if (ext == '.tbz2' || _looksLikeTar(innerName)) {
-        return _extractTarEntry(
+        return await _extractTarEntry(
           archivePath: archivePath,
           tempDir: tempDir,
           entryPath: candidate.entryPath,
@@ -471,7 +489,7 @@ class ImportDetectionService {
       final ext = p.extension(archivePath).toLowerCase();
       final innerName = p.basenameWithoutExtension(archivePath);
       if (ext == '.txz' || _looksLikeTar(innerName)) {
-        return _extractTarEntry(
+        return await _extractTarEntry(
           archivePath: archivePath,
           tempDir: tempDir,
           entryPath: candidate.entryPath,
@@ -498,12 +516,12 @@ class ImportDetectionService {
     throw StateError('Unsupported wrapper extraction for ${wrapperKey.name}.');
   }
 
-  String _extractTarEntry({
+  Future<String> _extractTarEntry({
     required String archivePath,
     required Directory tempDir,
     required String entryPath,
     required String extractFlag,
-  }) {
+  }) async {
     if (_isUnsafeArchiveEntry(entryPath)) {
       throw StateError(
         'Refusing to extract unsafe archive entry `$entryPath`.',
@@ -517,7 +535,7 @@ class ImportDetectionService {
 
     // Extract by the exact archive-relative path to avoid GNU tar-specific
     // --no-anchored semantics and basename collisions across subdirectories.
-    final result = Process.runSync(
+    final result = await Process.run(
       'tar',
       [extractFlag, archivePath, '-C', tempDir.path, entryPath],
       stdoutEncoding: utf8,

@@ -159,12 +159,12 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   final NativeLibraryResolver _resolver;
   final Map<int, Completer<Map<String, Object?>>> _pending =
       <int, Completer<Map<String, Object?>>>{};
-  final Map<String, _SqliteImportOperation> _imports =
-      <String, _SqliteImportOperation>{};
-  final Map<String, _ExcelImportOperation> _excelImports =
-      <String, _ExcelImportOperation>{};
-  final Map<String, _SqlDumpImportOperation> _sqlDumpImports =
-      <String, _SqlDumpImportOperation>{};
+  final Map<String, _ImportOperation<SqliteImportUpdate>> _imports =
+      <String, _ImportOperation<SqliteImportUpdate>>{};
+  final Map<String, _ImportOperation<ExcelImportUpdate>> _excelImports =
+      <String, _ImportOperation<ExcelImportUpdate>>{};
+  final Map<String, _ImportOperation<SqlDumpImportUpdate>> _sqlDumpImports =
+      <String, _ImportOperation<SqlDumpImportUpdate>>{};
 
   Isolate? _isolate;
   SendPort? _workerPort;
@@ -249,21 +249,8 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
 
   @override
   Future<SchemaSnapshot> loadSchema() async {
-    final stopwatch = Stopwatch()..start();
     final data = await _request('loadSchema', const <String, Object?>{}, const Duration(seconds: 60));
-    final elapsed = stopwatch.elapsed;
-    if (elapsed.inMilliseconds > 1000) {
-      // ignore: avoid_print
-      print('[DecentDB Bridge] loadSchema request took ${elapsed.inMilliseconds}ms');
-    }
-    final parseStopwatch = Stopwatch()..start();
-    final result = SchemaSnapshot.fromMap(data);
-    final parseElapsed = parseStopwatch.elapsed;
-    if (parseElapsed.inMilliseconds > 500) {
-      // ignore: avoid_print
-      print('[DecentDB Bridge] SchemaSnapshot.fromMap took ${parseElapsed.inMilliseconds}ms');
-    }
-    return result;
+    return SchemaSnapshot.fromMap(data);
   }
 
   @override
@@ -441,12 +428,25 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       return existing.controller.stream;
     }
 
-    final operation = _SqliteImportOperation(
+    final operation = _ImportOperation<SqliteImportUpdate>(
       controller: StreamController<SqliteImportUpdate>(),
       receivePort: ReceivePort(),
     );
     _imports[request.jobId] = operation;
-    unawaited(_startImportOperation(request, operation));
+    unawaited(_startGenericImportOperation<SqliteImportUpdate>(
+      jobId: request.jobId,
+      operation: operation,
+      toMap: () => request.toMap(),
+      workerMain: sqliteImportWorkerMain,
+      updateFromMap: (map) => SqliteImportUpdate.fromMap(map),
+      isTerminal: (update) => _isTerminalImportUpdate(update.kind),
+      makeFailed: (jobId, message) => SqliteImportUpdate(
+        kind: SqliteImportUpdateKind.failed,
+        jobId: jobId,
+        message: message,
+      ),
+      operations: _imports,
+    ));
     return operation.controller.stream;
   }
 
@@ -457,12 +457,25 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       return existing.controller.stream;
     }
 
-    final operation = _ExcelImportOperation(
+    final operation = _ImportOperation<ExcelImportUpdate>(
       controller: StreamController<ExcelImportUpdate>(),
       receivePort: ReceivePort(),
     );
     _excelImports[request.jobId] = operation;
-    unawaited(_startExcelImportOperation(request, operation));
+    unawaited(_startGenericImportOperation<ExcelImportUpdate>(
+      jobId: request.jobId,
+      operation: operation,
+      toMap: () => request.toMap(),
+      workerMain: excelImportWorkerMain,
+      updateFromMap: (map) => ExcelImportUpdate.fromMap(map),
+      isTerminal: (update) => _isTerminalExcelImportUpdate(update.kind),
+      makeFailed: (jobId, message) => ExcelImportUpdate(
+        kind: ExcelImportUpdateKind.failed,
+        jobId: jobId,
+        message: message,
+      ),
+      operations: _excelImports,
+    ));
     return operation.controller.stream;
   }
 
@@ -475,12 +488,25 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       return existing.controller.stream;
     }
 
-    final operation = _SqlDumpImportOperation(
+    final operation = _ImportOperation<SqlDumpImportUpdate>(
       controller: StreamController<SqlDumpImportUpdate>(),
       receivePort: ReceivePort(),
     );
     _sqlDumpImports[request.jobId] = operation;
-    unawaited(_startSqlDumpImportOperation(request, operation));
+    unawaited(_startGenericImportOperation<SqlDumpImportUpdate>(
+      jobId: request.jobId,
+      operation: operation,
+      toMap: () => request.toMap(),
+      workerMain: sqlDumpImportWorkerMain,
+      updateFromMap: (map) => SqlDumpImportUpdate.fromMap(map),
+      isTerminal: (update) => _isTerminalSqlDumpImportUpdate(update.kind),
+      makeFailed: (jobId, message) => SqlDumpImportUpdate(
+        kind: SqlDumpImportUpdateKind.failed,
+        jobId: jobId,
+        message: message,
+      ),
+      operations: _sqlDumpImports,
+    ));
     return operation.controller.stream;
   }
 
@@ -686,167 +712,54 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
     }
   }
 
-  Future<void> _startImportOperation(
-    SqliteImportRequest request,
-    _SqliteImportOperation operation,
-  ) async {
+  Future<void> _startGenericImportOperation<T>({
+    required String jobId,
+    required _ImportOperation<T> operation,
+    required Map<String, Object?> Function() toMap,
+    required Future<void> Function(List<Object?>) workerMain,
+    required T Function(Map<String, Object?>) updateFromMap,
+    required bool Function(T) isTerminal,
+    required T Function(String jobId, String error) makeFailed,
+    required Map<String, _ImportOperation<T>> operations,
+  }) async {
     try {
       final libraryPath = await initialize();
       operation.isolate = await Isolate.spawn<List<Object?>>(
-        sqliteImportWorkerMain,
-        <Object?>[operation.receivePort.sendPort, libraryPath, request.toMap()],
+        workerMain,
+        <Object?>[operation.receivePort.sendPort, libraryPath, toMap()],
       );
-
       operation.receivePort.listen((message) async {
         if (message is SendPort) {
           operation.commandPort = message;
           return;
         }
-        if (message is! Map<Object?, Object?>) {
-          return;
-        }
-
-        final update = SqliteImportUpdate.fromMap(
+        if (message is! Map<Object?, Object?>) return;
+        final update = updateFromMap(
           message.map((key, value) => MapEntry(key as String, value)),
         );
         if (!operation.controller.isClosed) {
           operation.controller.add(update);
         }
-        if (_isTerminalImportUpdate(update.kind)) {
-          await _closeImportOperation(request.jobId);
+        if (isTerminal(update)) {
+          await _closeImportOperation(jobId, operations);
         }
       });
     } catch (error, stackTrace) {
       if (!operation.controller.isClosed) {
         operation.controller.add(
-          SqliteImportUpdate(
-            kind: SqliteImportUpdateKind.failed,
-            jobId: request.jobId,
-            message: '$error\n$stackTrace',
-          ),
+          makeFailed(jobId, '$error\n$stackTrace'),
         );
       }
-      await _closeImportOperation(request.jobId);
+      await _closeImportOperation(jobId, operations);
     }
   }
 
-  Future<void> _startExcelImportOperation(
-    ExcelImportRequest request,
-    _ExcelImportOperation operation,
+  Future<void> _closeImportOperation<T>(
+    String jobId,
+    Map<String, _ImportOperation<T>> operations,
   ) async {
-    try {
-      final libraryPath = await initialize();
-      operation.isolate = await Isolate.spawn<List<Object?>>(
-        excelImportWorkerMain,
-        <Object?>[operation.receivePort.sendPort, libraryPath, request.toMap()],
-      );
-
-      operation.receivePort.listen((message) async {
-        if (message is SendPort) {
-          operation.commandPort = message;
-          return;
-        }
-        if (message is! Map<Object?, Object?>) {
-          return;
-        }
-
-        final update = ExcelImportUpdate.fromMap(
-          message.map((key, value) => MapEntry(key as String, value)),
-        );
-        if (!operation.controller.isClosed) {
-          operation.controller.add(update);
-        }
-        if (_isTerminalExcelImportUpdate(update.kind)) {
-          await _closeExcelImportOperation(request.jobId);
-        }
-      });
-    } catch (error, stackTrace) {
-      if (!operation.controller.isClosed) {
-        operation.controller.add(
-          ExcelImportUpdate(
-            kind: ExcelImportUpdateKind.failed,
-            jobId: request.jobId,
-            message: '$error\n$stackTrace',
-          ),
-        );
-      }
-      await _closeExcelImportOperation(request.jobId);
-    }
-  }
-
-  Future<void> _startSqlDumpImportOperation(
-    SqlDumpImportRequest request,
-    _SqlDumpImportOperation operation,
-  ) async {
-    try {
-      final libraryPath = await initialize();
-      operation.isolate = await Isolate.spawn<List<Object?>>(
-        sqlDumpImportWorkerMain,
-        <Object?>[operation.receivePort.sendPort, libraryPath, request.toMap()],
-      );
-
-      operation.receivePort.listen((message) async {
-        if (message is SendPort) {
-          operation.commandPort = message;
-          return;
-        }
-        if (message is! Map<Object?, Object?>) {
-          return;
-        }
-
-        final update = SqlDumpImportUpdate.fromMap(
-          message.map((key, value) => MapEntry(key as String, value)),
-        );
-        if (!operation.controller.isClosed) {
-          operation.controller.add(update);
-        }
-        if (_isTerminalSqlDumpImportUpdate(update.kind)) {
-          await _closeSqlDumpImportOperation(request.jobId);
-        }
-      });
-    } catch (error, stackTrace) {
-      if (!operation.controller.isClosed) {
-        operation.controller.add(
-          SqlDumpImportUpdate(
-            kind: SqlDumpImportUpdateKind.failed,
-            jobId: request.jobId,
-            message: '$error\n$stackTrace',
-          ),
-        );
-      }
-      await _closeSqlDumpImportOperation(request.jobId);
-    }
-  }
-
-  Future<void> _closeImportOperation(String jobId) async {
-    final operation = _imports.remove(jobId);
-    if (operation == null) {
-      return;
-    }
-    operation.receivePort.close();
-    if (!operation.controller.isClosed) {
-      await operation.controller.close();
-    }
-    operation.isolate?.kill(priority: Isolate.immediate);
-  }
-
-  Future<void> _closeExcelImportOperation(String jobId) async {
-    final operation = _excelImports.remove(jobId);
-    if (operation == null) {
-      return;
-    }
-    operation.receivePort.close();
-    if (!operation.controller.isClosed) {
-      await operation.controller.close();
-    }
-    operation.isolate?.kill(priority: Isolate.immediate);
-  }
-
-  Future<void> _closeSqlDumpImportOperation(String jobId) async {
-    final operation = _sqlDumpImports.remove(jobId);
-    if (operation == null) {
-      return;
-    }
+    final operation = operations.remove(jobId);
+    if (operation == null) return;
     operation.receivePort.close();
     if (!operation.controller.isClosed) {
       await operation.controller.close();
@@ -855,31 +768,9 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   }
 }
 
-class _SqliteImportOperation {
-  _SqliteImportOperation({required this.controller, required this.receivePort});
-
-  final StreamController<SqliteImportUpdate> controller;
-  final ReceivePort receivePort;
-  SendPort? commandPort;
-  Isolate? isolate;
-}
-
-class _ExcelImportOperation {
-  _ExcelImportOperation({required this.controller, required this.receivePort});
-
-  final StreamController<ExcelImportUpdate> controller;
-  final ReceivePort receivePort;
-  SendPort? commandPort;
-  Isolate? isolate;
-}
-
-class _SqlDumpImportOperation {
-  _SqlDumpImportOperation({
-    required this.controller,
-    required this.receivePort,
-  });
-
-  final StreamController<SqlDumpImportUpdate> controller;
+class _ImportOperation<T> {
+  _ImportOperation({required this.controller, required this.receivePort});
+  final StreamController<T> controller;
   final ReceivePort receivePort;
   SendPort? commandPort;
   Isolate? isolate;
@@ -1091,13 +982,9 @@ class _BridgeWorkerState {
 
   Future<Map<String, Object?>> _handleLoadSchema() async {
     final db = _requireDatabase();
-    final totalStopwatch = Stopwatch()..start();
     
-    final nativeStopwatch = Stopwatch()..start();
     final snapshot = db.schema.getSchemaSnapshot();
-    final nativeElapsed = nativeStopwatch.elapsed;
     
-    final serializeStopwatch = Stopwatch()..start();
     final tables = [...snapshot.tables]
       ..sort((left, right) => left.name.compareTo(right.name));
     final views = [...snapshot.views]
@@ -1131,7 +1018,6 @@ class _BridgeWorkerState {
         final byTarget = left.targetName.compareTo(right.targetName);
         return byTarget != 0 ? byTarget : left.name.compareTo(right.name);
       });
-    final serializeElapsed = serializeStopwatch.elapsed;
     final result = <String, Object?>{
       'objects': objects,
       'indexes': <Map<String, Object?>>[
@@ -1150,17 +1036,6 @@ class _BridgeWorkerState {
       'triggers': _serializeTriggers(triggers),
       'loadedAt': DateTime.now().toUtc().toIso8601String(),
     };
-    final totalElapsed = totalStopwatch.elapsed;
-    if (totalElapsed.inMilliseconds > 1000) {
-      // ignore: avoid_print
-      print(
-        '[DecentDB Worker] loadSchema: native=${nativeElapsed.inMilliseconds}ms, '
-        'serialize=${serializeElapsed.inMilliseconds}ms, '
-        'total=${totalElapsed.inMilliseconds}ms, '
-        'tables=${tables.length}, views=${views.length}, '
-        'indexes=${indexes.length}, triggers=${triggers.length}',
-      );
-    }
     return result;
   }
 

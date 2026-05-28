@@ -1,6 +1,6 @@
 ## Workspace Project File and Query Library
 **Date:** 2026-05-19
-**Status:** Proposed
+**Status:** Accepted
 
 ### Decision
 

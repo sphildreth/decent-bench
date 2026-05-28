@@ -114,6 +114,7 @@ class WorkspaceController extends ChangeNotifier {
   StreamSubscription<SqlDumpImportUpdate>? _sqlDumpImportSubscription;
   StreamSubscription<SqliteImportUpdate>? _sqliteImportSubscription;
   bool _disposed = false;
+  List<QueryHistoryEntry>? _queryHistoryCache;
 
   bool get hasOpenDatabase => databasePath != null;
   bool get hasExcelImportSession => excelImportSession != null;
@@ -130,10 +131,14 @@ class WorkspaceController extends ChangeNotifier {
       tabs.firstWhere((tab) => tab.id == activeTabId);
 
   List<QueryHistoryEntry> get queryHistory {
+    if (_queryHistoryCache != null) {
+      return _queryHistoryCache!;
+    }
     final entries = <QueryHistoryEntry>[
       for (final tab in tabs) ...tab.queryHistory,
     ];
     entries.sort((left, right) => right.ranAt.compareTo(left.ranAt));
+    _queryHistoryCache = entries;
     return entries;
   }
 
@@ -159,110 +164,6 @@ class WorkspaceController extends ChangeNotifier {
   bool get canCancelActiveTab => tabById(activeTabId)?.canCancel ?? false;
 
   AppLogger get logger => _logger;
-
-  void _logDebug(
-    String operation,
-    String message, {
-    String category = 'workspace',
-    String? databasePath,
-    String? sql,
-    int? rowCount,
-    int? rowsAffected,
-    int? elapsedNanos,
-    Map<String, Object?>? details,
-  }) {
-    _logger.debug(
-      category: category,
-      operation: operation,
-      message: message,
-      databasePath: databasePath,
-      sql: sql,
-      rowCount: rowCount,
-      rowsAffected: rowsAffected,
-      elapsedNanos: elapsedNanos,
-      details: details,
-    );
-  }
-
-  void _logInfo(
-    String operation,
-    String message, {
-    String category = 'workspace',
-    String? databasePath,
-    String? sql,
-    int? rowCount,
-    int? rowsAffected,
-    int? elapsedNanos,
-    Map<String, Object?>? details,
-  }) {
-    _logger.info(
-      category: category,
-      operation: operation,
-      message: message,
-      databasePath: databasePath,
-      sql: sql,
-      rowCount: rowCount,
-      rowsAffected: rowsAffected,
-      elapsedNanos: elapsedNanos,
-      details: details,
-    );
-  }
-
-  void _logWarning(
-    String operation,
-    String message, {
-    String category = 'workspace',
-    String? databasePath,
-    String? sql,
-    int? rowCount,
-    int? rowsAffected,
-    int? elapsedNanos,
-    Map<String, Object?>? details,
-    Object? error,
-    StackTrace? stackTrace,
-  }) {
-    _logger.warning(
-      category: category,
-      operation: operation,
-      message: message,
-      databasePath: databasePath,
-      sql: sql,
-      rowCount: rowCount,
-      rowsAffected: rowsAffected,
-      elapsedNanos: elapsedNanos,
-      details: details,
-      error: error,
-      stackTrace: stackTrace,
-    );
-  }
-
-  void _logError(
-    String operation,
-    String message, {
-    String category = 'workspace',
-    String? databasePath,
-    String? sql,
-    int? rowCount,
-    int? rowsAffected,
-    int? elapsedNanos,
-    Map<String, Object?>? details,
-    Object? error,
-    StackTrace? stackTrace,
-  }) {
-    _logger.error(
-      category: category,
-      operation: operation,
-      message: message,
-      databasePath: databasePath,
-      sql: sql,
-      rowCount: rowCount,
-      rowsAffected: rowsAffected,
-      elapsedNanos: elapsedNanos,
-      details: details,
-      error: error,
-      stackTrace: stackTrace,
-    );
-  }
 
   int _durationToNanos(Duration duration) => duration.inMicroseconds * 1000;
 
@@ -320,7 +221,7 @@ class WorkspaceController extends ChangeNotifier {
 
     final stopwatch = Stopwatch()..start();
     await _logger.initialize(minimumLevel: config.logging.verbosity);
-    _logInfo('initialize', 'Starting workspace controller initialization.');
+    _logger.info(category: 'workspace', operation: 'initialize', message: 'Starting workspace controller initialization.');
     try {
       config = await _configStore.load();
       _logger.updateMinimumLevel(config.logging.verbosity);
@@ -328,26 +229,18 @@ class WorkspaceController extends ChangeNotifier {
       workspaceMessage = 'Ready.';
       workspaceError = null;
       await _reopenMostRecentWorkspaceIfAvailable();
-      _logInfo(
-        'initialize',
-        'Workspace controller initialized.',
-        elapsedNanos: _durationToNanos(stopwatch.elapsed),
+      _logger.info(category: 'workspace', operation: 'initialize', message: 'Workspace controller initialized.', elapsedNanos: _durationToNanos(stopwatch.elapsed),
         details: <String, Object?>{
           'native_library_path': nativeLibraryPath,
           'recent_file_count': config.recentFiles.length,
           'theme_id': config.appearance.activeTheme,
           'verbosity': config.logging.verbosity.name,
-        },
-      );
+        },);
     } catch (error) {
       workspaceError = error.toString();
       workspaceMessage = null;
-      _logError(
-        'initialize',
-        'Workspace controller initialization failed.',
-        elapsedNanos: _durationToNanos(stopwatch.elapsed),
-        error: error,
-      );
+      _logger.error(category: 'workspace', operation: 'initialize', message: 'Workspace controller initialization failed.', elapsedNanos: _durationToNanos(stopwatch.elapsed),
+        error: error,);
     } finally {
       isInitializing = false;
       _safeNotify();
@@ -398,16 +291,12 @@ class WorkspaceController extends ChangeNotifier {
         ? 'Creating database...'
         : 'Opening database...';
     _safeNotify();
-    _logInfo(
-      'open_database',
-      createIfMissing ? 'Creating database.' : 'Opening database.',
-      databasePath: normalized,
+    _logger.info(category: 'workspace', operation: 'open_database', message: createIfMissing ? 'Creating database.' : 'Opening database.', databasePath: normalized,
       details: <String, Object?>{
         'create_if_missing': createIfMissing,
         'restore_startup_query': restoreStartupQuery,
         'write_queue_enabled': config.writeQueue.enabled,
-      },
-    );
+      },);
 
     try {
       final session = await _gateway.openDatabase(
@@ -432,10 +321,7 @@ class WorkspaceController extends ChangeNotifier {
           'Opened ${p.basename(session.path)}'
           ' on DecentDB ${session.engineVersion}'
           ' with ${tabs.length} query tab${tabs.length == 1 ? '' : 's'}.';
-      _logInfo(
-        'open_database',
-        'Opened database successfully.',
-        databasePath: session.path,
+      _logger.info(category: 'workspace', operation: 'open_database', message: 'Opened database successfully.', databasePath: session.path,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         details: <String, Object?>{
           'engine_version': session.engineVersion,
@@ -444,8 +330,7 @@ class WorkspaceController extends ChangeNotifier {
           'schema_views': schema.views.length,
           if (toolingMetadata?.schemaFingerprint.isNotEmpty == true)
             'schema_fingerprint': toolingMetadata!.schemaFingerprint,
-        },
-      );
+        },);
     } catch (error) {
       databasePath = null;
       engineVersion = null;
@@ -456,13 +341,9 @@ class WorkspaceController extends ChangeNotifier {
       savedQueryLibrary = SavedQueryLibrary.empty;
       _setWorkspaceError(error.toString());
       _resetTabs(notify: false, resetCounters: true);
-      _logError(
-        'open_database',
-        'Opening database failed.',
-        databasePath: normalized,
+      _logger.error(category: 'workspace', operation: 'open_database', message: 'Opening database failed.', databasePath: normalized,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
-        error: error,
-      );
+        error: error,);
     } finally {
       isOpeningDatabase = false;
       isSchemaLoading = false;
@@ -721,24 +602,17 @@ class WorkspaceController extends ChangeNotifier {
         toolingMetadata = metadata;
       } catch (error, stackTrace) {
         toolingMetadata = null;
-        _logWarning(
-          'refresh_schema_metadata',
-          'Loaded schema snapshot, but tooling metadata was unavailable.',
-          databasePath: databasePath,
+        _logger.warning(category: 'workspace', operation: 'refresh_schema_metadata', message: 'Loaded schema snapshot, but tooling metadata was unavailable.', databasePath: databasePath,
           elapsedNanos: _durationToNanos(stopwatch.elapsed),
           error: error,
-          stackTrace: stackTrace,
-        );
+          stackTrace: stackTrace,);
       }
 
       workspaceMessage =
           'Loaded ${schema.tables.length} tables and ${schema.views.length} views.';
       workspaceError = null;
       _scheduleWorkspaceStateSave();
-      _logInfo(
-        'refresh_schema',
-        'Loaded schema snapshot.',
-        databasePath: databasePath,
+      _logger.info(category: 'workspace', operation: 'refresh_schema', message: 'Loaded schema snapshot.', databasePath: databasePath,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         details: <String, Object?>{
           'table_count': schema.tables.length,
@@ -751,18 +625,13 @@ class WorkspaceController extends ChangeNotifier {
             'query_contract_version':
                 metadata.capabilities.queryContractVersion,
           },
-        },
-      );
+        },);
     } catch (error) {
       toolingMetadata = null;
       _setWorkspaceError(error.toString());
-      _logError(
-        'refresh_schema',
-        'Schema refresh failed.',
-        databasePath: databasePath,
+      _logger.error(category: 'workspace', operation: 'refresh_schema', message: 'Schema refresh failed.', databasePath: databasePath,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
-        error: error,
-      );
+        error: error,);
     } finally {
       isSchemaLoading = false;
       _safeNotify();
@@ -864,12 +733,8 @@ class WorkspaceController extends ChangeNotifier {
     if (startupRestoreError != null) {
       details['startup_restore_error'] = startupRestoreError;
     }
-    _logWarning(
-      'startup_restore',
-      'Skipped automatic reopen after the most recent workspace failed to open.',
-      databasePath: lastOpenedPath,
-      details: details,
-    );
+    _logger.warning(category: 'workspace', operation: 'startup_restore', message: 'Skipped automatic reopen after the most recent workspace failed to open.', databasePath: lastOpenedPath,
+      details: details,);
   }
 
   Future<void> _removeRecentFileFromStartupRestore(String path) async {
@@ -885,14 +750,10 @@ class WorkspaceController extends ChangeNotifier {
     try {
       await _configStore.save(config);
     } catch (error, stackTrace) {
-      _logWarning(
-        'startup_restore',
-        'Failed to prune a startup workspace that could not be reopened.',
-        category: 'config',
+      _logger.warning(operation: 'startup_restore', message: 'Failed to prune a startup workspace that could not be reopened.', category: 'config',
         databasePath: path,
         error: error,
-        stackTrace: stackTrace,
-      );
+        stackTrace: stackTrace,);
     }
   }
 
@@ -1217,10 +1078,7 @@ class WorkspaceController extends ChangeNotifier {
       notify: false,
     );
     _safeNotify();
-    _logInfo(
-      'run_query_on_branch',
-      'Executing $description on a new branch.',
-      category: 'query',
+    _logger.info(operation: 'run_query_on_branch', message: 'Executing $description on a new branch.', category: 'query',
       databasePath: databasePath,
       sql: trimmedSql,
       details: <String, Object?>{
@@ -1228,8 +1086,7 @@ class WorkspaceController extends ChangeNotifier {
         'source_ref': sourceRef,
         'branch_name': branchName,
         'parameter_count': params.length,
-      },
-    );
+      },);
 
     if (previousCursor != null) {
       unawaited(_gateway.cancelQuery(previousCursor));
@@ -1360,10 +1217,7 @@ class WorkspaceController extends ChangeNotifier {
             ),
           );
         }, notify: false);
-        _logError(
-          'run_query_on_branch',
-          'Branch query execution failed.',
-          category: 'query',
+        _logger.error(operation: 'run_query_on_branch', message: 'Branch query execution failed.', category: 'query',
           databasePath: databasePath,
           sql: trimmedSql,
           elapsedNanos: _durationToNanos(stopwatch.elapsed),
@@ -1371,8 +1225,7 @@ class WorkspaceController extends ChangeNotifier {
           details: <String, Object?>{
             'tab_id': tabId,
             'branch_name': branchName,
-          },
-        );
+          },);
       }
       if (branchCreated) {
         await refreshBranchState(showLoadingState: false);
@@ -1463,20 +1316,16 @@ class WorkspaceController extends ChangeNotifier {
       notify: false,
     );
     _safeNotify();
-    _logInfo(
-      'run_query',
-      isAlternateSql
+    _logger.info(category: 'query', operation: 'run_query', message: isAlternateSql
           ? 'Executing $sqlOverrideDescription.'
           : 'Executing SQL buffer.',
-      category: 'query',
       databasePath: databasePath,
       sql: trimmedSql,
       details: <String, Object?>{
         'tab_id': tabId,
         'execution_target': isAlternateSql ? sqlOverrideDescription : 'buffer',
         'parameter_count': params.length,
-      },
-    );
+      },);
 
     if (previousCursor != null) {
       unawaited(_gateway.cancelQuery(previousCursor));
@@ -1637,10 +1486,7 @@ class WorkspaceController extends ChangeNotifier {
             ),
           );
         }, notify: false);
-        _logError(
-          'run_query',
-          'Query execution failed.',
-          category: 'query',
+        _logger.error(operation: 'run_query', message: 'Query execution failed.', category: 'query',
           databasePath: databasePath,
           sql: trimmedSql,
           elapsedNanos: _durationToNanos(stopwatch.elapsed),
@@ -1650,8 +1496,7 @@ class WorkspaceController extends ChangeNotifier {
             'execution_target': isAlternateSql
                 ? sqlOverrideDescription
                 : 'buffer',
-          },
-        );
+          },);
       }
     } finally {
       _safeNotify();
@@ -1680,17 +1525,13 @@ class WorkspaceController extends ChangeNotifier {
     );
     _safeNotify();
     final stopwatch = Stopwatch()..start();
-    _logDebug(
-      'fetch_page',
-      'Fetching next result page.',
-      category: 'query',
+    _logger.debug(operation: 'fetch_page', message: 'Fetching next result page.', category: 'query',
       databasePath: databasePath,
       sql: tab.lastSql ?? tab.sql,
       details: <String, Object?>{
         'tab_id': resolvedTabId,
         'cursor_id': tab.cursorId,
-      },
-    );
+      },);
 
     try {
       final page = await _gateway.fetchNextPage(
@@ -1802,16 +1643,12 @@ class WorkspaceController extends ChangeNotifier {
             ),
           );
         }, notify: false);
-        _logError(
-          'fetch_page',
-          'Fetching the next query page failed.',
-          category: 'query',
+        _logger.error(operation: 'fetch_page', message: 'Fetching the next query page failed.', category: 'query',
           databasePath: databasePath,
           sql: tab.lastSql ?? tab.sql,
           elapsedNanos: _durationToNanos(stopwatch.elapsed),
           error: error,
-          details: <String, Object?>{'tab_id': resolvedTabId},
-        );
+          details: <String, Object?>{'tab_id': resolvedTabId},);
       }
     } finally {
       _safeNotify();
@@ -1845,14 +1682,10 @@ class WorkspaceController extends ChangeNotifier {
       notify: false,
     );
     _safeNotify();
-    _logWarning(
-      'cancel_query',
-      'Cancelling active query.',
-      category: 'query',
+    _logger.warning(operation: 'cancel_query', message: 'Cancelling active query.', category: 'query',
       databasePath: databasePath,
       sql: tab.lastSql ?? tab.sql,
-      details: <String, Object?>{'tab_id': tabId},
-    );
+      details: <String, Object?>{'tab_id': tabId},);
 
     if (cursorId != null) {
       try {
@@ -1889,16 +1722,12 @@ class WorkspaceController extends ChangeNotifier {
             );
           }, notify: false);
           _safeNotify();
-          _logError(
-            'cancel_query',
-            'Query cancellation failed.',
-            category: 'query',
+          _logger.error(operation: 'cancel_query', message: 'Query cancellation failed.', category: 'query',
             databasePath: databasePath,
             sql: tab.lastSql ?? tab.sql,
             elapsedNanos: _durationToNanos(stopwatch.elapsed),
             error: error,
-            details: <String, Object?>{'tab_id': tabId},
-          );
+            details: <String, Object?>{'tab_id': tabId},);
         }
         return;
       }
@@ -1935,18 +1764,14 @@ class WorkspaceController extends ChangeNotifier {
         );
       }, notify: false);
       _safeNotify();
-      _logWarning(
-        'cancel_query',
-        'Query cancellation completed.',
-        category: 'query',
+      _logger.warning(operation: 'cancel_query', message: 'Query cancellation completed.', category: 'query',
         databasePath: databasePath,
         sql: tab.lastSql ?? tab.sql,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         details: <String, Object?>{
           'tab_id': tabId,
           'partial_results': hasPartialRows,
-        },
-      );
+        },);
     }
   }
 
@@ -2021,18 +1846,14 @@ class WorkspaceController extends ChangeNotifier {
       notify: false,
     );
     _safeNotify();
-    _logInfo(
-      'export_csv',
-      'Exporting query results to CSV.',
-      category: 'export',
+    _logger.info(operation: 'export_csv', message: 'Exporting query results to CSV.', category: 'export',
       databasePath: databasePath,
       sql: tab.lastSql,
       details: <String, Object?>{
         'tab_id': tabId,
         'path': exportPath,
         ..._queryContractLogDetails(tab.queryContract),
-      },
-    );
+      },);
 
     try {
       final result = await _gateway.exportCsv(
@@ -2057,10 +1878,7 @@ class WorkspaceController extends ChangeNotifier {
           ),
         );
       }, notify: false);
-      _logInfo(
-        'export_csv',
-        'CSV export completed.',
-        category: 'export',
+      _logger.info(operation: 'export_csv', message: 'CSV export completed.', category: 'export',
         databasePath: databasePath,
         sql: tab.lastSql,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
@@ -2069,8 +1887,7 @@ class WorkspaceController extends ChangeNotifier {
           'tab_id': tabId,
           'path': result.path,
           ..._queryContractLogDetails(tab.queryContract),
-        },
-      );
+        },);
     } catch (error) {
       _mutateTab(tabId, (current) {
         final failure = QueryErrorDetails.fromError(
@@ -2088,16 +1905,12 @@ class WorkspaceController extends ChangeNotifier {
           ),
         );
       }, notify: false);
-      _logError(
-        'export_csv',
-        'CSV export failed.',
-        category: 'export',
+      _logger.error(operation: 'export_csv', message: 'CSV export failed.', category: 'export',
         databasePath: databasePath,
         sql: tab.lastSql,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         error: error,
-        details: <String, Object?>{'tab_id': tabId, 'path': exportPath},
-      );
+        details: <String, Object?>{'tab_id': tabId, 'path': exportPath},);
     } finally {
       _safeNotify();
     }
@@ -2152,10 +1965,7 @@ class WorkspaceController extends ChangeNotifier {
       notify: false,
     );
     _safeNotify();
-    _logInfo(
-      'export_json',
-      'Exporting query results to JSON.',
-      category: 'export',
+    _logger.info(operation: 'export_json', message: 'Exporting query results to JSON.', category: 'export',
       databasePath: databasePath,
       sql: tab.lastSql,
       details: <String, Object?>{
@@ -2165,8 +1975,7 @@ class WorkspaceController extends ChangeNotifier {
         'pretty': pretty,
         'include_metadata': includeMetadata,
         ..._queryContractLogDetails(tab.queryContract),
-      },
-    );
+      },);
 
     try {
       final result = await _gateway.exportJson(
@@ -2192,10 +2001,7 @@ class WorkspaceController extends ChangeNotifier {
           ),
         );
       }, notify: false);
-      _logInfo(
-        'export_json',
-        'JSON export completed.',
-        category: 'export',
+      _logger.info(operation: 'export_json', message: 'JSON export completed.', category: 'export',
         databasePath: databasePath,
         sql: tab.lastSql,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
@@ -2206,8 +2012,7 @@ class WorkspaceController extends ChangeNotifier {
           'format': format,
           'include_metadata': includeMetadata,
           ..._queryContractLogDetails(tab.queryContract),
-        },
-      );
+        },);
     } catch (error) {
       _mutateTab(tabId, (current) {
         final failure = QueryErrorDetails.fromError(
@@ -2225,10 +2030,7 @@ class WorkspaceController extends ChangeNotifier {
           ),
         );
       }, notify: false);
-      _logError(
-        'export_json',
-        'JSON export failed.',
-        category: 'export',
+      _logger.error(operation: 'export_json', message: 'JSON export failed.', category: 'export',
         databasePath: databasePath,
         sql: tab.lastSql,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
@@ -2237,8 +2039,7 @@ class WorkspaceController extends ChangeNotifier {
           'tab_id': tabId,
           'path': exportPath,
           'format': format,
-        },
-      );
+        },);
     } finally {
       _safeNotify();
     }
@@ -2291,10 +2092,7 @@ class WorkspaceController extends ChangeNotifier {
       notify: false,
     );
     _safeNotify();
-    _logInfo(
-      'export_excel',
-      'Exporting query results to Excel.',
-      category: 'export',
+    _logger.info(operation: 'export_excel', message: 'Exporting query results to Excel.', category: 'export',
       databasePath: databasePath,
       sql: tab.lastSql,
       details: <String, Object?>{
@@ -2302,8 +2100,7 @@ class WorkspaceController extends ChangeNotifier {
         'path': exportPath,
         'include_headers': includeHeaders,
         ..._queryContractLogDetails(tab.queryContract),
-      },
-    );
+      },);
 
     try {
       final result = await _gateway.exportExcel(
@@ -2327,10 +2124,7 @@ class WorkspaceController extends ChangeNotifier {
           ),
         );
       }, notify: false);
-      _logInfo(
-        'export_excel',
-        'Excel export completed.',
-        category: 'export',
+      _logger.info(operation: 'export_excel', message: 'Excel export completed.', category: 'export',
         databasePath: databasePath,
         sql: tab.lastSql,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
@@ -2340,8 +2134,7 @@ class WorkspaceController extends ChangeNotifier {
           'path': result.path,
           'include_headers': includeHeaders,
           ..._queryContractLogDetails(tab.queryContract),
-        },
-      );
+        },);
     } catch (error) {
       _mutateTab(tabId, (current) {
         final failure = QueryErrorDetails.fromError(
@@ -2359,16 +2152,12 @@ class WorkspaceController extends ChangeNotifier {
           ),
         );
       }, notify: false);
-      _logError(
-        'export_excel',
-        'Excel export failed.',
-        category: 'export',
+      _logger.error(operation: 'export_excel', message: 'Excel export failed.', category: 'export',
         databasePath: databasePath,
         sql: tab.lastSql,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         error: error,
-        details: <String, Object?>{'tab_id': tabId, 'path': exportPath},
-      );
+        details: <String, Object?>{'tab_id': tabId, 'path': exportPath},);
     } finally {
       _safeNotify();
     }
@@ -2506,24 +2295,16 @@ class WorkspaceController extends ChangeNotifier {
       config = await _configStore.load();
       _logger.updateMinimumLevel(config.logging.verbosity);
       workspaceError = null;
-      _logInfo(
-        'reload_config',
-        'Reloaded application configuration.',
-        category: 'config',
+      _logger.info(operation: 'reload_config', message: 'Reloaded application configuration.', category: 'config',
         details: <String, Object?>{
           'theme_id': config.appearance.activeTheme,
           'verbosity': config.logging.verbosity.name,
-        },
-      );
+        },);
       _safeNotify();
     } catch (error) {
       _setWorkspaceError(error.toString());
-      _logError(
-        'reload_config',
-        'Reloading application configuration failed.',
-        category: 'config',
-        error: error,
-      );
+      _logger.error(operation: 'reload_config', message: 'Reloading application configuration failed.', category: 'config',
+        error: error,);
     }
   }
 
@@ -2542,16 +2323,12 @@ class WorkspaceController extends ChangeNotifier {
     await _persistConfig(statusMessage ?? 'Updated application preferences.');
     _logger.updateMinimumLevel(config.logging.verbosity);
     if (workspaceError == null) {
-      _logInfo(
-        'apply_config',
-        'Applied application configuration changes.',
-        category: 'config',
+      _logger.info(operation: 'apply_config', message: 'Applied application configuration changes.', category: 'config',
         details: <String, Object?>{
           'theme_id': config.appearance.activeTheme,
           'verbosity': config.logging.verbosity.name,
           'show_line_numbers': config.editorSettings.showLineNumbers,
-        },
-      );
+        },);
     }
     return workspaceError == null;
   }
@@ -2565,14 +2342,10 @@ class WorkspaceController extends ChangeNotifier {
     try {
       return await _gateway.loadOperationalMetrics(maxRows: maxRows);
     } catch (error, stackTrace) {
-      _logWarning(
-        'load_operational_metrics',
-        'Loading DecentDB operational metrics failed.',
-        category: 'diagnostics',
+      _logger.warning(operation: 'load_operational_metrics', message: 'Loading DecentDB operational metrics failed.', category: 'diagnostics',
         databasePath: databasePath,
         error: error,
-        stackTrace: stackTrace,
-      );
+        stackTrace: stackTrace,);
       return OperationalMetricsSnapshot.empty();
     }
   }
@@ -2586,12 +2359,8 @@ class WorkspaceController extends ChangeNotifier {
               : _suggestImportTargetPath(trimmedSource),
         );
     _safeNotify();
-    _logInfo(
-      'begin_excel_import',
-      'Opened Excel import workflow.',
-      category: 'import.excel',
-      details: <String, Object?>{'source_path': trimmedSource},
-    );
+    _logger.info(operation: 'begin_excel_import', message: 'Opened Excel import workflow.', category: 'import.excel',
+      details: <String, Object?>{'source_path': trimmedSource},);
     if (trimmedSource.isNotEmpty) {
       unawaited(loadExcelImportSource(trimmedSource));
     }
@@ -2654,43 +2423,31 @@ class WorkspaceController extends ChangeNotifier {
             ? 'No worksheets were found in the selected workbook.'
             : null,
       );
-      _logInfo(
-        'inspect_excel_source',
-        'Loaded Excel import inspection.',
-        category: 'import.excel',
+      _logger.info(operation: 'inspect_excel_source', message: 'Loaded Excel import inspection.', category: 'import.excel',
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         details: buildImportInspectionLogDetails(
           sourcePath: inspection.sourcePath,
           tableCount: inspection.sheets.length,
           warnings: inspection.warnings,
           extra: <String, Object?>{'header_row': inspection.headerRow},
-        ),
-      );
+        ),);
       if (inspection.warnings.isNotEmpty) {
-        _logWarning(
-          'inspect_excel_source_warnings',
-          'Excel inspection produced warnings.',
-          category: 'import.excel',
+        _logger.warning(operation: 'inspect_excel_source_warnings', message: 'Excel inspection produced warnings.', category: 'import.excel',
           elapsedNanos: _durationToNanos(stopwatch.elapsed),
           details: buildImportInspectionLogDetails(
             sourcePath: inspection.sourcePath,
             tableCount: inspection.sheets.length,
             warnings: inspection.warnings,
             extra: <String, Object?>{'header_row': inspection.headerRow},
-          ),
-        );
+          ),);
       }
       _safeNotify();
     } catch (error) {
       _setExcelImportError(error.toString(), phase: ExcelImportJobPhase.failed);
-      _logError(
-        'inspect_excel_source',
-        'Excel source inspection failed.',
-        category: 'import.excel',
+      _logger.error(operation: 'inspect_excel_source', message: 'Excel source inspection failed.', category: 'import.excel',
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         error: error,
-        details: <String, Object?>{'source_path': normalized},
-      );
+        details: <String, Object?>{'source_path': normalized},);
     }
   }
 
@@ -2888,12 +2645,8 @@ class WorkspaceController extends ChangeNotifier {
       ),
     );
     _safeNotify();
-    _logInfo(
-      'run_excel_import',
-      'Starting Excel import.',
-      category: 'import.excel',
-      details: buildExcelImportRequestLogDetails(request),
-    );
+    _logger.info(operation: 'run_excel_import', message: 'Starting Excel import.', category: 'import.excel',
+      details: buildExcelImportRequestLogDetails(request),);
 
     _excelImportSubscription = _gateway.importExcel(request: request).listen((
       update,
@@ -2923,27 +2676,19 @@ class WorkspaceController extends ChangeNotifier {
           );
           workspaceMessage = summary?.statusMessage;
           workspaceError = null;
-          _logInfo(
-            'run_excel_import',
-            'Excel import completed.',
-            category: 'import.excel',
+          _logger.info(operation: 'run_excel_import', message: 'Excel import completed.', category: 'import.excel',
             databasePath: summary?.targetPath,
             rowCount: summary?.totalRowsCopied,
             elapsedNanos: _durationToNanos(stopwatch.elapsed),
             details: summary == null
                 ? <String, Object?>{'job_id': update.jobId}
-                : buildExcelImportSummaryLogDetails(summary),
-          );
+                : buildExcelImportSummaryLogDetails(summary),);
           if (summary != null && summary.warnings.isNotEmpty) {
-            _logWarning(
-              'run_excel_import_warnings',
-              'Excel import completed with warnings.',
-              category: 'import.excel',
+            _logger.warning(operation: 'run_excel_import_warnings', message: 'Excel import completed with warnings.', category: 'import.excel',
               databasePath: summary.targetPath,
               rowCount: summary.totalRowsCopied,
               elapsedNanos: _durationToNanos(stopwatch.elapsed),
-              details: buildExcelImportSummaryLogDetails(summary),
-            );
+              details: buildExcelImportSummaryLogDetails(summary),);
           }
           if (summary != null && !summary.rolledBack) {
             unawaited(_recordExcelImportReconciliation(summary));
@@ -2959,17 +2704,13 @@ class WorkspaceController extends ChangeNotifier {
           );
           workspaceMessage = summary?.statusMessage;
           workspaceError = null;
-          _logWarning(
-            'run_excel_import',
-            'Excel import was cancelled.',
-            category: 'import.excel',
+          _logger.warning(operation: 'run_excel_import', message: 'Excel import was cancelled.', category: 'import.excel',
             databasePath: summary?.targetPath,
             rowCount: summary?.totalRowsCopied,
             elapsedNanos: _durationToNanos(stopwatch.elapsed),
             details: summary == null
                 ? <String, Object?>{'job_id': update.jobId}
-                : buildExcelImportSummaryLogDetails(summary),
-          );
+                : buildExcelImportSummaryLogDetails(summary),);
           break;
         case ExcelImportUpdateKind.failed:
           final message = update.message ?? 'Excel import failed.';
@@ -2980,10 +2721,7 @@ class WorkspaceController extends ChangeNotifier {
           );
           workspaceError = message;
           workspaceMessage = null;
-          _logError(
-            'run_excel_import',
-            'Excel import failed.',
-            category: 'import.excel',
+          _logger.error(operation: 'run_excel_import', message: 'Excel import failed.', category: 'import.excel',
             elapsedNanos: _durationToNanos(stopwatch.elapsed),
             details: <String, Object?>{
               'job_id': update.jobId,
@@ -2991,8 +2729,7 @@ class WorkspaceController extends ChangeNotifier {
               'target_path': current.targetPath,
               'selected_sheet_count': current.selectedSheets.length,
               'message': message,
-            },
-          );
+            },);
           break;
       }
       _safeNotify();
@@ -3010,24 +2747,16 @@ class WorkspaceController extends ChangeNotifier {
       error: null,
     );
     _safeNotify();
-    _logWarning(
-      'cancel_excel_import',
-      'Cancelling Excel import.',
-      category: 'import.excel',
-      details: <String, Object?>{'job_id': session.jobId},
-    );
+    _logger.warning(operation: 'cancel_excel_import', message: 'Cancelling Excel import.', category: 'import.excel',
+      details: <String, Object?>{'job_id': session.jobId},);
     try {
       await _gateway.cancelImport(session.jobId!);
     } catch (error) {
       _setExcelImportError(error.toString(), phase: ExcelImportJobPhase.failed);
-      _logError(
-        'cancel_excel_import',
-        'Excel import cancellation failed.',
-        category: 'import.excel',
+      _logger.error(operation: 'cancel_excel_import', message: 'Excel import cancellation failed.', category: 'import.excel',
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         error: error,
-        details: <String, Object?>{'job_id': session.jobId},
-      );
+        details: <String, Object?>{'job_id': session.jobId},);
     }
   }
 
@@ -3078,12 +2807,8 @@ class WorkspaceController extends ChangeNotifier {
               : _suggestImportTargetPath(trimmedSource),
         );
     _safeNotify();
-    _logInfo(
-      'begin_sql_dump_import',
-      'Opened SQL dump import workflow.',
-      category: 'import.sql_dump',
-      details: <String, Object?>{'source_path': trimmedSource},
-    );
+    _logger.info(operation: 'begin_sql_dump_import', message: 'Opened SQL dump import workflow.', category: 'import.sql_dump',
+      details: <String, Object?>{'source_path': trimmedSource},);
     if (trimmedSource.isNotEmpty) {
       unawaited(loadSqlDumpImportSource(trimmedSource));
     }
@@ -3149,10 +2874,7 @@ class WorkspaceController extends ChangeNotifier {
             ? 'No supported CREATE TABLE statements were parsed from the selected dump.'
             : null,
       );
-      _logInfo(
-        'inspect_sql_dump_source',
-        'Loaded SQL dump inspection.',
-        category: 'import.sql_dump',
+      _logger.info(operation: 'inspect_sql_dump_source', message: 'Loaded SQL dump inspection.', category: 'import.sql_dump',
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         details: buildImportInspectionLogDetails(
           sourcePath: inspection.sourcePath,
@@ -3162,13 +2884,9 @@ class WorkspaceController extends ChangeNotifier {
             'skipped_statement_count': inspection.skippedStatements.length,
             'encoding': inspection.resolvedEncoding,
           },
-        ),
-      );
+        ),);
       if (inspection.warnings.isNotEmpty) {
-        _logWarning(
-          'inspect_sql_dump_source_warnings',
-          'SQL dump inspection produced warnings.',
-          category: 'import.sql_dump',
+        _logger.warning(operation: 'inspect_sql_dump_source_warnings', message: 'SQL dump inspection produced warnings.', category: 'import.sql_dump',
           elapsedNanos: _durationToNanos(stopwatch.elapsed),
           details: buildImportInspectionLogDetails(
             sourcePath: inspection.sourcePath,
@@ -3178,8 +2896,7 @@ class WorkspaceController extends ChangeNotifier {
               'skipped_statement_count': inspection.skippedStatements.length,
               'encoding': inspection.resolvedEncoding,
             },
-          ),
-        );
+          ),);
       }
       _safeNotify();
     } catch (error) {
@@ -3187,14 +2904,10 @@ class WorkspaceController extends ChangeNotifier {
         error.toString(),
         phase: SqlDumpImportJobPhase.failed,
       );
-      _logError(
-        'inspect_sql_dump_source',
-        'SQL dump inspection failed.',
-        category: 'import.sql_dump',
+      _logger.error(operation: 'inspect_sql_dump_source', message: 'SQL dump inspection failed.', category: 'import.sql_dump',
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         error: error,
-        details: <String, Object?>{'source_path': normalized},
-      );
+        details: <String, Object?>{'source_path': normalized},);
     }
   }
 
@@ -3392,12 +3105,8 @@ class WorkspaceController extends ChangeNotifier {
       ),
     );
     _safeNotify();
-    _logInfo(
-      'run_sql_dump_import',
-      'Starting SQL dump import.',
-      category: 'import.sql_dump',
-      details: buildSqlDumpImportRequestLogDetails(request),
-    );
+    _logger.info(operation: 'run_sql_dump_import', message: 'Starting SQL dump import.', category: 'import.sql_dump',
+      details: buildSqlDumpImportRequestLogDetails(request),);
 
     _sqlDumpImportSubscription = _gateway
         .importSqlDump(request: request)
@@ -3427,27 +3136,19 @@ class WorkspaceController extends ChangeNotifier {
               );
               workspaceMessage = summary?.statusMessage;
               workspaceError = null;
-              _logInfo(
-                'run_sql_dump_import',
-                'SQL dump import completed.',
-                category: 'import.sql_dump',
+              _logger.info(operation: 'run_sql_dump_import', message: 'SQL dump import completed.', category: 'import.sql_dump',
                 databasePath: summary?.targetPath,
                 rowCount: summary?.totalRowsCopied,
                 elapsedNanos: _durationToNanos(stopwatch.elapsed),
                 details: summary == null
                     ? <String, Object?>{'job_id': update.jobId}
-                    : buildSqlDumpImportSummaryLogDetails(summary),
-              );
+                    : buildSqlDumpImportSummaryLogDetails(summary),);
               if (summary != null && summary.warnings.isNotEmpty) {
-                _logWarning(
-                  'run_sql_dump_import_warnings',
-                  'SQL dump import completed with warnings.',
-                  category: 'import.sql_dump',
+                _logger.warning(operation: 'run_sql_dump_import_warnings', message: 'SQL dump import completed with warnings.', category: 'import.sql_dump',
                   databasePath: summary.targetPath,
                   rowCount: summary.totalRowsCopied,
                   elapsedNanos: _durationToNanos(stopwatch.elapsed),
-                  details: buildSqlDumpImportSummaryLogDetails(summary),
-                );
+                  details: buildSqlDumpImportSummaryLogDetails(summary),);
               }
               if (summary != null && !summary.rolledBack) {
                 unawaited(_recordSqlDumpImportReconciliation(summary));
@@ -3463,17 +3164,13 @@ class WorkspaceController extends ChangeNotifier {
               );
               workspaceMessage = summary?.statusMessage;
               workspaceError = null;
-              _logWarning(
-                'run_sql_dump_import',
-                'SQL dump import was cancelled.',
-                category: 'import.sql_dump',
+              _logger.warning(operation: 'run_sql_dump_import', message: 'SQL dump import was cancelled.', category: 'import.sql_dump',
                 databasePath: summary?.targetPath,
                 rowCount: summary?.totalRowsCopied,
                 elapsedNanos: _durationToNanos(stopwatch.elapsed),
                 details: summary == null
                     ? <String, Object?>{'job_id': update.jobId}
-                    : buildSqlDumpImportSummaryLogDetails(summary),
-              );
+                    : buildSqlDumpImportSummaryLogDetails(summary),);
               break;
             case SqlDumpImportUpdateKind.failed:
               final message = update.message ?? 'SQL dump import failed.';
@@ -3484,10 +3181,7 @@ class WorkspaceController extends ChangeNotifier {
               );
               workspaceError = message;
               workspaceMessage = null;
-              _logError(
-                'run_sql_dump_import',
-                'SQL dump import failed.',
-                category: 'import.sql_dump',
+              _logger.error(operation: 'run_sql_dump_import', message: 'SQL dump import failed.', category: 'import.sql_dump',
                 elapsedNanos: _durationToNanos(stopwatch.elapsed),
                 details: <String, Object?>{
                   'job_id': update.jobId,
@@ -3495,8 +3189,7 @@ class WorkspaceController extends ChangeNotifier {
                   'target_path': current.targetPath,
                   'selected_table_count': current.selectedTables.length,
                   'message': message,
-                },
-              );
+                },);
               break;
           }
           _safeNotify();
@@ -3514,12 +3207,8 @@ class WorkspaceController extends ChangeNotifier {
       error: null,
     );
     _safeNotify();
-    _logWarning(
-      'cancel_sql_dump_import',
-      'Cancelling SQL dump import.',
-      category: 'import.sql_dump',
-      details: <String, Object?>{'job_id': session.jobId},
-    );
+    _logger.warning(operation: 'cancel_sql_dump_import', message: 'Cancelling SQL dump import.', category: 'import.sql_dump',
+      details: <String, Object?>{'job_id': session.jobId},);
     try {
       await _gateway.cancelImport(session.jobId!);
     } catch (error) {
@@ -3527,14 +3216,10 @@ class WorkspaceController extends ChangeNotifier {
         error.toString(),
         phase: SqlDumpImportJobPhase.failed,
       );
-      _logError(
-        'cancel_sql_dump_import',
-        'SQL dump import cancellation failed.',
-        category: 'import.sql_dump',
+      _logger.error(operation: 'cancel_sql_dump_import', message: 'SQL dump import cancellation failed.', category: 'import.sql_dump',
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         error: error,
-        details: <String, Object?>{'job_id': session.jobId},
-      );
+        details: <String, Object?>{'job_id': session.jobId},);
     }
   }
 
@@ -3585,12 +3270,8 @@ class WorkspaceController extends ChangeNotifier {
               : _suggestImportTargetPath(trimmedSource),
         );
     _safeNotify();
-    _logInfo(
-      'begin_sqlite_import',
-      'Opened SQLite import workflow.',
-      category: 'import.sqlite',
-      details: <String, Object?>{'source_path': trimmedSource},
-    );
+    _logger.info(operation: 'begin_sqlite_import', message: 'Opened SQLite import workflow.', category: 'import.sqlite',
+      details: <String, Object?>{'source_path': trimmedSource},);
     if (trimmedSource.isNotEmpty) {
       unawaited(loadSqliteImportSource(trimmedSource));
     }
@@ -3650,29 +3331,21 @@ class WorkspaceController extends ChangeNotifier {
             ? 'No user tables were found in the selected SQLite file.'
             : null,
       );
-      _logInfo(
-        'inspect_sqlite_source',
-        'Loaded SQLite source inspection.',
-        category: 'import.sqlite',
+      _logger.info(operation: 'inspect_sqlite_source', message: 'Loaded SQLite source inspection.', category: 'import.sqlite',
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         details: buildImportInspectionLogDetails(
           sourcePath: inspection.sourcePath,
           tableCount: inspection.tables.length,
           warnings: inspection.warnings,
-        ),
-      );
+        ),);
       if (inspection.warnings.isNotEmpty) {
-        _logWarning(
-          'inspect_sqlite_source_warnings',
-          'SQLite inspection produced warnings.',
-          category: 'import.sqlite',
+        _logger.warning(operation: 'inspect_sqlite_source_warnings', message: 'SQLite inspection produced warnings.', category: 'import.sqlite',
           elapsedNanos: _durationToNanos(stopwatch.elapsed),
           details: buildImportInspectionLogDetails(
             sourcePath: inspection.sourcePath,
             tableCount: inspection.tables.length,
             warnings: inspection.warnings,
-          ),
-        );
+          ),);
       }
       _safeNotify();
       if (focused != null) {
@@ -3683,14 +3356,10 @@ class WorkspaceController extends ChangeNotifier {
         error.toString(),
         phase: SqliteImportJobPhase.failed,
       );
-      _logError(
-        'inspect_sqlite_source',
-        'SQLite source inspection failed.',
-        category: 'import.sqlite',
+      _logger.error(operation: 'inspect_sqlite_source', message: 'SQLite source inspection failed.', category: 'import.sqlite',
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         error: error,
-        details: <String, Object?>{'source_path': normalized},
-      );
+        details: <String, Object?>{'source_path': normalized},);
     }
   }
 
@@ -3926,12 +3595,8 @@ class WorkspaceController extends ChangeNotifier {
       ),
     );
     _safeNotify();
-    _logInfo(
-      'run_sqlite_import',
-      'Starting SQLite import.',
-      category: 'import.sqlite',
-      details: buildSqliteImportRequestLogDetails(request),
-    );
+    _logger.info(operation: 'run_sqlite_import', message: 'Starting SQLite import.', category: 'import.sqlite',
+      details: buildSqliteImportRequestLogDetails(request),);
 
     _sqliteImportSubscription = _gateway.importSqlite(request: request).listen((
       update,
@@ -3961,27 +3626,19 @@ class WorkspaceController extends ChangeNotifier {
           );
           workspaceMessage = summary?.statusMessage;
           workspaceError = null;
-          _logInfo(
-            'run_sqlite_import',
-            'SQLite import completed.',
-            category: 'import.sqlite',
+          _logger.info(operation: 'run_sqlite_import', message: 'SQLite import completed.', category: 'import.sqlite',
             databasePath: summary?.targetPath,
             rowCount: summary?.totalRowsCopied,
             elapsedNanos: _durationToNanos(stopwatch.elapsed),
             details: summary == null
                 ? <String, Object?>{'job_id': update.jobId}
-                : buildSqliteImportSummaryLogDetails(summary),
-          );
+                : buildSqliteImportSummaryLogDetails(summary),);
           if (summary != null && summary.warnings.isNotEmpty) {
-            _logWarning(
-              'run_sqlite_import_warnings',
-              'SQLite import completed with warnings.',
-              category: 'import.sqlite',
+            _logger.warning(operation: 'run_sqlite_import_warnings', message: 'SQLite import completed with warnings.', category: 'import.sqlite',
               databasePath: summary.targetPath,
               rowCount: summary.totalRowsCopied,
               elapsedNanos: _durationToNanos(stopwatch.elapsed),
-              details: buildSqliteImportSummaryLogDetails(summary),
-            );
+              details: buildSqliteImportSummaryLogDetails(summary),);
           }
           if (summary != null && !summary.rolledBack) {
             unawaited(_recordSqliteImportReconciliation(summary));
@@ -3997,17 +3654,13 @@ class WorkspaceController extends ChangeNotifier {
           );
           workspaceMessage = summary?.statusMessage;
           workspaceError = null;
-          _logWarning(
-            'run_sqlite_import',
-            'SQLite import was cancelled.',
-            category: 'import.sqlite',
+          _logger.warning(operation: 'run_sqlite_import', message: 'SQLite import was cancelled.', category: 'import.sqlite',
             databasePath: summary?.targetPath,
             rowCount: summary?.totalRowsCopied,
             elapsedNanos: _durationToNanos(stopwatch.elapsed),
             details: summary == null
                 ? <String, Object?>{'job_id': update.jobId}
-                : buildSqliteImportSummaryLogDetails(summary),
-          );
+                : buildSqliteImportSummaryLogDetails(summary),);
           break;
         case SqliteImportUpdateKind.failed:
           final message = update.message ?? 'SQLite import failed.';
@@ -4018,10 +3671,7 @@ class WorkspaceController extends ChangeNotifier {
           );
           workspaceError = message;
           workspaceMessage = null;
-          _logError(
-            'run_sqlite_import',
-            'SQLite import failed.',
-            category: 'import.sqlite',
+          _logger.error(operation: 'run_sqlite_import', message: 'SQLite import failed.', category: 'import.sqlite',
             elapsedNanos: _durationToNanos(stopwatch.elapsed),
             details: <String, Object?>{
               'job_id': update.jobId,
@@ -4029,8 +3679,7 @@ class WorkspaceController extends ChangeNotifier {
               'target_path': current.targetPath,
               'selected_table_count': current.selectedTables.length,
               'message': message,
-            },
-          );
+            },);
           break;
       }
       _safeNotify();
@@ -4048,12 +3697,8 @@ class WorkspaceController extends ChangeNotifier {
       error: null,
     );
     _safeNotify();
-    _logWarning(
-      'cancel_sqlite_import',
-      'Cancelling SQLite import.',
-      category: 'import.sqlite',
-      details: <String, Object?>{'job_id': session.jobId},
-    );
+    _logger.warning(operation: 'cancel_sqlite_import', message: 'Cancelling SQLite import.', category: 'import.sqlite',
+      details: <String, Object?>{'job_id': session.jobId},);
     try {
       await _gateway.cancelImport(session.jobId!);
     } catch (error) {
@@ -4061,14 +3706,10 @@ class WorkspaceController extends ChangeNotifier {
         error.toString(),
         phase: SqliteImportJobPhase.failed,
       );
-      _logError(
-        'cancel_sqlite_import',
-        'SQLite import cancellation failed.',
-        category: 'import.sqlite',
+      _logger.error(operation: 'cancel_sqlite_import', message: 'SQLite import cancellation failed.', category: 'import.sqlite',
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         error: error,
-        details: <String, Object?>{'job_id': session.jobId},
-      );
+        details: <String, Object?>{'job_id': session.jobId},);
     }
   }
 
@@ -4259,10 +3900,7 @@ class WorkspaceController extends ChangeNotifier {
         rowsAffected: rowsAffected,
       );
     } catch (error, stackTrace) {
-      _logWarning(
-        'update_result_cell',
-        'Table cell update failed.',
-        category: 'query',
+      _logger.warning(operation: 'update_result_cell', message: 'Table cell update failed.', category: 'query',
         databasePath: databasePath,
         sql: sql,
         error: error,
@@ -4271,8 +3909,7 @@ class WorkspaceController extends ChangeNotifier {
           'tab_id': resolvedTabId,
           'table': tableName,
           'column': sourceColumn,
-        },
-      );
+        },);
       final failure = QueryErrorDetails.fromError(
         error,
         stage: QueryErrorStage.validation,
@@ -4394,16 +4031,12 @@ class WorkspaceController extends ChangeNotifier {
         rowsAffected: rowsAffected,
       );
     } catch (error, stackTrace) {
-      _logWarning(
-        'insert_result_row',
-        'Table row insert failed.',
-        category: 'query',
+      _logger.warning(operation: 'insert_result_row', message: 'Table row insert failed.', category: 'query',
         databasePath: databasePath,
         sql: sql,
         error: error,
         stackTrace: stackTrace,
-        details: <String, Object?>{'tab_id': resolvedTabId, 'table': tableName},
-      );
+        details: <String, Object?>{'tab_id': resolvedTabId, 'table': tableName},);
       final failure = QueryErrorDetails.fromError(
         error,
         stage: QueryErrorStage.validation,
@@ -4495,16 +4128,12 @@ class WorkspaceController extends ChangeNotifier {
         rowsAffected: rowsAffected,
       );
     } catch (error, stackTrace) {
-      _logWarning(
-        'delete_result_row',
-        'Table row delete failed.',
-        category: 'query',
+      _logger.warning(operation: 'delete_result_row', message: 'Table row delete failed.', category: 'query',
         databasePath: databasePath,
         sql: sql,
         error: error,
         stackTrace: stackTrace,
-        details: <String, Object?>{'tab_id': resolvedTabId, 'table': tableName},
-      );
+        details: <String, Object?>{'tab_id': resolvedTabId, 'table': tableName},);
       final failure = QueryErrorDetails.fromError(
         error,
         stage: QueryErrorStage.validation,
@@ -5021,15 +4650,11 @@ class WorkspaceController extends ChangeNotifier {
         notify: false,
       );
       _safeNotify();
-      _logWarning(
-        'load_execution_plan',
-        'Execution plan could not be loaded.',
-        category: 'query',
+      _logger.warning(operation: 'load_execution_plan', message: 'Execution plan could not be loaded.', category: 'query',
         databasePath: databasePath,
         sql: sql,
         error: error,
-        details: <String, Object?>{'tab_id': tabId},
-      );
+        details: <String, Object?>{'tab_id': tabId},);
     }
   }
 
@@ -5213,25 +4838,21 @@ class WorkspaceController extends ChangeNotifier {
       notify: false,
     );
     _safeNotify();
-    _logError(
-      'tab_error',
-      error.message,
-      category: 'query',
+    _logger.error(operation: 'tab_error', message: error.message, category: 'query',
       databasePath: databasePath,
       details: <String, Object?>{
         'tab_id': tabId,
         'stage': error.stage.name,
         if (error.code != null) 'code': error.code,
         if (error.location != null) 'location': error.location!.shortLabel,
-      },
-    );
+      },);
   }
 
   void _setWorkspaceError(String message) {
     workspaceError = message;
     workspaceMessage = null;
     _safeNotify();
-    _logError('workspace_error', message, databasePath: databasePath);
+    _logger.error(category: 'workspace', operation: 'workspace_error', message: message, databasePath: databasePath);
   }
 
   String? _validateAppConfig(AppConfig next) {
@@ -5299,24 +4920,16 @@ class WorkspaceController extends ChangeNotifier {
         workspaceMessage = statusMessage;
         workspaceError = null;
       }
-      _logInfo(
-        'persist_config',
-        'Persisted application configuration.',
-        category: 'config',
+      _logger.info(operation: 'persist_config', message: 'Persisted application configuration.', category: 'config',
         details: <String, Object?>{
           'theme_id': config.appearance.activeTheme,
           'verbosity': config.logging.verbosity.name,
-        },
-      );
+        },);
     } catch (error) {
       workspaceError = error.toString();
       workspaceMessage = null;
-      _logError(
-        'persist_config',
-        'Persisting application configuration failed.',
-        category: 'config',
-        error: error,
-      );
+      _logger.error(operation: 'persist_config', message: 'Persisting application configuration failed.', category: 'config',
+        error: error,);
     } finally {
       _safeNotify();
     }
@@ -5328,7 +4941,7 @@ class WorkspaceController extends ChangeNotifier {
       workspaceError = message;
       workspaceMessage = null;
       _safeNotify();
-      _logError('sql_dump_import_error', message, category: 'import.sql_dump');
+      _logger.error(operation: 'sql_dump_import_error', message: message, category: 'import.sql_dump');
       return;
     }
     sqlDumpImportSession = session.copyWith(
@@ -5340,15 +4953,11 @@ class WorkspaceController extends ChangeNotifier {
       workspaceMessage = null;
     }
     _safeNotify();
-    _logError(
-      'sql_dump_import_error',
-      message,
-      category: 'import.sql_dump',
+    _logger.error(operation: 'sql_dump_import_error', message: message, category: 'import.sql_dump',
       details: <String, Object?>{
         'phase': (phase ?? session.phase).name,
         'source_path': session.sourcePath,
-      },
-    );
+      },);
   }
 
   void _setExcelImportError(String message, {ExcelImportJobPhase? phase}) {
@@ -5357,7 +4966,7 @@ class WorkspaceController extends ChangeNotifier {
       workspaceError = message;
       workspaceMessage = null;
       _safeNotify();
-      _logError('excel_import_error', message, category: 'import.excel');
+      _logger.error(operation: 'excel_import_error', message: message, category: 'import.excel');
       return;
     }
     excelImportSession = session.copyWith(
@@ -5369,15 +4978,11 @@ class WorkspaceController extends ChangeNotifier {
       workspaceMessage = null;
     }
     _safeNotify();
-    _logError(
-      'excel_import_error',
-      message,
-      category: 'import.excel',
+    _logger.error(operation: 'excel_import_error', message: message, category: 'import.excel',
       details: <String, Object?>{
         'phase': (phase ?? session.phase).name,
         'source_path': session.sourcePath,
-      },
-    );
+      },);
   }
 
   void _setSqliteImportError(String message, {SqliteImportJobPhase? phase}) {
@@ -5386,7 +4991,7 @@ class WorkspaceController extends ChangeNotifier {
       workspaceError = message;
       workspaceMessage = null;
       _safeNotify();
-      _logError('sqlite_import_error', message, category: 'import.sqlite');
+      _logger.error(operation: 'sqlite_import_error', message: message, category: 'import.sqlite');
       return;
     }
     sqliteImportSession = session.copyWith(
@@ -5398,15 +5003,11 @@ class WorkspaceController extends ChangeNotifier {
       workspaceMessage = null;
     }
     _safeNotify();
-    _logError(
-      'sqlite_import_error',
-      message,
-      category: 'import.sqlite',
+    _logger.error(operation: 'sqlite_import_error', message: message, category: 'import.sqlite',
       details: <String, Object?>{
         'phase': (phase ?? session.phase).name,
         'source_path': session.sourcePath,
-      },
-    );
+      },);
   }
 
   void _mutateSqlDumpImportTable(
@@ -5477,6 +5078,7 @@ class WorkspaceController extends ChangeNotifier {
     final updated = <QueryTabState>[...tabs];
     updated[index] = transform(updated[index]);
     tabs = updated;
+    _queryHistoryCache = null;
     if (persist) {
       _scheduleWorkspaceStateSave();
     }
@@ -5499,6 +5101,7 @@ class WorkspaceController extends ChangeNotifier {
       ),
     ];
     _activeTabId = tabs.first.id;
+    _queryHistoryCache = null;
     if (notify) {
       _safeNotify();
     }
@@ -5534,6 +5137,7 @@ class WorkspaceController extends ChangeNotifier {
         restoredTabs.any((tab) => tab.id == persistedState.activeTabId)
         ? persistedState.activeTabId
         : restoredTabs.first.id;
+    _queryHistoryCache = null;
     _trimQueryHistoriesToLimit();
     _recomputeTabCounters();
     if (notify) {
@@ -5596,15 +5200,11 @@ class WorkspaceController extends ChangeNotifier {
   Future<void> _restoreStartupQueryState() async {
     final replay = _latestRestorableQuery();
     if (replay != null) {
-      _logInfo(
-        'restore_startupup_query',
-        'Replaying saved query from history.',
-        sql: replay.entry.sql,
+      _logger.info(category: 'workspace', operation: 'restore_startupup_query', message: 'Replaying saved query from history.', sql: replay.entry.sql,
         details: <String, Object?>{
           'tab_id': replay.tabId,
           'ran_at': replay.entry.ranAt.toIso8601String(),
-        },
-      );
+        },);
       _activeTabId = replay.tabId;
       loadHistoryEntryIntoTab(replay.tabId, replay.entry);
       await runTab(replay.tabId);
@@ -5619,12 +5219,8 @@ class WorkspaceController extends ChangeNotifier {
         'SELECT *\n'
         'FROM ${_quoteIdentifier(firstTable)}\n'
         'LIMIT ${config.defaultPageSize};';
-    _logInfo(
-      'restore_startup_query',
-      'No restorable query found, running fallback table preview.',
-      sql: fallbackSql,
-      details: <String, Object?>{'table': firstTable},
-    );
+    _logger.info(category: 'workspace', operation: 'restore_startup_query', message: 'No restorable query found, running fallback table preview.', sql: fallbackSql,
+      details: <String, Object?>{'table': firstTable},);
     _mutateActiveTab(
       (tab) => tab.copyWith(sql: fallbackSql, parameterJson: ''),
       persist: true,
@@ -5696,12 +5292,8 @@ class WorkspaceController extends ChangeNotifier {
     try {
       await _workspaceStateStore.save(targetPath, _serializeWorkspaceState());
     } catch (error) {
-      _logError(
-        'persist_workspace_state',
-        'Could not save workspace state.',
-        databasePath: targetPath,
-        error: error,
-      );
+      _logger.error(category: 'workspace', operation: 'persist_workspace_state', message: 'Could not save workspace state.', databasePath: targetPath,
+        error: error,);
       workspaceError = 'Could not save workspace state: $error';
       workspaceMessage = null;
       _safeNotify();
@@ -5713,13 +5305,9 @@ class WorkspaceController extends ChangeNotifier {
       savedQueryLibrary = await _savedQueryLibraryStore.load(databasePath);
     } catch (error, stackTrace) {
       savedQueryLibrary = SavedQueryLibrary.empty;
-      _logWarning(
-        'load_saved_query_library',
-        'Could not load saved query library.',
-        databasePath: databasePath,
+      _logger.warning(category: 'workspace', operation: 'load_saved_query_library', message: 'Could not load saved query library.', databasePath: databasePath,
         error: error,
-        stackTrace: stackTrace,
-      );
+        stackTrace: stackTrace,);
     }
   }
 
@@ -5731,13 +5319,9 @@ class WorkspaceController extends ChangeNotifier {
     try {
       await _savedQueryLibraryStore.save(targetPath, savedQueryLibrary);
     } catch (error, stackTrace) {
-      _logError(
-        'persist_saved_query_library',
-        'Could not save query library.',
-        databasePath: targetPath,
+      _logger.error(category: 'workspace', operation: 'persist_saved_query_library', message: 'Could not save query library.', databasePath: targetPath,
         error: error,
-        stackTrace: stackTrace,
-      );
+        stackTrace: stackTrace,);
       workspaceError = 'Could not save query library: $error';
       workspaceMessage = null;
     }

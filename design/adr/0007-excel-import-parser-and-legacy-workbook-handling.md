@@ -1,6 +1,6 @@
 ## Excel Import Parser And Legacy Workbook Handling
 **Date:** 2026-03-10
-**Status:** Accepted
+**Status:** Superseded by ADR 0012
 
 ### Decision
 
