@@ -307,10 +307,14 @@ Future<SqliteImportSummary> _runSqliteImport({
       await Future<void>.delayed(Duration.zero);
     }
 
+    target.commit();
+    transactionOpen = false;
+
     for (var i = 0; i < orderedTables.length; i++) {
       final table = orderedTables[i];
       _throwIfCancelled(isCancelled);
-      target.savepoint('_import_table_$i');
+      target.begin();
+      transactionOpen = true;
       final copied = await _copyTableData(
         source: source,
         target: target,
@@ -325,7 +329,8 @@ Future<SqliteImportSummary> _runSqliteImport({
         sendUpdate: sendUpdate,
         isCancelled: isCancelled,
       );
-      target.releaseSavepoint('_import_table_$i');
+      target.commit();
+      transactionOpen = false;
       rowsCopied[table.targetName] = copied;
       sendUpdate(
         SqliteImportUpdate(
@@ -346,39 +351,15 @@ Future<SqliteImportSummary> _runSqliteImport({
           ),
         ),
       );
+      logger.info('Table copy committed.',
+          properties: <String, Object?>{
+            'table': table.targetName,
+            'rows_copied': copied,
+            'completed_tables': i + 1,
+            'total_tables': orderedTables.length,
+          });
       await Future<void>.delayed(Duration.zero);
     }
-
-    logger.info('Data copy phase complete. Committing transaction.',
-        properties: <String, Object?>{
-          'tables_copied': rowsCopied.length,
-          'total_rows': rowsCopied.values.fold<int>(0, (sum, v) => sum + v),
-        });
-
-    sendUpdate(
-      SqliteImportUpdate(
-        kind: SqliteImportUpdateKind.progress,
-        jobId: request.jobId,
-        progress: SqliteImportProgress(
-          jobId: request.jobId,
-          currentTable: '',
-          completedTables: orderedTables.length,
-          totalTables: orderedTables.length,
-          currentTableRowsCopied: 0,
-          currentTableRowCount: 0,
-          totalRowsCopied: rowsCopied.values.fold<int>(
-            0,
-            (sum, value) => sum + value,
-          ),
-          message: 'Committing imported data...',
-        ),
-      ),
-    );
-    await Future<void>.delayed(Duration.zero);
-
-    target.commit();
-    transactionOpen = false;
-    target.checkpoint();
 
     final totalIndexCount = orderedTables.fold<int>(
       0,
@@ -449,6 +430,26 @@ Future<SqliteImportSummary> _runSqliteImport({
           'indexes_created': indexesCreated.length,
           'indexes_skipped': skippedItems.length,
         });
+    sendUpdate(
+      SqliteImportUpdate(
+        kind: SqliteImportUpdateKind.progress,
+        jobId: request.jobId,
+        progress: SqliteImportProgress(
+          jobId: request.jobId,
+          currentTable: '',
+          completedTables: orderedTables.length,
+          totalTables: orderedTables.length,
+          currentTableRowsCopied: 0,
+          currentTableRowCount: 0,
+          totalRowsCopied: rowsCopied.values.fold<int>(
+            0,
+            (sum, value) => sum + value,
+          ),
+          message: 'Finalizing database (checkpoint and cleanup)...',
+        ),
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
     target.checkpoint();
     final schema = target.schema;
     final storage = target.inspectStorageState();
