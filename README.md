@@ -34,7 +34,11 @@
 </p>
 
 <p align="center">
-  <img src="assets/screenshot.png" alt="Decent Bench App Screenshot" width="800" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+  <a href="assets/screenshots.html">
+    <img src="assets/screenshot.png" alt="Decent Bench App Screenshot" width="800" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+  </a>
+  <br>
+  <sub><a href="assets/screenshots.html">View all screenshots &rarr;</a></sub>
 </p>
 
 ---
