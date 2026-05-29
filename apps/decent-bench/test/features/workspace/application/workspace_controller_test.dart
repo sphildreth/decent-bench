@@ -631,11 +631,11 @@ void main() {
         final controller = _createController();
 
         await controller.initialize();
-        await controller.openDatabase(dbPath, createIfMissing: true);
+      await controller.openDatabase(dbPath, createIfMissing: true);
 
-        expect(controller.databasePath, dbPath);
-        expect(controller.workspaceError, isNull);
-        expect(controller.canUseNativeBranchWorkflow, isFalse);
+      expect(controller.databasePath, dbPath);
+      expect(controller.workspaceError, isNull);
+      expect(controller.canUseNativeBranchWorkflow, isFalse);
         expect(
           controller.branchState.nativeBranchApiUnavailableReason,
           contains('public Dart binding API'),
@@ -676,6 +676,7 @@ void main() {
 
       await controller.initialize();
       await controller.openDatabase(dbPath, createIfMissing: true);
+      await controller.refreshBranchState();
 
       expect(controller.canUseNativeBranchWorkflow, isTrue);
       expect(controller.branchState.currentBranch, 'main');
@@ -732,6 +733,7 @@ void main() {
 
         await controller.initialize();
         await controller.openDatabase(dbPath, createIfMissing: true);
+        await controller.refreshBranchState();
         controller.updateActiveSql('DELETE FROM tasks WHERE id = 1');
 
         await controller.runSqlOnNewBranch(controller.activeTab.sql);
