@@ -58,6 +58,7 @@ class PanelCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                // ignore: use_null_aware_elements
                 if (actions != null) ...actions!,
               ],
             ),
