@@ -63,7 +63,7 @@
 - 🛠️ **Modern SQL Workbench:** Iterate in a multi-tab editor with isolated per-tab results, schema-aware autocomplete, editable snippets, deterministic formatting, typed parameter fields, per-tab query history, and a searchable command palette.
 - ⚡ **Performance-Focused:** Background imports, paginated/streamed results grids, and best-effort query cancellation ensure the UI never freezes.
 - 🧭 **Rich Engine Metadata:** Schema browsing is powered by DecentDB's rich
-  upstream schema snapshot (tables/views/indexes/triggers, checks, foreign keys,
+   upstream schema snapshot (tables/views/indexes/triggers, checks, foreign keys,
    generated columns, temp-object metadata, and canonical DDL), with v2.8.x
   tooling metadata and query contracts used for schema fingerprints, parameter
   types, and result-column types.
@@ -91,7 +91,7 @@
   destructive statements. Native branch execution is surfaced as unavailable
   until the Dart binding exposes public branch APIs.
 - 🎨 **Workspace Persistence:** Application preferences, including desktop window size, state, and monitor placement, are stored as TOML. Per-database workspace state is stored separately for reliable tab and query restoration.
-- 🪵 **Operational Visibility:** Open the DecentDB-backed application log database directly from `Tools -> View Log`.
+- 🪵 **Operational Visibility:** Open application logs from `Tools -> View Logs`. Structured JSON.CLEF log files are written per session to a configurable log directory (default `logs/` under the app config path).
 - 🧪 **Import Validation:** Blocking failure dialogs and richer import summaries make unsuccessful imports obvious and successful imports easier to verify.
 - 📤 **Typed Exports:** CSV, JSON, NDJSON, and Excel export stream result pages
   and preserve DecentDB v2.8.x native value metadata where the format supports
@@ -254,8 +254,7 @@ directory:
 Typical files under that root include:
 - `config.toml` for application preferences
 - per-workspace `.json` state files for saved tabs/history/restoration
-- `decent-bench-log.ddb` for the application log database opened by
-  `Tools -> View Log`
+- `logs/` directory containing per-session JSON.CLEF log files
 
 **Project Source of Truth:**
 - 📐 [`design/PRD.md`](design/PRD.md) — Product goals and user journeys
