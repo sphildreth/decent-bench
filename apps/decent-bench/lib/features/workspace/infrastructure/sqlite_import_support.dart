@@ -2032,7 +2032,10 @@ Object? _adaptImportValue(Object? value, String targetType) {
     return Uint8List.fromList(value.codeUnits);
   }
   if (targetType == 'TIMESTAMP') {
-    return tryParseSqliteTimestampValue(value) ?? value;
+    return tryParseSqliteTimestampValue(value) ??
+        (value is String && value.trim().isEmpty
+            ? DateTime.fromMicrosecondsSinceEpoch(0, isUtc: true)
+            : null);
   }
   if (_isDecimalType(targetType) && value is num) {
     return value.toString();
@@ -2266,6 +2269,12 @@ DateTime? tryParseSqliteTimestampValue(Object? value, {String? columnName}) {
 
   final trimmed = value.trim();
   if (trimmed.isEmpty) {
+    return null;
+  }
+
+  final normalized = trimmed.replaceAll('-', '0').replaceAll(':', '0')
+      .replaceAll('T', '0').replaceAll(' ', '0').replaceAll('.', '0');
+  if (RegExp(r'^0+$').hasMatch(normalized)) {
     return null;
   }
 
