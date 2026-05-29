@@ -457,6 +457,8 @@ Future<ExcelImportSummary> _runExcelImport({
           // Best-effort rollback for cancellation.
         }
       }
+      target.close();
+      _deleteTargetFiles(request.targetPath);
       final summary = ExcelImportSummary(
         jobId: request.jobId,
         sourcePath: request.sourcePath,
@@ -477,6 +479,8 @@ Future<ExcelImportSummary> _runExcelImport({
           // Best-effort rollback on failure.
         }
       }
+      target.close();
+      _deleteTargetFiles(request.targetPath);
       rethrow;
     } finally {
       target.close();
@@ -2340,6 +2344,27 @@ _LoadedWorkbook _loadWorkbookFromSource(String sourcePath) {
 void _throwIfCancelled(bool Function() isCancelled) {
   if (isCancelled()) {
     throw const _ExcelImportCancelledSignal();
+  }
+}
+
+void _deleteTargetFiles(String targetPath) {
+  final candidates = [
+    targetPath,
+    '$targetPath-wal',
+    '$targetPath-shm',
+    '$targetPath-journal',
+    '$targetPath.coord',
+    '$targetPath.lock',
+  ];
+  for (final path in candidates) {
+    final file = File(path);
+    if (file.existsSync()) {
+      try {
+        file.deleteSync();
+      } catch (_) {
+        // Best-effort cleanup.
+      }
+    }
   }
 }
 

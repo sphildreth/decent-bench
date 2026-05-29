@@ -499,7 +499,7 @@ void main() {
       );
       final metadata = ToolingMetadata(
         metadataVersion: 1,
-        engineVersion: '2.5.2',
+        engineVersion: '2.8.0',
         databaseFormatVersion: 8,
         schemaCookie: 12,
         tempSchemaCookie: 2,
@@ -566,7 +566,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Engine 2.5.2'), findsOneWidget);
+      expect(find.text('Engine 2.8.0'), findsOneWidget);
       expect(find.text('Branch analysis'), findsOneWidget);
       expect(find.text('Schema abcdef012345'), findsOneWidget);
       expect(find.text('Temporary'), findsOneWidget);

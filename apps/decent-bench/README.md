@@ -23,7 +23,7 @@ Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
   them into the normal generic or dedicated import path
 - desktop runner folders (`linux/`, `macos/`, `windows/`) are checked in
 - the DecentDB Dart package is pinned from the upstream Git tag
-  (`https://github.com/sphildreth/decentdb`), currently `v2.6.0`, and desktop
+   (`https://github.com/sphildreth/decentdb`), currently `v2.8.0`, and desktop
   packaging stages the matching `decentdb-dart-native-<tag>-...` release asset
   plus the official `decentdb-migrate` and `decentdb` CLI tools from the full
   release asset
@@ -43,17 +43,18 @@ Bench `2.0.0`, which builds on the project's shipped `1.0.0` MVP release.
 - schema browsing is backed by DecentDB's rich schema snapshot surface
   (`Schema.getSchemaSnapshot()`), including canonical DDL, checks, foreign keys,
   generated-column metadata, triggers, and temp-object metadata
-- DecentDB v2.6.x tooling metadata and query contracts flow through the bridge
+- DecentDB v2.8.x tooling metadata and query contracts flow through the bridge
   for schema fingerprints, parameter contracts, and result-column contracts
 - read-only ERD viewing uses the loaded schema snapshot to draw table nodes,
   foreign-key edges, missing-reference placeholders, search/filter context, and
   table-preview navigation without adding schema-design or mutation workflows
-- DecentDB v2.6.x native semantic/spatial types have first-class display
+- DecentDB v2.8.x native semantic/spatial types have first-class display
   helpers for schema details, result cells, autocomplete/snippets, import type
   overrides, WKB copy, and CSV export formatting
-- DecentDB v2.6.0 operational metrics, queued writes, SQL compatibility, local
-  Web Console launch, sync/reactive inspection, and Lua extension discovery are
-  wired into the desktop workbench within the documented ADR boundaries
+- DecentDB v2.8.0 operational metrics, process coordination, queued writes,
+   SQL compatibility, local Web Console launch, sync/reactive inspection,
+   structured error diagnostics, and Lua extension discovery are wired into the
+   desktop workbench within the documented ADR boundaries
 - JSON and NDJSON result export reuse the paged query pipeline and can include
   column type metadata plus schema fingerprints
 - ERD image export writes full-diagram or viewport PNG/JPG files with safe
@@ -77,7 +78,7 @@ dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle
 dart run tool/stage_decentdb_native.dart --bundle build/linux/x64/release/bundle --verify-only
 ```
 
-The app expects a compatible DecentDB v2.6.0 native library to be available via:
+The app expects a compatible DecentDB v2.8.0 native library to be available via:
 
 1. System library paths (`/usr/local/lib/`, `~/.local/lib/`)
 2. Bundled with the app

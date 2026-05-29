@@ -24,8 +24,25 @@ enum QueryHistoryOutcome { completed, failed, cancelled }
 class BridgeFailure implements Exception {
   final String message;
   final String? code;
+  final String? subcode;
+  final bool retryable;
+  final bool permanent;
+  final String? sqlstate;
+  final String? docAnchor;
+  final String? diagnosticJson;
 
-  const BridgeFailure(this.message, {this.code});
+  const BridgeFailure(
+    this.message, {
+    this.code,
+    this.subcode,
+    this.retryable = false,
+    this.permanent = false,
+    this.sqlstate,
+    this.docAnchor,
+    this.diagnosticJson,
+  });
+
+  bool get hasStructuredDiagnostic => diagnosticJson != null;
 
   @override
   String toString() => code == null ? message : '$code: $message';
@@ -37,12 +54,22 @@ class QueryErrorDetails {
     required this.message,
     this.code,
     this.location,
+    this.subcode,
+    this.retryable = false,
+    this.permanent = false,
+    this.sqlstate,
+    this.docAnchor,
   });
 
   final QueryErrorStage stage;
   final String message;
   final String? code;
   final QueryErrorLocation? location;
+  final String? subcode;
+  final bool retryable;
+  final bool permanent;
+  final String? sqlstate;
+  final String? docAnchor;
 
   factory QueryErrorDetails.fromError(
     Object error, {
@@ -62,6 +89,11 @@ class QueryErrorDetails {
         stage: error.stage,
         message: error.message,
         code: error.code,
+        subcode: error.subcode,
+        retryable: error.retryable,
+        permanent: error.permanent,
+        sqlstate: error.sqlstate,
+        docAnchor: error.docAnchor,
         location: resolveQueryErrorLocation(
           message: error.message,
           executedSql: executedSql,
@@ -72,6 +104,11 @@ class QueryErrorDetails {
     }
     final message = error is BridgeFailure ? error.message : error.toString();
     final code = error is BridgeFailure ? error.code : null;
+    final subcode = error is BridgeFailure ? error.subcode : null;
+    final retryable = error is BridgeFailure && error.retryable;
+    final permanent = error is BridgeFailure && error.permanent;
+    final sqlstate = error is BridgeFailure ? error.sqlstate : null;
+    final docAnchor = error is BridgeFailure ? error.docAnchor : null;
     final location =
         executedSql != null &&
             bufferText != null &&
@@ -83,18 +120,15 @@ class QueryErrorDetails {
             bufferStartOffset: bufferStartOffset,
           )
         : null;
-    if (error is BridgeFailure) {
-      return QueryErrorDetails(
-        stage: stage,
-        message: message,
-        code: code,
-        location: location,
-      );
-    }
     return QueryErrorDetails(
       stage: stage,
       message: message,
       code: code,
+      subcode: subcode,
+      retryable: retryable,
+      permanent: permanent,
+      sqlstate: sqlstate,
+      docAnchor: docAnchor,
       location: location,
     );
   }
@@ -120,6 +154,21 @@ class QueryErrorDetails {
       ..writeln('Message: $message');
     if (code != null) {
       buffer.writeln('Code: $code');
+    }
+    if (subcode != null) {
+      buffer.writeln('Subcode: $subcode');
+    }
+    if (sqlstate != null) {
+      buffer.writeln('SQLSTATE: $sqlstate');
+    }
+    if (retryable) {
+      buffer.writeln('Retryable: yes');
+    }
+    if (permanent) {
+      buffer.writeln('Permanent: yes');
+    }
+    if (docAnchor != null) {
+      buffer.writeln('Docs: $docAnchor');
     }
     if (location != null) {
       buffer.writeln('Location: ${location!.shortLabel}');

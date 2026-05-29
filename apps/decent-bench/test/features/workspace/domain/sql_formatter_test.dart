@@ -46,7 +46,7 @@ void main() {
     );
   });
 
-  test('uppercases phase-1 v2.6 keywords and functions', () {
+  test('uppercases phase-1 v2.8 keywords and functions', () {
     final formatted = formatter.format(
       'pragma user_version = 7; select * from generate_series(1, 3) '
       'order by value collate nocase, value collate rtrim, value collate binary',

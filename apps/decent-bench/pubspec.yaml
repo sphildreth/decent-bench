@@ -13,7 +13,7 @@ dependencies:
     git:
       url: https://github.com/sphildreth/decentdb.git
       path: bindings/dart/dart
-      ref: v2.7.0
+      ref: v2.8.0
   path: ^1.9.0
   sqlite3: ^3.2.0
   excel: ^4.0.6

@@ -273,6 +273,8 @@ Future<SqliteImportSummary> _runSqliteImport({
 
     for (var i = 0; i < orderedTables.length; i++) {
       final table = orderedTables[i];
+      _throwIfCancelled(isCancelled);
+      target.savepoint('_import_table_$i');
       final copied = await _copyTableData(
         source: source,
         target: target,
@@ -287,7 +289,28 @@ Future<SqliteImportSummary> _runSqliteImport({
         sendUpdate: sendUpdate,
         isCancelled: isCancelled,
       );
+      target.releaseSavepoint('_import_table_$i');
       rowsCopied[table.targetName] = copied;
+      sendUpdate(
+        SqliteImportUpdate(
+          kind: SqliteImportUpdateKind.progress,
+          jobId: request.jobId,
+          progress: SqliteImportProgress(
+            jobId: request.jobId,
+            currentTable: table.targetName,
+            completedTables: i + 1,
+            totalTables: orderedTables.length,
+            currentTableRowsCopied: copied,
+            currentTableRowCount: table.rowCount,
+            totalRowsCopied: rowsCopied.values.fold<int>(
+              0,
+              (sum, value) => sum + value,
+            ),
+            message: 'Completed ${table.targetName} ($copied rows).',
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
     }
 
     for (final table in orderedTables) {
@@ -372,6 +395,11 @@ Future<SqliteImportSummary> _runSqliteImport({
         // Best-effort rollback for cancellation.
       }
     }
+    target?.close();
+    target = null;
+    if (!request.importIntoExistingTarget) {
+      _deleteTargetFiles(request.targetPath);
+    }
     final summary = SqliteImportSummary(
       jobId: request.jobId,
       sourcePath: request.sourcePath,
@@ -398,6 +426,11 @@ Future<SqliteImportSummary> _runSqliteImport({
       } catch (_) {
         // Best-effort rollback on failure.
       }
+    }
+    target?.close();
+    target = null;
+    if (!request.importIntoExistingTarget) {
+      _deleteTargetFiles(request.targetPath);
     }
     rethrow;
   } finally {
@@ -483,6 +516,27 @@ Future<int> _copyTableData({
     sourceStatement.close();
   }
   return copied;
+}
+
+void _deleteTargetFiles(String targetPath) {
+  final candidates = [
+    targetPath,
+    '$targetPath-wal',
+    '$targetPath-shm',
+    '$targetPath-journal',
+    '$targetPath.coord',
+    '$targetPath.lock',
+  ];
+  for (final path in candidates) {
+    final file = File(path);
+    if (file.existsSync()) {
+      try {
+        file.deleteSync();
+      } catch (_) {
+        // Best-effort cleanup.
+      }
+    }
+  }
 }
 
 void _validateRequestNames(SqliteImportRequest request) {

@@ -550,6 +550,8 @@ Future<SqlDumpImportSummary> _runSqlDumpImport({
         // Best-effort rollback for cancellation.
       }
     }
+    target.close();
+    _deleteTargetFiles(request.targetPath);
     final summary = SqlDumpImportSummary(
       jobId: request.jobId,
       sourcePath: request.sourcePath,
@@ -571,6 +573,8 @@ Future<SqlDumpImportSummary> _runSqlDumpImport({
         // Best-effort rollback on failure.
       }
     }
+    target.close();
+    _deleteTargetFiles(request.targetPath);
     rethrow;
   } finally {
     target.close();
@@ -1744,6 +1748,27 @@ Uint8List _uuidBytesFromString(String value) {
 void _throwIfCancelled(bool Function() isCancelled) {
   if (isCancelled()) {
     throw const _SqlDumpImportCancelledSignal();
+  }
+}
+
+void _deleteTargetFiles(String targetPath) {
+  final candidates = [
+    targetPath,
+    '$targetPath-wal',
+    '$targetPath-shm',
+    '$targetPath-journal',
+    '$targetPath.coord',
+    '$targetPath.lock',
+  ];
+  for (final path in candidates) {
+    final file = File(path);
+    if (file.existsSync()) {
+      try {
+        file.deleteSync();
+      } catch (_) {
+        // Best-effort cleanup.
+      }
+    }
   }
 }
 

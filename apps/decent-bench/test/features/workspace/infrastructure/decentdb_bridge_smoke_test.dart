@@ -11,6 +11,7 @@ import 'package:decent_bench/features/workspace/domain/sql_dump_import_models.da
 import 'package:decent_bench/features/workspace/domain/sqlite_import_models.dart';
 import 'package:decent_bench/features/workspace/domain/workspace_models.dart';
 import 'package:decent_bench/features/workspace/infrastructure/decentdb_bridge.dart';
+import 'package:decent_bench/features/workspace/infrastructure/decentdb_native_release_asset.dart';
 import 'package:decent_bench/features/workspace/infrastructure/native_library_resolver.dart';
 import 'package:excel/excel.dart' as xls;
 import 'package:flutter_test/flutter_test.dart';
@@ -36,8 +37,20 @@ String? _resolveNativeLib() {
   return null;
 }
 
-void main() {
-  final nativeLib = _resolveNativeLib();
+Future<String?> _resolveNativeLibOrDownload() async {
+  final cached = _resolveNativeLib();
+  if (cached != null) {
+    return cached;
+  }
+  try {
+    return await DecentDbNativeReleaseAsset.ensureAvailableForCurrentProject();
+  } catch (_) {
+    return null;
+  }
+}
+
+void main() async {
+  final nativeLib = await _resolveNativeLibOrDownload();
   final skipReason = nativeLib == null
       ? 'DecentDB native library is unavailable'
       : null;
@@ -1113,7 +1126,7 @@ ORDER BY dept
     });
 
     test(
-      'supports v2.6 pragma probes and SQL parity inspection surfaces',
+      'supports v2.8 pragma probes and SQL parity inspection surfaces',
       skip: skipReason,
       () async {
         await exec(
@@ -1179,6 +1192,9 @@ ORDER BY dept
           'sys.extension_collations',
           'sys.extension_dependencies',
           'sys.extension_validation',
+          'sys.process_coordination',
+          'sys.process_readers',
+          'sys.process_lock_metrics',
         ]) {
           final view = metrics.view(name);
           expect(view, isNotNull, reason: name);
@@ -1324,6 +1340,72 @@ ORDER BY dept
       );
       expect(rows.single['row_count'], 2);
     });
+
+    test(
+      'exercises v2.8.0 default-fast prepared INSERT, COUNT(*), and integer PK '
+      'projection lookup',
+      skip: skipReason,
+      () async {
+        await exec(
+          'CREATE TABLE fast_items '
+          '(id INTEGER PRIMARY KEY, label TEXT NOT NULL, value REAL)',
+        );
+        await exec("INSERT INTO fast_items VALUES (1, 'alpha', 10.0)");
+        await exec("INSERT INTO fast_items VALUES (2, 'beta', 20.0)");
+        await exec("INSERT INTO fast_items VALUES (3, 'gamma', 30.0)");
+
+        final countRows = await queryAllRows(
+          'SELECT COUNT(*) AS cnt FROM fast_items',
+        );
+        expect(countRows.single['cnt'], 3);
+
+        final lookupRows = await queryAllRows(
+          'SELECT label, value FROM fast_items WHERE id = 2',
+        );
+        expect(lookupRows.single['label'], 'beta');
+        expect(lookupRows.single['value'], 20.0);
+
+        final aggRows = await queryAllRows(
+          'SELECT SUM(value) AS total FROM fast_items',
+        );
+        expect(aggRows.single['total'], 60.0);
+      },
+    );
+
+    test(
+      'exercises v2.8.0 covering-index INCLUDE projection reads',
+      skip: skipReason,
+      () async {
+        await exec(
+          'CREATE TABLE ci_items '
+          '(id INTEGER PRIMARY KEY, label TEXT NOT NULL, tag TEXT)',
+        );
+        await exec("INSERT INTO ci_items VALUES (1, 'a', 'x')");
+        await exec("INSERT INTO ci_items VALUES (2, 'b', 'y')");
+        await exec(
+          'CREATE INDEX idx_ci_label_tag ON ci_items (label) INCLUDE (tag)',
+        );
+
+        final rows = await queryAllRows(
+          "SELECT label, tag FROM ci_items WHERE label = 'b'",
+        );
+        expect(rows.single['label'], 'b');
+        expect(rows.single['tag'], 'y');
+      },
+    );
+
+    test(
+      'reports v2.8.0 storage split (database vs WAL) metadata',
+      skip: skipReason,
+      () async {
+        final metrics = await bridge.loadOperationalMetrics();
+        final storageView = metrics.view('sys.storage_metrics');
+        expect(storageView, isNotNull);
+        expect(storageView!.available, isTrue);
+        expect(storageView.columns, isNotEmpty);
+        expect(storageView.rows, isNotEmpty);
+      },
+    );
 
     test(
       'inspects SQLite sources and loads preview rows',

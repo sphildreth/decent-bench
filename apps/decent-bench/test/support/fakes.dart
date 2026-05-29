@@ -346,7 +346,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   );
   ToolingMetadata toolingMetadata = const ToolingMetadata(
     metadataVersion: 1,
-    engineVersion: '2.6.0',
+    engineVersion: '2.8.0',
     databaseFormatVersion: 8,
     schemaCookie: 1,
     tempSchemaCookie: 0,

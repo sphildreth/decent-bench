@@ -143,7 +143,7 @@ void main() {
     );
   });
 
-  test('suggests v2.6 SQL parity keywords, functions, and qualifiers', () {
+  test('suggests v2.8 SQL parity keywords, functions, and qualifiers', () {
     final config = AppConfig.defaults();
     final pragmaResult = engine.suggest(
       sql: 'pra',

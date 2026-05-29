@@ -8,24 +8,31 @@ This file records notable project changes. It follows the
 
 ### Added
 
-- Added a DecentDB v2.6.0 enhancement adoption plan covering queued writes,
+- Added a DecentDB v2.8.0 enhancement adoption plan covering queued writes,
   operational `sys.*` metrics, SQL/PRAGMA compatibility, local web console,
   reactive streams, sync/relay, Lua extensions, and WASM/browser boundaries.
-- Added ADRs for DecentDB v2.6.0 queued writes, local Web Console companion
+- Added ADRs for DecentDB v2.8.0 queued writes, local Web Console companion
   process handling, reactive refresh lifecycle, sync/relay diagnostics scope,
   and Lua extension trust management.
-- Added DecentDB v2.6.0 alignment, including pinned binding/runtime metadata,
+- Added DecentDB v2.8.0 alignment, including pinned binding/runtime metadata,
   native asset resolution hardening, and a v2.x fixture smoke path.
-- Added DecentDB v2.6.0 operational diagnostics in Database Statistics,
+- Added DecentDB v2.8.0 operational diagnostics in Database Statistics,
   including WAL, storage, write-queue, sync, reactive, relay, and Lua extension
   inspection surfaces with graceful fallback for unavailable `sys.*` views.
+- Added DecentDB v2.8.0 process coordination diagnostics in Database
+  Statistics, including `sys.process_coordination`, `sys.process_readers`, and
+  `sys.process_lock_metrics` inspection views.
+- Added structured error diagnostic support for DecentDB v2.8.0, including
+  `subcode`, `retryable`, `permanent`, `sqlstate`, and `docAnchor` fields
+  parsed from the engine's rich diagnostic JSON output, with readable fallback
+  messages for older engines.
 - Added opt-in DecentDB queued-write configuration and queued app-generated
   inline table DML, with queue metrics and native queue error codes surfaced
   through the existing gateway error model.
 - Added DecentDB CLI resolution/caching, `Tools -> Open Web Console`, a
   managed read-only `decentdb serve` companion-process service, and CLI-backed
   Lua extension package validation.
-- Added DecentDB v2.6 SQL compatibility coverage for PRAGMA metadata,
+- Added DecentDB v2.8 SQL compatibility coverage for PRAGMA metadata,
   `generate_series`, `sqlite_schema`, `information_schema`, collations, and
   `main.`/`temp.` autocomplete qualifiers.
 - Added DecentDB tooling metadata and query-contract bridge support for schema
@@ -132,12 +139,24 @@ This file records notable project changes. It follows the
 - Bumped TOML config version from 3 to 4 to accommodate the new
   `query_timeout_seconds` setting. Existing configs are migrated automatically.
 
-- Updated the pinned DecentDB Dart binding/runtime dependency from v2.6.0 to
+- Updated the pinned DecentDB Dart binding/runtime dependency from v2.8.0 to
   v2.7.0, adopting ABI v5 with stable `ddb_db_execute_on_branch` entry point,
   Dart `Database.branchWorkflow` APIs for named snapshots and branch-local SQL
   execution, and fixed canonical `sys.*` inspection query execution through
   prepared statements.
-- Updated README badge to reflect DecentDB v2.7.0 alignment.
+
+- Updated the pinned DecentDB Dart binding/runtime dependency from v2.7.0 to
+  v2.8.0, adopting ABI v7 with rich structured error diagnostics
+  (`ddb_last_error_json`), cross-process WAL coordination diagnostics, and
+  default-fast benchmark/profile support.
+- Updated README badge to reflect DecentDB v2.8.0 alignment.
+- Updated operational metrics to query v2.8.0 process coordination views
+  (`sys.process_coordination`, `sys.process_readers`,
+  `sys.process_lock_metrics`) alongside the existing WAL, storage, sync,
+  reactive, and Lua extension views.
+- Updated bridge error model to propagate structured diagnostic fields
+  (subcode, sqlstate, docAnchor, retryable, permanent) from DecentDB v2.8.0
+  error JSON, with readable fallback for older or non-DecentDB engines.
 - Refactored `WorkspaceController` to extract branch/snapshot workflow logic into
   a dedicated `BranchController`, reducing the monolithic controller by ~300 lines
   and establishing the extraction pattern for future import/export controller work.
@@ -150,7 +169,7 @@ This file records notable project changes. It follows the
   modern license/close actions.
 - Replaced desktop platform placeholder identifiers with the stable
   `com.decentdb.bench` application identity documented in ADR-0053.
-- Updated DecentDB v2.6 operational metrics display to keep a single
+- Updated DecentDB v2.8 operational metrics display to keep a single
   compatibility note only when older runtimes still reject `sys.*` inspection
   views.
 - Updated DecentDB operational metrics to read canonical `sys.*` inspection
@@ -192,11 +211,46 @@ This file records notable project changes. It follows the
 
 ### Fixed
 
+- Fixed large SQLite imports freezing after completing the first table by
+  wrapping each table's data copy in a savepoint. The previous implementation
+  ran all table inserts in a single transaction, causing DecentDB's WAL to
+  grow unbounded and stall on internal page allocation for subsequent tables.
+  Each table's work is now committed independently via savepoint release,
+  allowing WAL checkpointing between tables. Added a progress heartbeat
+  between tables so the UI updates even when the first INSERT of a new table
+  is slow.
+- Fixed cancelled or failed imports leaving orphaned target database files
+  (`.ddb`, `.ddb.wal`, `.ddb-shm`, `.ddb.coord`). All three import paths
+  (SQLite, Excel, SQL dump) now clean up the target database and its
+  sidecar files when the import is cancelled or fails and the target was
+  newly created by the import.
 - Stabilized Linux integration shell tests by centralizing app setup/teardown,
   unmounting the widget tree before controller disposal, and preventing
   intermittent `did not complete` failures.
 - Removed unused `_requireDatabase` top-level function after worker refactor
   (database guard moved into `_BridgeWorkerState`).
+
+### Noted (v2.8.0 features intentionally excluded from Decent Bench)
+
+The following DecentDB v2.8.0 features are not exercised by Decent Bench and
+are documented here for traceability:
+
+- **Transparent Data Encryption (TDE)**: Decent Bench is a workbench app, not
+  a security benchmark. TDE overhead measurement is out of scope.
+- **Cross-process WAL coordination**: Decent Bench operates as a single-process
+  embedded app. Process coordination diagnostics are surfaced as read-only
+  metrics but not stress-tested across processes.
+- **Browser/WASM and mobile artifacts**: Decent Bench is a desktop-only app.
+  Browser and mobile parity hardening is owned by upstream DecentDB.
+- **Prepared batch / repeated insert flow**: The Dart binding does not yet
+  expose `prepared_batch` / `PreparedStatementBatch`. The bridge uses prepared
+  statements per-row. Batch fast paths will be exercised when the Dart binding
+  adds the API.
+- **Benchmark profile labels** (`decentdb_balanced_durable`,
+  `decentdb_low_memory_durable`, `decentdb_tuned_durable`,
+  `duckdb_engine_default`): These are canonical labels for the DecentDB
+  benchmark harness, not the workbench app. They are informational references
+  only.
 
 ## [1.1.0] - 2026-04-21
 

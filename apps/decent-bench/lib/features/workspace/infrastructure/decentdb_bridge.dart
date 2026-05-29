@@ -12,6 +12,7 @@ import '../domain/sql_dump_import_models.dart';
 import '../domain/sqlite_import_models.dart';
 import '../domain/workspace_models.dart';
 import 'excel_import_support.dart';
+import 'decentdb_native_release_asset.dart';
 import 'native_library_resolver.dart';
 import 'sql_dump_import_support.dart';
 import 'sqlite_import_support.dart';
@@ -180,7 +181,12 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       return resolvedLibraryPath!;
     }
 
-    resolvedLibraryPath = await _resolver.resolve();
+    try {
+      resolvedLibraryPath = await _resolver.resolve();
+    } on NativeLibraryResolutionFailure {
+      resolvedLibraryPath =
+          await DecentDbNativeReleaseAsset.ensureAvailableForCurrentProject();
+    }
     _responses = ReceivePort();
     _isolate = await Isolate.spawn<List<Object?>>(_workerMain, <Object?>[
       _responses!.sendPort,
@@ -1776,6 +1782,21 @@ const List<_OperationalMetricQuery> _operationalMetricQueries =
         label: 'Lua extension validation',
         query: 'SELECT * FROM sys.extension_validation',
       ),
+      _OperationalMetricQuery(
+        name: 'sys.process_coordination',
+        label: 'Process coordination',
+        query: 'SELECT * FROM sys.process_coordination',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.process_readers',
+        label: 'Process readers',
+        query: 'SELECT * FROM sys.process_readers',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.process_lock_metrics',
+        label: 'Process lock metrics',
+        query: 'SELECT * FROM sys.process_lock_metrics',
+      ),
     ];
 
 Map<String, Object?> _serializeWriteQueue(WriteQueueSettings settings) {
@@ -1826,7 +1847,47 @@ BridgeFailure _bridgeFailureFromError(Object error) {
       code: _nativeStatusName(int.tryParse(unknownCodeMatch.group(1)!)),
     );
   }
+  final parsed = _tryParseDiagnosticJson(message);
+  if (parsed != null) {
+    return parsed;
+  }
   return BridgeFailure(message);
+}
+
+BridgeFailure? _tryParseDiagnosticJson(String raw) {
+  if (!raw.startsWith('{')) {
+    return null;
+  }
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, Object?>) {
+      return null;
+    }
+    final version = decoded['version'];
+    if (version is! num) {
+      return null;
+    }
+    final msg = decoded['message'] as String? ?? raw;
+    final codeName = decoded['code_name'] as String?;
+    final subcode = decoded['subcode'] as String?;
+    final retryable = decoded['retryable'] as bool? ?? false;
+    final permanent = decoded['permanent'] as bool? ?? false;
+    final sqlstate = decoded['sqlstate'] as String?;
+    final docAnchor = decoded['docs'] as String?;
+    final code = codeName != null ? 'DDB_$codeName' : null;
+    return BridgeFailure(
+      msg,
+      code: code,
+      subcode: subcode,
+      retryable: retryable,
+      permanent: permanent,
+      sqlstate: sqlstate,
+      docAnchor: docAnchor,
+      diagnosticJson: raw,
+    );
+  } catch (_) {
+    return null;
+  }
 }
 
 List<Map<String, Object?>> _bridgeMapList(Object? value) {
@@ -2125,7 +2186,7 @@ Map<String, Object?> _sysInspectionPreparedBoundaryView() {
     'rows': const <Map<String, Object?>>[],
     'error':
         'Unavailable through the current Dart prepared-statement paging path. '
-        'DecentDB v2.6 exposes these inspection views through direct SQL '
+        'DecentDB v2.8 exposes these inspection views through direct SQL '
         'execution, but the Dart binding does not yet expose direct-result '
         'paging. Native public metrics APIs are shown when available.',
     'truncated': false,
