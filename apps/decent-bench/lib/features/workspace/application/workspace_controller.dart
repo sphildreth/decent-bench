@@ -351,10 +351,9 @@ class WorkspaceController extends ChangeNotifier {
     }
   }
 
-  Future<void> openLogDatabase() async {
-    await _logger.initialize(minimumLevel: config.logging.verbosity);
-    await openDatabase(_logger.logDatabasePath, createIfMissing: false);
-  }
+  String get logDirectoryPath => _logger.logDirectoryPath;
+
+  String get sessionLogFilePath => _logger.sessionLogFilePath;
 
   Future<void> openWorkspaceProject(String projectPath) async {
     final normalized = p.normalize(projectPath);

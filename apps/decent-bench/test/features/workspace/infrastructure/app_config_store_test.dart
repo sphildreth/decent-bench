@@ -12,7 +12,7 @@ void main() {
         activeTheme: 'classic-light',
         themesDir: '/tmp/themes',
       ),
-      logging: const LoggingSettings(verbosity: LogVerbosity.debug),
+      logging: const LoggingSettings(verbosity: LogVerbosity.debug, logDirectory: 'logs'),
       writeQueue: const WriteQueueSettings(
         enabled: true,
         capacity: 32,

@@ -49,6 +49,7 @@ import 'export_results_excel_dialog.dart';
 import 'export_results_json_dialog.dart';
 import 'help/help_center_dialog.dart';
 import 'ms_sql_bak_import_dialog.dart';
+import 'log_viewer_dialog.dart';
 import 'preferences_dialog.dart';
 import 'quality/data_quality_dashboard.dart';
 import 'quality/quality_report_export_dialog.dart';
@@ -3076,9 +3077,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         ),
         command(
           id: 'tools_view_log',
-          label: 'View Log',
+          label: 'View Logs',
           icon: Icons.receipt_long_outlined,
-          onInvoke: controller.openLogDatabase,
+          onInvoke: () => LogViewerDialog.show(
+            context,
+            logDirectoryPath: controller.logDirectoryPath,
+          ),
         ),
         command(
           id: 'tools_snippets',

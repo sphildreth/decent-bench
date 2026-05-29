@@ -23,15 +23,25 @@ enum LogVerbosity {
 }
 
 class LoggingSettings {
-  const LoggingSettings({required this.verbosity});
+  const LoggingSettings({
+    required this.verbosity,
+    required this.logDirectory,
+  });
 
   final LogVerbosity verbosity;
+  final String logDirectory;
 
   factory LoggingSettings.defaults() {
-    return const LoggingSettings(verbosity: LogVerbosity.warning);
+    return const LoggingSettings(
+      verbosity: LogVerbosity.information,
+      logDirectory: 'logs',
+    );
   }
 
-  LoggingSettings copyWith({LogVerbosity? verbosity}) {
-    return LoggingSettings(verbosity: verbosity ?? this.verbosity);
+  LoggingSettings copyWith({LogVerbosity? verbosity, String? logDirectory}) {
+    return LoggingSettings(
+      verbosity: verbosity ?? this.verbosity,
+      logDirectory: logDirectory ?? this.logDirectory,
+    );
   }
 }

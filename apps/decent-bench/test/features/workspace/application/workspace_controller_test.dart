@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:decent_bench/app/logging/app_logger.dart';
 import 'package:decent_bench/features/workspace/application/workspace_controller.dart';
 import 'package:decent_bench/features/workspace/domain/app_config.dart';
 import 'package:decent_bench/features/workspace/domain/excel_import_models.dart';
@@ -17,7 +18,7 @@ WorkspaceController _createController({
   InMemoryConfigStore? configStore,
   InMemoryWorkspaceStateStore? workspaceStateStore,
   InMemorySavedQueryLibraryStore? savedQueryLibraryStore,
-  RecordingAppLogger? logger,
+  AppLogger? logger,
 }) {
   return WorkspaceController(
     gateway: gateway ?? FakeWorkspaceGateway(),
@@ -488,28 +489,18 @@ void main() {
     });
 
     test(
-      'openLogDatabase opens the configured application log database',
+      'logDirectoryPath returns the configured log directory',
       () async {
-        final logPath =
-            '${Directory.systemTemp.path}/decent-bench-log-${DateTime.now().microsecondsSinceEpoch}.ddb';
-        final file = File(logPath);
-        await file.parent.create(recursive: true);
-        await file.writeAsString('');
+        final tempDir = Directory.systemTemp.createTempSync('log_test_');
+        addTearDown(() => tempDir.deleteSync(recursive: true));
+        final logger = ClefAppLogger(logDirectory: tempDir.path);
+        await logger.initialize(minimumLevel: LogVerbosity.debug);
+        addTearDown(() => logger.dispose());
 
-        addTearDown(() async {
-          if (await file.exists()) {
-            await file.delete();
-          }
-        });
-
-        final controller = _createController(logger: _FixedPathLogger(logPath));
+        final controller = _createController(logger: logger);
         await controller.initialize();
 
-        await controller.openLogDatabase();
-
-        expect(controller.databasePath, logPath);
-        expect(controller.engineVersion, '1.6.1');
-        expect(controller.workspaceError, isNull);
+        expect(controller.logDirectoryPath, tempDir.path);
       },
     );
   });
@@ -1403,7 +1394,7 @@ void main() {
       final dbPath = _tempDbPath();
       final logger = RecordingAppLogger();
       final config = AppConfig.defaults().copyWith(
-        logging: const LoggingSettings(verbosity: LogVerbosity.debug),
+        logging: const LoggingSettings(verbosity: LogVerbosity.debug, logDirectory: 'logs'),
       );
       final controller = _createController(
         configStore: InMemoryConfigStore(config),
@@ -1594,7 +1585,7 @@ void main() {
         final gateway = FakeWorkspaceGateway();
         final logger = RecordingAppLogger();
         final config = AppConfig.defaults().copyWith(
-          logging: const LoggingSettings(verbosity: LogVerbosity.debug),
+          logging: const LoggingSettings(verbosity: LogVerbosity.debug, logDirectory: 'logs'),
         );
         final controller = _createController(
           gateway: gateway,
@@ -1727,7 +1718,7 @@ void main() {
         final gateway = FakeWorkspaceGateway();
         final logger = RecordingAppLogger();
         final config = AppConfig.defaults().copyWith(
-          logging: const LoggingSettings(verbosity: LogVerbosity.debug),
+          logging: const LoggingSettings(verbosity: LogVerbosity.debug, logDirectory: 'logs'),
         );
         final controller = _createController(
           gateway: gateway,
@@ -1870,7 +1861,7 @@ void main() {
         final gateway = FakeWorkspaceGateway();
         final logger = RecordingAppLogger();
         final config = AppConfig.defaults().copyWith(
-          logging: const LoggingSettings(verbosity: LogVerbosity.debug),
+          logging: const LoggingSettings(verbosity: LogVerbosity.debug, logDirectory: 'logs'),
         );
         final controller = _createController(
           gateway: gateway,
@@ -2008,13 +1999,4 @@ void main() {
       },
     );
   });
-}
-
-class _FixedPathLogger extends RecordingAppLogger {
-  _FixedPathLogger(this._logDatabasePath);
-
-  final String _logDatabasePath;
-
-  @override
-  String get logDatabasePath => _logDatabasePath;
 }

@@ -124,7 +124,10 @@ class RecordingAppLogger extends AppLogger {
   RecordingAppLogger({this.minimumLevel = LogVerbosity.debug});
 
   @override
-  String get logDatabasePath => '/tmp/decent-bench-log.ddb';
+  String get logDirectoryPath => '/tmp/decent-bench-logs';
+
+  @override
+  String get sessionLogFilePath => '/tmp/decent-bench-logs/test.log';
 
   LogVerbosity minimumLevel;
   final List<RecordedLogEntry> entries = <RecordedLogEntry>[];

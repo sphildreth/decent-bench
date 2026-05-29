@@ -41,7 +41,9 @@ class DecentBenchApp extends StatefulWidget {
 }
 
 class _DecentBenchAppState extends State<DecentBenchApp> {
-  late final AppLogger _logger = widget.logger ?? DecentBenchLogger();
+  late final AppLogger _logger = widget.logger ?? ClefAppLogger(
+    logDirectory: widget.initialConfig?.logging.logDirectory,
+  );
   late final WorkspaceController _controller =
       widget.controller ??
       WorkspaceController(logger: _logger, initialConfig: widget.initialConfig);

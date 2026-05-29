@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('tools menu includes View Log', (tester) async {
+  testWidgets('tools menu includes View Logs', (tester) async {
     final registry = MenuCommandRegistry(
       commands: <MenuCommand>[
         MenuCommand(
@@ -17,7 +17,7 @@ void main() {
         ),
         MenuCommand(
           id: 'tools_view_log',
-          label: 'View Log',
+          label: 'View Logs',
           icon: Icons.receipt_long_outlined,
           onInvoke: () async {},
         ),
@@ -40,7 +40,7 @@ void main() {
     await tester.tap(find.text('Tools'));
     await tester.pump(const Duration(milliseconds: 200));
 
-    expect(find.widgetWithText(MenuItemButton, 'View Log'), findsOneWidget);
+    expect(find.widgetWithText(MenuItemButton, 'View Logs'), findsOneWidget);
     expect(
       find.widgetWithText(MenuItemButton, 'Entity Relationship Diagram'),
       findsOneWidget,

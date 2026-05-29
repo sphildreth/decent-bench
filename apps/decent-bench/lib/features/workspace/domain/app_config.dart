@@ -179,6 +179,7 @@ class AppConfig {
       ..writeln()
       ..writeln('[logging]')
       ..writeln('verbosity = ${jsonEncode(logging.verbosity.tomlValue)}')
+      ..writeln('log_directory = ${jsonEncode(logging.logDirectory)}')
       ..writeln()
       ..writeln('[write_queue]')
       ..writeln('enabled = ${writeQueue.enabled}')
@@ -357,6 +358,16 @@ class AppConfig {
             config = config.copyWith(
               logging: config.logging.copyWith(
                 verbosity: LogVerbosity.parse(parsed),
+              ),
+            );
+          }
+          break;
+        case 'logging.log_directory':
+          final parsed = _decodeJsonString(value);
+          if (parsed != null && parsed.trim().isNotEmpty) {
+            config = config.copyWith(
+              logging: config.logging.copyWith(
+                logDirectory: parsed.trim(),
               ),
             );
           }
