@@ -10,6 +10,7 @@ permissions:
 
 env:
   APP_DIR: apps/decent-bench
+  GITHUB_TOKEN: ${{ github.token }}
 
 jobs:
   build:
@@ -107,34 +108,91 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Download DecentDB Dart-native asset (Linux/macOS)
+      - name: Download DecentDB release assets (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
           tag="${{ steps.decentdb-version.outputs.tag }}"
-          asset="decentdb-dart-native-${tag}-${{ steps.release-meta.outputs.decentdb_release_suffix }}.${{ matrix.native_archive_extension }}"
-          url="https://github.com/sphildreth/decentdb/releases/download/${tag}/${asset}"
+          dart_native_asset="decentdb-dart-native-${tag}-${{ steps.release-meta.outputs.decentdb_release_suffix }}.${{ matrix.native_archive_extension }}"
+          runtime_asset="decentdb-${tag}-${{ steps.release-meta.outputs.decentdb_release_suffix }}.${{ matrix.native_archive_extension }}"
+          dart_native_url="https://github.com/sphildreth/decentdb/releases/download/${tag}/${dart_native_asset}"
+          runtime_url="https://github.com/sphildreth/decentdb/releases/download/${tag}/${runtime_asset}"
           work_dir="$RUNNER_TEMP/decentdb-native"
-          archive_path="$RUNNER_TEMP/$asset"
-          mkdir -p "$work_dir"
-          curl -fsSL "$url" -o "$archive_path"
-          tar -xzf "$archive_path" -C "$work_dir"
-          echo "DECENTDB_NATIVE_PATH=$work_dir/${{ matrix.native_lib_name }}" >> "$GITHUB_ENV"
+          tools_dir="$RUNNER_TEMP/decentdb-tools"
+          dart_native_archive_path="$RUNNER_TEMP/$dart_native_asset"
+          runtime_archive_path="$RUNNER_TEMP/$runtime_asset"
+          mkdir -p "$work_dir" "$tools_dir"
+          curl -fsSL --retry 3 --retry-delay 2 "$dart_native_url" -o "$dart_native_archive_path"
+          tar -xzf "$dart_native_archive_path" -C "$work_dir"
+          curl -fsSL --retry 3 --retry-delay 2 "$runtime_url" -o "$runtime_archive_path"
+          tar -xzf "$runtime_archive_path" -C "$tools_dir"
+          native_path="$work_dir/${{ matrix.native_lib_name }}"
+          migration_tool_path="$(find "$tools_dir" -type f -name decentdb-migrate -print -quit)"
+          cli_path="$(find "$tools_dir" -type f -name decentdb -print -quit)"
+          if [ ! -f "$native_path" ]; then
+            echo "Expected DecentDB native library at $native_path." >&2
+            find "$work_dir" -maxdepth 3 -type f >&2
+            exit 1
+          fi
+          if [ -z "$migration_tool_path" ] || [ -z "$cli_path" ]; then
+            echo "Expected DecentDB CLI tools in $tools_dir." >&2
+            find "$tools_dir" -maxdepth 3 -type f >&2
+            exit 1
+          fi
+          chmod 755 "$migration_tool_path" "$cli_path"
+          echo "DECENTDB_NATIVE_PATH=$native_path" >> "$GITHUB_ENV"
+          echo "DECENTDB_MIGRATE_PATH=$migration_tool_path" >> "$GITHUB_ENV"
+          echo "DECENTDB_CLI_PATH=$cli_path" >> "$GITHUB_ENV"
 
-      - name: Download DecentDB Dart-native asset (Windows)
+      - name: Download DecentDB release assets (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $tag = "${{ steps.decentdb-version.outputs.tag }}"
-          $asset = "decentdb-dart-native-$tag-${{ steps.release-meta.outputs.decentdb_release_suffix }}.${{ matrix.native_archive_extension }}"
-          $url = "https://github.com/sphildreth/decentdb/releases/download/$tag/$asset"
+          $dartNativeAsset = "decentdb-dart-native-$tag-${{ steps.release-meta.outputs.decentdb_release_suffix }}.${{ matrix.native_archive_extension }}"
+          $runtimeAsset = "decentdb-$tag-${{ steps.release-meta.outputs.decentdb_release_suffix }}.${{ matrix.native_archive_extension }}"
+          $dartNativeUrl = "https://github.com/sphildreth/decentdb/releases/download/$tag/$dartNativeAsset"
+          $runtimeUrl = "https://github.com/sphildreth/decentdb/releases/download/$tag/$runtimeAsset"
           $workDir = Join-Path $env:RUNNER_TEMP "decentdb-native"
-          $archivePath = Join-Path $env:RUNNER_TEMP $asset
+          $toolsDir = Join-Path $env:RUNNER_TEMP "decentdb-tools"
+          $dartNativeArchivePath = Join-Path $env:RUNNER_TEMP $dartNativeAsset
+          $runtimeArchivePath = Join-Path $env:RUNNER_TEMP $runtimeAsset
+          function Invoke-DownloadWithRetry {
+            param(
+              [string] $Uri,
+              [string] $OutFile
+            )
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              try {
+                Invoke-WebRequest -Uri $Uri -OutFile $OutFile
+                return
+              } catch {
+                if ($attempt -eq 3) {
+                  throw
+                }
+                Start-Sleep -Seconds (2 * $attempt)
+              }
+            }
+          }
           New-Item -ItemType Directory -Force $workDir | Out-Null
-          Invoke-WebRequest -Uri $url -OutFile $archivePath
-          Expand-Archive -Path $archivePath -DestinationPath $workDir -Force
-          Add-Content -Path $env:GITHUB_ENV -Value "DECENTDB_NATIVE_PATH=$workDir\\${{ matrix.native_lib_name }}"
+          New-Item -ItemType Directory -Force $toolsDir | Out-Null
+          Invoke-DownloadWithRetry -Uri $dartNativeUrl -OutFile $dartNativeArchivePath
+          Expand-Archive -Path $dartNativeArchivePath -DestinationPath $workDir -Force
+          Invoke-DownloadWithRetry -Uri $runtimeUrl -OutFile $runtimeArchivePath
+          Expand-Archive -Path $runtimeArchivePath -DestinationPath $toolsDir -Force
+          $nativePath = Join-Path $workDir "${{ matrix.native_lib_name }}"
+          $migrationToolPath = Get-ChildItem -Path $toolsDir -Filter "decentdb-migrate.exe" -File -Recurse | Select-Object -First 1
+          $cliPath = Get-ChildItem -Path $toolsDir -Filter "decentdb.exe" -File -Recurse | Select-Object -First 1
+          if (-not (Test-Path $nativePath -PathType Leaf)) {
+            throw "Expected DecentDB native library at $nativePath."
+          }
+          if ($null -eq $migrationToolPath -or $null -eq $cliPath) {
+            throw "Expected DecentDB CLI tools in $toolsDir."
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "DECENTDB_NATIVE_PATH=$nativePath"
+          Add-Content -Path $env:GITHUB_ENV -Value "DECENTDB_MIGRATE_PATH=$($migrationToolPath.FullName)"
+          Add-Content -Path $env:GITHUB_ENV -Value "DECENTDB_CLI_PATH=$($cliPath.FullName)"
 
       - name: Flutter pub get
         working-directory: ${{ env.APP_DIR }}
@@ -207,7 +265,7 @@ jobs:
 
       - name: Stage DecentDB native library into bundle
         working-directory: ${{ env.APP_DIR }}
-        run: dart run tool/stage_decentdb_native.dart --bundle "${{ steps.bundle.outputs.path }}" --source "${{ env.DECENTDB_NATIVE_PATH }}"
+        run: dart run tool/stage_decentdb_native.dart --bundle "${{ steps.bundle.outputs.path }}" --source "${{ env.DECENTDB_NATIVE_PATH }}" --migration-tool-source "${{ env.DECENTDB_MIGRATE_PATH }}" --cli-source "${{ env.DECENTDB_CLI_PATH }}"
 
       - name: Verify bundled native library
         working-directory: ${{ env.APP_DIR }}
