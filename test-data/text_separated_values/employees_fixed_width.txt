@@ -1,0 +1,5 @@
+emp_idname            department  hire_date salary
+0001  Alice Carter    Sales       2021-04-01  072500  
+0002  Bob Smith       Finance     2019-09-15  085000  
+0003  Carla Gomez     Engineering 2022-01-10  112000  
+0004  Dinesh Patel    Support     2020-06-20  061500  
