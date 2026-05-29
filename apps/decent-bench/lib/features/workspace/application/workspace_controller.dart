@@ -572,6 +572,23 @@ class WorkspaceController extends ChangeNotifier {
     _safeNotify();
   }
 
+  Future<ToolingMetadata?> _fetchToolingMetadataSafe() async {
+    try {
+      return await _gateway.getToolingMetadata();
+    } catch (error, stackTrace) {
+      _logger.warning(
+        category: 'workspace',
+        operation: 'refresh_schema_metadata',
+        message:
+            'Loaded schema snapshot, but tooling metadata was unavailable.',
+        databasePath: databasePath,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
+
   Future<void> refreshSchema({bool showLoadingState = true}) async {
     if (!hasOpenDatabase) {
       return;
@@ -587,29 +604,13 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     try {
-      ToolingMetadata? metadataFuture;
-      final loadedSchemaFuture = _gateway.loadSchema();
+      final schemaFuture = _gateway.loadSchema();
+      final metadataFuture = _fetchToolingMetadataSafe();
 
-      final loadedSchema = await loadedSchemaFuture;
-      schema = loadedSchema;
+      final results = await Future.wait([schemaFuture, metadataFuture]);
 
-      try {
-        metadataFuture = await _gateway.getToolingMetadata();
-      } catch (error, stackTrace) {
-        metadataFuture = null;
-        _logger.warning(
-          category: 'workspace',
-          operation: 'refresh_schema_metadata',
-          message:
-              'Loaded schema snapshot, but tooling metadata was unavailable.',
-          databasePath: databasePath,
-          elapsedNanos: _durationToNanos(stopwatch.elapsed),
-          error: error,
-          stackTrace: stackTrace,
-        );
-      }
-
-      toolingMetadata = metadataFuture;
+      schema = results[0] as SchemaSnapshot;
+      toolingMetadata = results[1] as ToolingMetadata?;
 
       await dataQuality.attachWorkspace(
         databasePath: databasePath,

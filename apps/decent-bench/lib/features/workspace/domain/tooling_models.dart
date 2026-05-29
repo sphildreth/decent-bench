@@ -185,7 +185,15 @@ class ToolingMetadata {
     required String tableName,
     required String columnName,
   }) {
-    return columnTypeIndex['$tableName.$columnName'];
+    if (columnTypeIndex.isNotEmpty) {
+      return columnTypeIndex['$tableName.$columnName'];
+    }
+    for (final column in columnTypeMetadata) {
+      if (column.tableName == tableName && column.columnName == columnName) {
+        return column;
+      }
+    }
+    return null;
   }
 
   Map<String, Object?> toJson() {
