@@ -7,7 +7,7 @@ Apache 2.0 distribution. This file tracks attributions and license details.
 
 - `decentdb`
   - Version/source: Git dependency from `https://github.com/sphildreth/decentdb`,
-    path `bindings/dart/dart`, ref `v2.6.0`
+    path `bindings/dart/dart`, ref `v2.7.0`
   - License: Apache License 2.0
   - Upstream project: `https://github.com/sphildreth/decentdb`
 

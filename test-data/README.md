@@ -28,10 +28,9 @@ wizard routing for unsupported sources.
 
 ## Directory map
 
-### `text_seperated_values/`
+### `text_separated_values/`
 
-The folder name is historical and intentionally preserved. It contains the core
-delimited-text fixtures plus one fixed-width negative-test file.
+Contains the core delimited-text fixtures plus one fixed-width negative-test file.
 
 - `customers_basic.csv`: small CSV smoke test with text, dates, booleans, and
   numeric values.

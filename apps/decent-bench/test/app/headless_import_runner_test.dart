@@ -46,7 +46,7 @@ void main() {
         '..',
         '..',
         'test-data',
-        'text_seperated_values',
+        'text_separated_values',
         'customers_basic.csv',
       ),
     );
@@ -170,7 +170,7 @@ void main() {
         '..',
         '..',
         'test-data',
-        'text_seperated_values',
+        'text_separated_values',
         'customers_basic.csv',
       ),
     );
@@ -225,7 +225,7 @@ void main() {
         '..',
         '..',
         'test-data',
-        'text_seperated_values',
+        'text_separated_values',
         'customers_basic.csv',
       ),
     );
