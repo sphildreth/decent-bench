@@ -255,7 +255,7 @@ class _HelpNavigationPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ColoredBox(
+    return Material(
       color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
       child: query.isEmpty
           ? _HelpCategoryList(
