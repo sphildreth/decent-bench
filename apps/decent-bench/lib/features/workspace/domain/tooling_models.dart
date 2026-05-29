@@ -114,6 +114,19 @@ class ToolingColumnTypeMetadata {
 }
 
 class ToolingMetadata {
+  const ToolingMetadata._({
+    required this.metadataVersion,
+    required this.engineVersion,
+    required this.databaseFormatVersion,
+    required this.schemaCookie,
+    required this.tempSchemaCookie,
+    required this.schemaFingerprint,
+    required this.schemaFingerprintAlgorithm,
+    required this.columnTypeMetadata,
+    required this.columnTypeIndex,
+    required this.capabilities,
+  });
+
   const ToolingMetadata({
     required this.metadataVersion,
     required this.engineVersion,
@@ -124,7 +137,7 @@ class ToolingMetadata {
     required this.schemaFingerprintAlgorithm,
     required this.columnTypeMetadata,
     required this.capabilities,
-  });
+  }) : columnTypeIndex = const {};
 
   final int metadataVersion;
   final String engineVersion;
@@ -134,6 +147,7 @@ class ToolingMetadata {
   final String schemaFingerprint;
   final String schemaFingerprintAlgorithm;
   final List<ToolingColumnTypeMetadata> columnTypeMetadata;
+  final Map<String, ToolingColumnTypeMetadata> columnTypeIndex;
   final ToolingCapabilities capabilities;
 
   factory ToolingMetadata.fromMap(Map<String, Object?> map) {
@@ -146,7 +160,11 @@ class ToolingMetadata {
               ? byTable
               : left.columnName.compareTo(right.columnName);
         });
-    return ToolingMetadata(
+    final columnTypeIndex = <String, ToolingColumnTypeMetadata>{
+      for (final column in columns)
+        '${column.tableName}.${column.columnName}': column,
+    };
+    return ToolingMetadata._(
       metadataVersion: asInt(map['metadata_version']) ?? 0,
       engineVersion: map['engine_version'] as String? ?? '',
       databaseFormatVersion: asInt(map['database_format_version']) ?? 0,
@@ -156,6 +174,7 @@ class ToolingMetadata {
       schemaFingerprintAlgorithm:
           map['schema_fingerprint_algorithm'] as String? ?? '',
       columnTypeMetadata: columns,
+      columnTypeIndex: columnTypeIndex,
       capabilities: ToolingCapabilities.fromMap(
         asStringMap(map['capabilities']) ?? const <String, Object?>{},
       ),
@@ -166,12 +185,7 @@ class ToolingMetadata {
     required String tableName,
     required String columnName,
   }) {
-    for (final column in columnTypeMetadata) {
-      if (column.tableName == tableName && column.columnName == columnName) {
-        return column;
-      }
-    }
-    return null;
+    return columnTypeIndex['$tableName.$columnName'];
   }
 
   Map<String, Object?> toJson() {

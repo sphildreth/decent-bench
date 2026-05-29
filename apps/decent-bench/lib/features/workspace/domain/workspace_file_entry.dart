@@ -59,3 +59,27 @@ String suggestNewDecentDbTargetPath(String rawSourcePath) {
   }
   return p.setExtension(normalized, canonicalDecentDbExtension);
 }
+
+String? validateDecentDbTargetPath(String rawTargetPath) {
+  final normalized = rawTargetPath.trim();
+  if (normalized.isEmpty) {
+    return 'Target path is required.';
+  }
+  if (!normalized.toLowerCase().endsWith(canonicalDecentDbExtension)) {
+    return 'Target path must end with $canonicalDecentDbExtension '
+        '(DecentDB files use .ddb, not .db).';
+  }
+  return null;
+}
+
+String coerceDecentDbTargetExtension(String rawTargetPath) {
+  final normalized = rawTargetPath.trim();
+  if (normalized.isEmpty) {
+    return normalized;
+  }
+  final ext = p.extension(normalized).toLowerCase();
+  if (ext.isNotEmpty && ext != canonicalDecentDbExtension) {
+    return p.setExtension(normalized, canonicalDecentDbExtension);
+  }
+  return normalized;
+}

@@ -976,6 +976,14 @@ class _GenericImportDialogState extends State<GenericImportDialog> {
           });
           return;
         }
+        final targetError =
+            validateDecentDbTargetPath(_targetPathController.text);
+        if (targetError != null) {
+          setState(() {
+            _error = targetError;
+          });
+          return;
+        }
         setState(() {
           _step = GenericImportWizardStep.preview;
         });

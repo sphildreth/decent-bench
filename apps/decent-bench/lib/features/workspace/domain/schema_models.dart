@@ -222,17 +222,52 @@ class TriggerSummary {
 }
 
 class SchemaSnapshot {
-  const SchemaSnapshot({
+  SchemaSnapshot({
     required this.objects,
     required this.indexes,
     this.triggers = const <TriggerSummary>[],
     required this.loadedAt,
-  });
+  })  : _tables = objects
+            .where((item) => item.kind == SchemaObjectKind.table)
+            .toList(),
+        _views = objects
+            .where((item) => item.kind == SchemaObjectKind.view)
+            .toList(),
+        _indexesByTable = _groupByTable(indexes),
+        _triggersByTarget = _groupByTarget(triggers);
 
   final List<SchemaObjectSummary> objects;
   final List<IndexSummary> indexes;
   final List<TriggerSummary> triggers;
   final DateTime loadedAt;
+
+  final List<SchemaObjectSummary> _tables;
+  final List<SchemaObjectSummary> _views;
+  final Map<String, List<IndexSummary>> _indexesByTable;
+  final Map<String, List<TriggerSummary>> _triggersByTarget;
+
+  List<SchemaObjectSummary> get tables => _tables;
+  List<SchemaObjectSummary> get views => _views;
+
+  static Map<String, List<IndexSummary>> _groupByTable(
+    List<IndexSummary> indexes,
+  ) {
+    final result = <String, List<IndexSummary>>{};
+    for (final index in indexes) {
+      result.putIfAbsent(index.table, () => []).add(index);
+    }
+    return result;
+  }
+
+  static Map<String, List<TriggerSummary>> _groupByTarget(
+    List<TriggerSummary> triggers,
+  ) {
+    final result = <String, List<TriggerSummary>>{};
+    for (final trigger in triggers) {
+      result.putIfAbsent(trigger.targetName, () => []).add(trigger);
+    }
+    return result;
+  }
 
   factory SchemaSnapshot.empty() {
     return SchemaSnapshot(
@@ -273,12 +308,6 @@ class SchemaSnapshot {
     );
   }
 
-  List<SchemaObjectSummary> get tables =>
-      objects.where((item) => item.kind == SchemaObjectKind.table).toList();
-
-  List<SchemaObjectSummary> get views =>
-      objects.where((item) => item.kind == SchemaObjectKind.view).toList();
-
   SchemaObjectSummary? objectNamed(String name) {
     for (final object in objects) {
       if (object.name == name) {
@@ -289,13 +318,11 @@ class SchemaSnapshot {
   }
 
   List<IndexSummary> indexesForObject(String objectName) {
-    return indexes.where((index) => index.table == objectName).toList();
+    return _indexesByTable[objectName] ?? const <IndexSummary>[];
   }
 
   List<TriggerSummary> triggersForObject(String objectName) {
-    return triggers
-        .where((trigger) => trigger.targetName == objectName)
-        .toList();
+    return _triggersByTarget[objectName] ?? const <TriggerSummary>[];
   }
 
   TriggerSummary? triggerNamed(String targetName, String triggerName) {

@@ -164,6 +164,13 @@ Future<int> runHeadlessImportCli(
       writeStderr('Headless import requires a target `.ddb` path.');
       return 2;
     }
+    if (!targetPath.toLowerCase().endsWith('.ddb')) {
+      writeStderr(
+        'Target path must end with `.ddb` '
+        '(DecentDB files use .ddb, not .db).',
+      );
+      return 2;
+    }
     if (!File(sourcePath).existsSync()) {
       writeStderr('Source file not found: $sourcePath');
       return 1;

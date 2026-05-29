@@ -587,25 +587,34 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     try {
-      final loadedSchema = await _gateway.loadSchema();
+      ToolingMetadata? metadataFuture;
+      final loadedSchemaFuture = _gateway.loadSchema();
+
+      final loadedSchema = await loadedSchemaFuture;
       schema = loadedSchema;
+
+      try {
+        metadataFuture = await _gateway.getToolingMetadata();
+      } catch (error, stackTrace) {
+        metadataFuture = null;
+        _logger.warning(
+          category: 'workspace',
+          operation: 'refresh_schema_metadata',
+          message:
+              'Loaded schema snapshot, but tooling metadata was unavailable.',
+          databasePath: databasePath,
+          elapsedNanos: _durationToNanos(stopwatch.elapsed),
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+
+      toolingMetadata = metadataFuture;
+
       await dataQuality.attachWorkspace(
         databasePath: databasePath,
         schema: schema,
       );
-      _safeNotify();
-
-      ToolingMetadata? metadata;
-      try {
-        metadata = await _gateway.getToolingMetadata();
-        toolingMetadata = metadata;
-      } catch (error, stackTrace) {
-        toolingMetadata = null;
-        _logger.warning(category: 'workspace', operation: 'refresh_schema_metadata', message: 'Loaded schema snapshot, but tooling metadata was unavailable.', databasePath: databasePath,
-          elapsedNanos: _durationToNanos(stopwatch.elapsed),
-          error: error,
-          stackTrace: stackTrace,);
-      }
 
       workspaceMessage =
           'Loaded ${schema.tables.length} tables and ${schema.views.length} views.';
@@ -617,12 +626,12 @@ class WorkspaceController extends ChangeNotifier {
           'table_count': schema.tables.length,
           'view_count': schema.views.length,
           'index_count': schema.indexes.length,
-          'tooling_metadata_loaded': metadata != null,
-          if (metadata != null) ...<String, Object?>{
-            'schema_fingerprint': metadata.schemaFingerprint,
-            'metadata_version': metadata.metadataVersion,
+          'tooling_metadata_loaded': toolingMetadata != null,
+          if (toolingMetadata != null) ...<String, Object?>{
+            'schema_fingerprint': toolingMetadata!.schemaFingerprint,
+            'metadata_version': toolingMetadata!.metadataVersion,
             'query_contract_version':
-                metadata.capabilities.queryContractVersion,
+                toolingMetadata!.capabilities.queryContractVersion,
           },
         },);
     } catch (error) {
@@ -2613,6 +2622,11 @@ class WorkspaceController extends ChangeNotifier {
       _setExcelImportError('Choose a target DecentDB file first.');
       return;
     }
+    final targetError = validateDecentDbTargetPath(session.targetPath);
+    if (targetError != null) {
+      _setExcelImportError(targetError);
+      return;
+    }
 
     await _excelImportSubscription?.cancel();
     final jobId = createExcelImportJobId();
@@ -3071,6 +3085,11 @@ class WorkspaceController extends ChangeNotifier {
     }
     if (session.targetPath.trim().isEmpty) {
       _setSqlDumpImportError('Choose a target DecentDB file first.');
+      return;
+    }
+    final targetError = validateDecentDbTargetPath(session.targetPath);
+    if (targetError != null) {
+      _setSqlDumpImportError(targetError);
       return;
     }
 
@@ -3562,6 +3581,11 @@ class WorkspaceController extends ChangeNotifier {
     }
     if (session.targetPath.trim().isEmpty) {
       _setSqliteImportError('Choose a target DecentDB file first.');
+      return;
+    }
+    final targetError = validateDecentDbTargetPath(session.targetPath);
+    if (targetError != null) {
+      _setSqliteImportError(targetError);
       return;
     }
 
