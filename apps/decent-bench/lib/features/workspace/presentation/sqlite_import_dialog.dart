@@ -780,6 +780,18 @@ class _SqliteImportDialogState extends State<SqliteImportDialog> {
             ),
           );
           actions.add(
+            TextButton.icon(
+              onPressed: () async {
+                await widget.controller.runQualityForImportedDatabase();
+                if (context.mounted) {
+                  Navigator.of(context).pop();
+                }
+              },
+              icon: const Icon(Icons.fact_check_outlined),
+              label: const Text('Run Quality Profile'),
+            ),
+          );
+          actions.add(
             FilledButton(
               onPressed: () async {
                 await widget.controller.runQueryForImportedTable();

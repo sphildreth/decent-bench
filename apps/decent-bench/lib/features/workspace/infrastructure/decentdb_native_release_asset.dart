@@ -36,6 +36,20 @@ class DecentDbNativeReleaseAsset {
 
   String get libraryPath => p.join(cacheDirectoryPath, libraryFileName);
 
+  String get migrationToolFileName =>
+      platform == DecentDbNativeAssetPlatform.windows
+      ? 'decentdb-migrate.exe'
+      : 'decentdb-migrate';
+
+  String get migrationToolPath =>
+      p.join(cacheDirectoryPath, migrationToolFileName);
+
+  String get cliToolFileName => platform == DecentDbNativeAssetPlatform.windows
+      ? 'decentdb.exe'
+      : 'decentdb';
+
+  String get cliToolPath => p.join(cacheDirectoryPath, cliToolFileName);
+
   static Future<String> ensureAvailableForCurrentProject({
     String? startPath,
   }) async {
@@ -104,6 +118,40 @@ class DecentDbNativeReleaseAsset {
     required Iterable<String> searchRoots,
     required DecentDbNativeAssetPlatform platform,
   }) sync* {
+    yield* _cachedFileCandidates(
+      searchRoots: searchRoots,
+      platform: platform,
+      pathForAsset: (asset) => asset.libraryPath,
+    );
+  }
+
+  static Iterable<String> cachedMigrationToolCandidates({
+    required Iterable<String> searchRoots,
+    required DecentDbNativeAssetPlatform platform,
+  }) sync* {
+    yield* _cachedFileCandidates(
+      searchRoots: searchRoots,
+      platform: platform,
+      pathForAsset: (asset) => asset.migrationToolPath,
+    );
+  }
+
+  static Iterable<String> cachedCliToolCandidates({
+    required Iterable<String> searchRoots,
+    required DecentDbNativeAssetPlatform platform,
+  }) sync* {
+    yield* _cachedFileCandidates(
+      searchRoots: searchRoots,
+      platform: platform,
+      pathForAsset: (asset) => asset.cliToolPath,
+    );
+  }
+
+  static Iterable<String> _cachedFileCandidates({
+    required Iterable<String> searchRoots,
+    required DecentDbNativeAssetPlatform platform,
+    required String Function(DecentDbNativeReleaseAsset asset) pathForAsset,
+  }) sync* {
     final seen = <String>{};
     for (final root in searchRoots) {
       final projectDirectoryPath = _findProjectDirectory(root);
@@ -118,11 +166,12 @@ class DecentDbNativeReleaseAsset {
       if (tag == null) {
         continue;
       }
-      final candidate = _fromResolvedTag(
+      final asset = _fromResolvedTag(
         projectDirectoryPath: projectDirectoryPath,
         tag: tag,
         platform: platform,
-      ).libraryPath;
+      );
+      final candidate = pathForAsset(asset);
       if (seen.add(candidate)) {
         yield candidate;
       }
@@ -130,33 +179,75 @@ class DecentDbNativeReleaseAsset {
   }
 
   Future<String> ensureAvailable() async {
-    final libraryFile = File(libraryPath);
-    if (libraryFile.existsSync()) {
-      return libraryFile.path;
+    return _ensureCachedFile(
+      fileName: libraryFileName,
+      destinationPath: libraryPath,
+      executable: false,
+      includeDartNativeDownload: true,
+      preferDartNativeDownload: true,
+    );
+  }
+
+  Future<String> ensureMigrationToolAvailable() async {
+    return _ensureCachedFile(
+      fileName: migrationToolFileName,
+      destinationPath: migrationToolPath,
+      executable: true,
+      includeDartNativeDownload: false,
+      preferDartNativeDownload: false,
+    );
+  }
+
+  Future<String> ensureCliToolAvailable() async {
+    return _ensureCachedFile(
+      fileName: cliToolFileName,
+      destinationPath: cliToolPath,
+      executable: true,
+      includeDartNativeDownload: false,
+      preferDartNativeDownload: false,
+    );
+  }
+
+  Future<String> _ensureCachedFile({
+    required String fileName,
+    required String destinationPath,
+    required bool executable,
+    required bool includeDartNativeDownload,
+    required bool preferDartNativeDownload,
+  }) async {
+    final destinationFile = File(destinationPath);
+    if (destinationFile.existsSync()) {
+      return destinationFile.path;
     }
 
     await Directory(cacheDirectoryPath).create(recursive: true);
-    final lockFile = File('$libraryPath.lock');
-    final lockHandle = await _waitForLock(lockFile, libraryFile);
+    final lockFile = File('$destinationPath.lock');
+    final lockHandle = await _waitForLock(lockFile, destinationFile);
     if (lockHandle == null) {
-      return libraryFile.path;
+      return destinationFile.path;
     }
     try {
-      if (libraryFile.existsSync()) {
-        return libraryFile.path;
+      if (destinationFile.existsSync()) {
+        return destinationFile.path;
       }
 
-      final download = await _resolveDownload();
+      final download = await _resolveDownload(
+        includeDartNative: includeDartNativeDownload,
+        preferDartNative: preferDartNativeDownload,
+      );
       final archiveBytes = await _downloadArchive(download.downloadUri);
-      final libraryBytes = _extractLibraryBytes(archiveBytes);
-      final tempPath = '$libraryPath.download';
+      final fileBytes = _extractFileBytes(archiveBytes, fileName);
+      final tempPath = '$destinationPath.download';
       final tempFile = File(tempPath);
-      await tempFile.writeAsBytes(libraryBytes, flush: true);
-      if (libraryFile.existsSync()) {
-        await libraryFile.delete();
+      await tempFile.writeAsBytes(fileBytes, flush: true);
+      if (destinationFile.existsSync()) {
+        await destinationFile.delete();
       }
-      await tempFile.rename(libraryFile.path);
-      return libraryFile.path;
+      final renamedFile = await tempFile.rename(destinationFile.path);
+      if (executable && !Platform.isWindows) {
+        await Process.run('chmod', <String>['755', renamedFile.path]);
+      }
+      return renamedFile.path;
     } finally {
       await lockHandle.unlock();
       await lockHandle.close();
@@ -186,7 +277,7 @@ class DecentDbNativeReleaseAsset {
     );
   }
 
-  Uint8List _extractLibraryBytes(Uint8List archiveBytes) {
+  Uint8List _extractFileBytes(Uint8List archiveBytes, String fileName) {
     final archive = switch (archiveExtension) {
       'tar.gz' => TarDecoder().decodeBytes(
         GZipDecoder().decodeBytes(archiveBytes),
@@ -198,7 +289,7 @@ class DecentDbNativeReleaseAsset {
     };
 
     for (final file in archive.files) {
-      if (!file.isFile || p.basename(file.name) != libraryFileName) {
+      if (!file.isFile || p.basename(file.name) != fileName) {
         continue;
       }
       final content = file.content;
@@ -214,17 +305,22 @@ class DecentDbNativeReleaseAsset {
     }
 
     throw StateError(
-      'Downloaded a DecentDB release asset for $tag but did not find $libraryFileName in the archive.',
+      'Downloaded a DecentDB release asset for $tag but did not find $fileName in the archive.',
     );
   }
 
-  Future<DecentDbNativeReleaseDownload> _resolveDownload() async {
+  Future<DecentDbNativeReleaseDownload> _resolveDownload({
+    required bool includeDartNative,
+    required bool preferDartNative,
+  }) async {
     final metadata = await _fetchReleaseMetadata(tag);
     return selectDownload(
       metadata: metadata,
       tag: tag,
       releaseSuffix: releaseSuffix,
       archiveExtension: archiveExtension,
+      includeDartNative: includeDartNative,
+      preferDartNative: preferDartNative,
     );
   }
 
@@ -233,6 +329,8 @@ class DecentDbNativeReleaseAsset {
     required String tag,
     required String releaseSuffix,
     required String archiveExtension,
+    bool includeDartNative = true,
+    bool preferDartNative = true,
   }) {
     final rawAssets = metadata['assets'];
     if (rawAssets is! List) {
@@ -249,13 +347,18 @@ class DecentDbNativeReleaseAsset {
               (asset) =>
                   asset.name.endsWith(suffix) &&
                   asset.name.startsWith('decentdb-') &&
+                  (includeDartNative || !asset.name.contains('dart-native')) &&
                   !asset.name.startsWith('decentdb-jdbc-') &&
                   !asset.name.startsWith('decentdb-dbeaver-'),
             )
             .toList()
           ..sort((left, right) {
-            final leftPriority = left.name.contains('dart-native') ? 0 : 1;
-            final rightPriority = right.name.contains('dart-native') ? 0 : 1;
+            final leftPriority = left.name.contains('dart-native')
+                ? (preferDartNative ? 0 : 1)
+                : (preferDartNative ? 1 : 0);
+            final rightPriority = right.name.contains('dart-native')
+                ? (preferDartNative ? 0 : 1)
+                : (preferDartNative ? 1 : 0);
             final priorityCompare = leftPriority.compareTo(rightPriority);
             if (priorityCompare != 0) {
               return priorityCompare;
@@ -308,10 +411,7 @@ class DecentDbNativeReleaseAsset {
         );
         final token = Platform.environment['GITHUB_TOKEN'];
         if (token != null && token.isNotEmpty) {
-          request.headers.set(
-            HttpHeaders.authorizationHeader,
-            'Bearer $token',
-          );
+          request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
         }
       }
       request.headers.set(

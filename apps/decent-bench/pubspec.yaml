@@ -1,7 +1,7 @@
 name: decent_bench
 description: Decent Bench Flutter desktop app.
 publish_to: none
-version: 1.1.0+2
+version: 2.0.0+1
 
 environment:
   sdk: ^3.10.0
@@ -11,9 +11,9 @@ dependencies:
     sdk: flutter
   decentdb:
     git:
-      url: https://github.com/sphildreth/decentdb
+      url: https://github.com/sphildreth/decentdb.git
       path: bindings/dart/dart
-      ref: v2.3.0
+      ref: v2.8.0
   path: ^1.9.0
   sqlite3: ^3.2.0
   excel: ^4.0.6
@@ -22,6 +22,9 @@ dependencies:
   archive: ^3.6.1  # Required by excel 4.0.6, no newer excel available
   html: ^0.15.6
   xml: ^6.6.1
+  image: ^4.3.0
+  flutter_markdown_plus: ^1.0.7
+  crypto: ^3.0.6
 
 dev_dependencies:
   flutter_test:
@@ -33,4 +36,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/logo-256x256.png
+    - assets/help/
     - assets/themes/

@@ -1,6 +1,6 @@
 # 0023-external-toml-theme-system
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-03-10
 - **Decision owners:** Decent Bench maintainers
 - **Related:** UI/UX shell, configuration system, appearance settings

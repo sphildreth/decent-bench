@@ -28,7 +28,7 @@ Rules:
 - the plan file should carry import behavior and overrides, not input or output
   paths
 - the plan file uses a versioned JSON contract documented in
-  `docs/HEADLESS_IMPORT_PLAN_DETAILS.md`
+  `design/HEADLESS_IMPORT_PLAN_DETAILS.md`
 
 ### Rationale
 
@@ -63,7 +63,7 @@ portable across machines and environments.
 
 ### References
 
-- [design/SPEC.md](/home/steven/source/decent-bench/design/SPEC.md)
-- [design/adr/0013-desktop-cli-import-launch-and-binary-name.md](/home/steven/source/decent-bench/design/adr/0013-desktop-cli-import-launch-and-binary-name.md)
-- [design/adr/0021-desktop-cli-positional-database-open.md](/home/steven/source/decent-bench/design/adr/0021-desktop-cli-positional-database-open.md)
-- [docs/HEADLESS_IMPORT_PLAN_DETAILS.md](/home/steven/source/decent-bench/docs/HEADLESS_IMPORT_PLAN_DETAILS.md)
+- `design/SPEC.md`
+- `design/adr/0013-desktop-cli-import-launch-and-binary-name.md`
+- `design/adr/0021-desktop-cli-positional-database-open.md`
+- `design/HEADLESS_IMPORT_PLAN_DETAILS.md`

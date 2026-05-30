@@ -16,7 +16,7 @@ DecentDB, or supported SQL dump) onto Decent Bench.
 - If it is a **DecentDB** file, Decent Bench opens it immediately.
 - If it is a supported **import source**, Decent Bench launches an
   **Import Wizard** tailored to the file type.
-- If it is a recognized but unsupported file type, Decent Bench shows a clear
+- If it is a known unsupported file type, Decent Bench shows a clear
   "not supported in this version" path and suggested workaround.
 
 ---
@@ -127,16 +127,22 @@ These are important, but were intentionally deferred beyond the shipped
 - Richer import transforms
 - Saved queries / workspace projects
 - More advanced SQL productivity features beyond the MVP set
+- Read-only Entity Relationship Diagram (ERD) viewer generated from foreign-key
+  metadata, with table-preview navigation and PNG/JPG image export
 
 ### 3.3 Non-goals (explicitly out of scope for `v1.0.0`)
 - Managing external databases as first-class live query targets
 - Being a DBeaver-style admin or operations tool
 - Collaborative editing, shared connections, or multi-user workflows
-- Full migration tooling
+- Full migration tooling beyond the official legacy DecentDB file upgrade
+  wrapper accepted in ADR-0037
 - Advanced script orchestration engines
 - Multi-workspace support (multiple DecentDB files open simultaneously)
 - Postgres custom-format backup import
-- ERD designer, query plans, or stored procedure workflows
+- ERD designer/schema modeling workflows, stored procedure workflows, and other
+  admin-client surfaces
+- Read-only ERD viewing is a post-`v1.0.0` accepted scope expansion governed by
+  ADR-0035; it must not create, edit, or drop schema objects
 
 ---
 
@@ -196,8 +202,10 @@ Suggested measurable targets:
 1. User drags a file onto Decent Bench, or uses File → Open / Import.
 2. Decent Bench detects:
    - **DecentDB file** → open in workspace
+   - **Legacy DecentDB file** → offer a safe copy-based migration using the
+     official `decentdb-migrate` tool, then open the migrated copy
    - **Supported import source** → launch Import Wizard
-   - **Recognized but unsupported type** → open a guidance path with clear
+   - **Known unsupported type** → open a guidance path with clear
      messaging
 3. Wizard gathers options, shows preview, and runs import into a chosen or new
    DecentDB file.
@@ -401,6 +409,8 @@ Heavy work must not run on the UI thread. This includes:
 | Postgres custom backup import | No | Candidate |
 | Live external DB querying | No | Candidate |
 | Schema browser | Yes, phased toward pinned-engine object coverage | Broader UX polish |
+| Read-only ERD viewer | No | Yes, ADR-0035 |
+| ERD designer/schema modeling | No | No |
 | Multi-tab SQL editor | Yes | — |
 | Schema-aware autocomplete | Yes | Further refinement |
 | Snippets | Yes | Further refinement |

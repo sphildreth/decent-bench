@@ -10,6 +10,7 @@ class StatusBar extends StatelessWidget {
     required this.lastExecutionLabel,
     required this.rowsLabel,
     required this.editorModeLabel,
+    required this.branchLabel,
   });
 
   final String statusMessage;
@@ -17,6 +18,7 @@ class StatusBar extends StatelessWidget {
   final String lastExecutionLabel;
   final String rowsLabel;
   final String editorModeLabel;
+  final String branchLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -73,6 +75,13 @@ class StatusBar extends StatelessWidget {
                   _StatusDivider(),
                   Text(
                     editorModeLabel,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: tokens.statusBar.text,
+                    ),
+                  ),
+                  _StatusDivider(),
+                  Text(
+                    branchLabel,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: tokens.statusBar.text,
                     ),

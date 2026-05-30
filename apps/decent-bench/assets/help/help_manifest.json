@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "articles": [
+    {
+      "id": "getting-started",
+      "title": "Getting Started",
+      "category": "Start Here",
+      "summary": "Open a DecentDB file, create a new workspace, or import a supported file.",
+      "tags": ["start", "open", "create", "workspace", "drag and drop"],
+      "asset": "assets/help/getting-started.md"
+    },
+    {
+      "id": "opening-workspaces",
+      "title": "Opening and Creating Workspaces",
+      "category": "Start Here",
+      "summary": "Understand what a Decent Bench workspace is and how files are opened, saved, and closed.",
+      "tags": ["file", "workspace", "recent", "save", "close"],
+      "asset": "assets/help/opening-workspaces.md"
+    },
+    {
+      "id": "importing-data",
+      "title": "Importing Data",
+      "category": "Importing",
+      "summary": "Bring module-backed delimited, fixed-width, log, markup, spreadsheet, database, dump, HAR, clipboard, and archive-wrapped sources into a local DecentDB database.",
+      "tags": ["import", "module", "csv", "fixed width", "json", "xml", "html", "markdown", "excel", "ods", "sqlite", "sql dump", "har", "archive", "clipboard", "wizard"],
+      "asset": "assets/help/importing-data.md"
+    },
+    {
+      "id": "schema-browser",
+      "title": "Exploring Schema",
+      "category": "Working With Data",
+      "summary": "Use the schema explorer and details pane to understand tables, columns, indexes, and relationships.",
+      "tags": ["schema", "tables", "columns", "indexes", "erd"],
+      "asset": "assets/help/schema-browser.md"
+    },
+    {
+      "id": "data-quality",
+      "title": "Data Quality",
+      "category": "Working With Data",
+      "summary": "Profile tables, run validation rules, inspect issue details, review import reconciliation, and export quality reports.",
+      "tags": ["quality", "profile", "validation", "rules", "reconciliation", "duplicates", "report"],
+      "asset": "assets/help/data-quality.md"
+    },
+    {
+      "id": "writing-sql",
+      "title": "Writing and Running SQL",
+      "category": "Working With Data",
+      "summary": "Write SQL, run the current statement or whole buffer, format queries, and stop long-running work.",
+      "tags": ["sql", "query", "editor", "run", "format"],
+      "asset": "assets/help/writing-sql.md"
+    },
+    {
+      "id": "results-grid",
+      "title": "Reading Query Results",
+      "category": "Working With Data",
+      "summary": "Navigate paged results without loading the whole result set into memory.",
+      "tags": ["results", "grid", "paging", "rows", "columns"],
+      "asset": "assets/help/results-grid.md"
+    },
+    {
+      "id": "exporting-results",
+      "title": "Exporting Results",
+      "category": "Exporting",
+      "summary": "Export query results, tables, schema SQL, and ERD images for downstream use.",
+      "tags": ["export", "csv", "json", "excel", "parquet", "schema"],
+      "asset": "assets/help/exporting-results.md"
+    },
+    {
+      "id": "branches-snapshots",
+      "title": "Branches and Snapshots",
+      "category": "Database Safety",
+      "summary": "Use DecentDB branches and snapshots to inspect, compare, and protect database states.",
+      "tags": ["branch", "snapshot", "restore", "merge", "diff"],
+      "asset": "assets/help/branches-snapshots.md"
+    },
+    {
+      "id": "preferences-shortcuts",
+      "title": "Preferences and Keyboard Shortcuts",
+      "category": "Personal Setup",
+      "summary": "Adjust editor behavior, layout, export defaults, snippets, and shortcuts.",
+      "tags": ["preferences", "shortcuts", "snippets", "keyboard", "settings"],
+      "asset": "assets/help/preferences-shortcuts.md"
+    },
+    {
+      "id": "troubleshooting",
+      "title": "Troubleshooting",
+      "category": "Help",
+      "summary": "Resolve common open, import, query, export, and performance issues.",
+      "tags": ["troubleshooting", "error", "performance", "logs", "help"],
+      "asset": "assets/help/troubleshooting.md"
+    }
+  ]
+}

@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -15,36 +17,61 @@ import '../../../app/startup_launch_options.dart';
 import '../../../app/theme_system/theme_manager.dart';
 import '../../import/application/import_manager.dart';
 import '../../import/domain/import_models.dart';
+import '../../import_modules/domain/import_module_manifest.dart';
 import '../../import/presentation/generic_import_dialog.dart';
 import '../../import/presentation/import_archive_chooser_dialog.dart';
+import '../application/branch_controller.dart';
 import '../application/menu_command_registry.dart';
 import '../application/workspace_controller.dart';
 import '../application/workspace_shell_controller.dart';
 import '../domain/app_config.dart';
+import '../domain/column_statistics.dart';
+import '../domain/data_quality_models.dart';
+import '../domain/data_quality_reports.dart';
+import '../domain/database_statistics.dart';
+import '../domain/saved_query_models.dart';
 import '../domain/sql_autocomplete.dart';
 import '../domain/sql_execution_target.dart';
 import '../domain/sql_editor_selection.dart';
 import '../domain/sql_formatter.dart';
+import '../domain/sql_risk_assessment.dart';
 import '../domain/workspace_file_entry.dart';
 import '../domain/workspace_models.dart';
 import '../infrastructure/app_lifecycle_service.dart';
+import '../infrastructure/decentdb_migration_service.dart';
+import '../infrastructure/decentdb_web_console_service.dart';
 import '../infrastructure/shortcut_config_service.dart';
+import 'about_dialog.dart';
+import 'decentdb_migration_dialog.dart';
 import 'excel_import_dialog.dart';
 import 'export_results_csv_dialog.dart';
+import 'export_results_excel_dialog.dart';
+import 'export_results_json_dialog.dart';
+import 'help/help_center_dialog.dart';
 import 'ms_sql_bak_import_dialog.dart';
+import 'log_viewer_dialog.dart';
 import 'preferences_dialog.dart';
+import 'quality/data_quality_dashboard.dart';
+import 'quality/quality_report_export_dialog.dart';
+import 'quality/validation_profile_editor.dart';
 import 'shell/app_menu_bar.dart';
+import 'shell/command_palette.dart';
 import 'shell/command_toolbar.dart';
 import 'shell/properties_pane.dart';
 import 'shell/results_pane.dart';
 import 'shell/schema_explorer_pane.dart';
 import 'shell/schema_browser_models.dart';
+import 'shell/schema_relationship_diagram.dart';
 import 'shell/sql_editor_pane.dart';
 import 'shell/sql_highlighting_text_controller.dart';
 import 'shell/status_bar.dart';
 import 'shell/workspace_layout_shell.dart';
 import 'sql_dump_import_dialog.dart';
 import 'sqlite_import_dialog.dart';
+
+enum _RiskySqlDecision { cancel, currentDatabase, newBranch }
+
+enum _AboutDialogAction { viewLicenses }
 
 class WorkspaceScreen extends StatefulWidget {
   const WorkspaceScreen({
@@ -53,12 +80,14 @@ class WorkspaceScreen extends StatefulWidget {
     required this.themeManager,
     this.appLifecycleService = const FlutterAppLifecycleService(),
     this.startupLaunchOptions = const StartupLaunchOptions(),
+    this.webConsoleService,
   });
 
   final WorkspaceController controller;
   final ThemeManager themeManager;
   final AppLifecycleService appLifecycleService;
   final StartupLaunchOptions startupLaunchOptions;
+  final DecentDbWebConsoleService? webConsoleService;
 
   @override
   State<WorkspaceScreen> createState() => _WorkspaceScreenState();
@@ -72,6 +101,22 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   static const _csvTypeGroup = XTypeGroup(
     label: 'CSV',
     extensions: <String>['csv'],
+  );
+  static const _jsonTypeGroup = XTypeGroup(
+    label: 'JSON',
+    extensions: <String>['json', 'jsonl', 'ndjson'],
+  );
+  static const _excelExportTypeGroup = XTypeGroup(
+    label: 'Excel',
+    extensions: <String>['xlsx'],
+  );
+  static const _schemaExportTypeGroup = XTypeGroup(
+    label: 'Schema SQL',
+    extensions: <String>['sql'],
+  );
+  static const _projectTypeGroup = XTypeGroup(
+    label: 'Decent Bench Project',
+    extensions: <String>['toml'],
   );
 
   late final SqlHighlightingTextEditingController _sqlController =
@@ -104,12 +149,17 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           );
         },
       );
+  final GlobalKey<SchemaRelationshipDiagramState> _erdDiagramKey =
+      GlobalKey<SchemaRelationshipDiagramState>();
   final ShortcutConfigService _shortcutConfigService =
       const ShortcutConfigService();
   final SqlAutocompleteEngine _autocompleteEngine =
       const SqlAutocompleteEngine();
   final SqlFormatter _sqlFormatter = const SqlFormatter();
   final ImportManager _importManager = ImportManager();
+  final DecentDbMigrationService _migrationService = DecentDbMigrationService();
+  late final DecentDbWebConsoleService _webConsoleService =
+      widget.webConsoleService ?? DecentDbWebConsoleService();
 
   bool _didHydrateShellPreferences = false;
   bool _isDropTargetActive = false;
@@ -118,11 +168,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   int _findMatchCount = 0;
   int _activeFindMatch = 0;
   String? _selectedSchemaNodeId;
+  bool _showCommandPalette = false;
   bool _nativeMenuAvailable = false;
   bool _didCheckNativeMenuAvailability = false;
   bool _didProcessStartupLaunchOptions = false;
   bool _pendingSqlEditorStateRebuild = false;
   bool _pendingControllerSync = false;
+  _NavigationPaneMode _navigationPaneMode = _NavigationPaneMode.schema;
   int _autocompleteSelectionIndex = 0;
   TextEditingValue? _dismissedAutocompleteValue;
   String? _pendingSqlText;
@@ -172,6 +224,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     _paramsController.dispose();
     _sqlController.removeListener(_handleSqlEditorStateChanged);
     _sqlController.dispose();
+    unawaited(_webConsoleService.shutdown());
     super.dispose();
   }
 
@@ -250,6 +303,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         final shellPreferences = _shellController.preferences;
         final resultsState = _resultsStateFor(activeTab.id);
         final usePlaceholderContent = _usePlaceholderContent(controller);
+        final databaseLabel = controller.databasePath == null
+            ? 'sample.decentdb'
+            : p.basename(controller.databasePath!);
+        final schemaPaneIsLoading =
+            controller.isInitializing ||
+            controller.isSchemaLoading ||
+            controller.isOpeningDatabase;
 
         return DropTarget(
           enable: !controller.hasImportSession && !_genericImportOpen,
@@ -290,22 +350,51 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                 padding: const EdgeInsets.all(8),
                                 child: WorkspaceLayoutShell(
                                   controller: _shellController,
-                                  schemaExplorer: SchemaExplorerPane(
-                                    schema: controller.schema,
-                                    databasePath: controller.databasePath,
-                                    selectedNodeId: selectedSelection?.nodeId,
-                                    onSelectNode: (nodeId) {
-                                      setState(() {
-                                        _selectedSchemaNodeId = nodeId;
-                                      });
-                                    },
-                                    onShowNodeMenu: _showSchemaNodeContextMenu,
-                                    onRefresh: () {
-                                      controller.refreshSchema();
-                                    },
-                                    isLoading:
-                                        controller.isSchemaLoading ||
-                                        controller.isOpeningDatabase,
+                                  schemaExplorer: _WorkspaceNavigationPane(
+                                    mode: _navigationPaneMode,
+                                    onModeChanged: _setNavigationPaneMode,
+                                    schemaExplorer: SchemaExplorerPane(
+                                      schema: controller.schema,
+                                      databasePath: controller.databasePath,
+                                      toolingMetadata:
+                                          controller.toolingMetadata,
+                                      branchLabel:
+                                          controller.branchState.branchLabel,
+                                      selectedNodeId: selectedSelection?.nodeId,
+                                      onSelectNode: (nodeId) {
+                                        setState(() {
+                                          _selectedSchemaNodeId = nodeId;
+                                        });
+                                      },
+                                      onShowNodeMenu:
+                                          _showSchemaNodeContextMenu,
+                                      onRefresh: () {
+                                        controller.refreshSchema();
+                                      },
+                                      isLoading: schemaPaneIsLoading,
+                                    ),
+                                    qualityDashboard: DataQualityDashboard(
+                                      controller: controller.dataQuality,
+                                      onExportReport:
+                                          _showQualityReportExportDialog,
+                                    ),
+                                    erdViewer: SchemaRelationshipDiagram(
+                                      key: _erdDiagramKey,
+                                      schema: controller.schema,
+                                      databaseLabel: databaseLabel,
+                                      databasePath: controller.databasePath,
+                                      logger: controller.logger,
+                                      selectedTableName:
+                                          _selectedTableNameForErd(controller),
+                                      onSelectTable: (tableName) {
+                                        setState(() {
+                                          _selectedSchemaNodeId =
+                                              'table:$tableName';
+                                        });
+                                      },
+                                      onOpenTable: _openTableFromErd,
+                                      isLoading: schemaPaneIsLoading,
+                                    ),
                                   ),
                                   propertiesPane: PropertiesPane(
                                     selection: selectedSelection,
@@ -413,8 +502,26 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                       onShowCellMenu: _showResultsCellMenu,
                                       onSelectRow: _selectResultsRow,
                                       onTogglePinnedColumn: _togglePinnedColumn,
+                                      onShowColumnStatistics:
+                                          _showResultColumnStatistics,
+                                      onLoadHistoryEntry: (entry) {
+                                        controller
+                                            .loadHistoryEntryIntoActiveTab(
+                                              entry,
+                                            );
+                                      },
+                                      onRunHistoryEntry: (entry) {
+                                        return controller.rerunHistoryEntry(
+                                          entry,
+                                        );
+                                      },
+                                      onClearHistory:
+                                          controller.clearActiveTabHistory,
                                       usePlaceholderContent:
                                           usePlaceholderContent,
+                                      tableEditabilityLabel: controller
+                                          .tableEditabilityForTab(activeTab.id)
+                                          .statusLabel,
                                     ),
                                   ),
                                 ),
@@ -426,17 +533,24 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                     controller.workspaceError ??
                                     controller.workspaceMessage ??
                                     'Ready',
-                                workspaceLabel:
-                                    'Workspace: ${controller.databasePath == null ? 'sample.decentdb' : p.basename(controller.databasePath!)}',
+                                workspaceLabel: 'Workspace: $databaseLabel',
                                 lastExecutionLabel:
                                     'Last execution: ${activeTab.elapsed?.inMilliseconds ?? 142} ms',
                                 rowsLabel:
                                     'Rows: ${activeTab.resultRows.isNotEmpty ? activeTab.resultRows.length : activeTab.rowsAffected ?? (controller.hasOpenDatabase ? 0 : 250)}',
                                 editorModeLabel: _editorModeLabel(),
+                                branchLabel: controller.branchState.branchLabel,
                               ),
                           ],
                         ),
                         if (_isDropTargetActive) const _DropOverlay(),
+                        if (_showCommandPalette)
+                          CommandPalette(
+                            registry: registry,
+                            logger: widget.controller.logger,
+                            onDismiss: () =>
+                                setState(() => _showCommandPalette = false),
+                          ),
                       ],
                     ),
                   ),
@@ -517,6 +631,78 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     widget.controller.updateActiveSql(value);
   }
 
+  void _setNavigationPaneMode(_NavigationPaneMode mode) {
+    if (mode == _NavigationPaneMode.erd) {
+      _logErdNavigationSelected();
+    }
+    setState(() {
+      _navigationPaneMode = mode;
+    });
+  }
+
+  void _logErdNavigationSelected() {
+    final controller = widget.controller;
+    final schema = controller.schema;
+    final isLoading =
+        controller.isInitializing ||
+        controller.isSchemaLoading ||
+        controller.isOpeningDatabase;
+    final details = <String, Object?>{
+      'database_label': controller.databasePath == null
+          ? 'sample.decentdb'
+          : p.basename(controller.databasePath!),
+      'has_open_database': controller.hasOpenDatabase,
+      'is_initializing': controller.isInitializing,
+      'is_schema_loading': controller.isSchemaLoading,
+      'is_opening_database': controller.isOpeningDatabase,
+      'schema_loaded_at_utc': schema.loadedAt.toIso8601String(),
+      'object_count': schema.objects.length,
+      'table_count': schema.tables.length,
+      'view_count': schema.views.length,
+      'index_count': schema.indexes.length,
+      'trigger_count': schema.triggers.length,
+      'selected_schema_node_id': _selectedSchemaNodeId,
+      'selected_table_for_erd': _selectedTableNameForErd(controller),
+      'table_names_sample': _sampleSchemaNames(schema.tables),
+      'view_names_sample': _sampleSchemaNames(schema.views),
+    };
+    assert(() {
+      developer.log(
+        'ERD navigation selected ${jsonEncode(details)}',
+        name: 'erd.navigation',
+      );
+      return true;
+    }());
+    controller.logger.info(
+      category: 'erd',
+      operation: 'navigation_selected',
+      message: 'ERD navigation selected.',
+      databasePath: controller.databasePath,
+      details: details,
+    );
+    if (controller.hasOpenDatabase && !isLoading && schema.tables.isEmpty) {
+      controller.logger.warning(
+        category: 'erd',
+        operation: 'navigation_empty_schema',
+        message:
+            'ERD selected for ${details['database_label']} while the open '
+            'workspace schema has ${schema.tables.length} tables, '
+            '${schema.views.length} views, and ${schema.objects.length} '
+            'schema objects.',
+        databasePath: controller.databasePath,
+        details: details,
+      );
+    }
+  }
+
+  List<String> _sampleSchemaNames(List<SchemaObjectSummary> objects) {
+    const sampleLimit = 25;
+    return objects
+        .map((object) => object.name)
+        .take(sampleLimit)
+        .toList(growable: false);
+  }
+
   SchemaSelectionDetails? _selectedSchemaSelection(
     WorkspaceController controller,
   ) {
@@ -542,6 +728,18 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return 'index:${controller.schema.indexes.first.name}';
     }
     return 'database';
+  }
+
+  String? _selectedTableNameForErd(WorkspaceController controller) {
+    final nodeId = _selectedSchemaNodeId ?? _fallbackSchemaNodeId(controller);
+    if (!nodeId.startsWith('table:')) {
+      return null;
+    }
+    final tableName = nodeId.substring('table:'.length);
+    return controller.schema.objectNamed(tableName)?.kind ==
+            SchemaObjectKind.table
+        ? tableName
+        : null;
   }
 
   SchemaSelectionDetails? _selectionDetailsForNode(
@@ -673,6 +871,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         }
         for (final column in object.columns) {
           if (column.name == parts[2]) {
+            final typeMetadata = controller.toolingMetadata?.columnTypeFor(
+              tableName: object.name,
+              columnName: column.name,
+            );
+            final nativeType =
+                typeMetadata?.nativeTypeDescriptor ??
+                describeNativeType(typeName: column.type);
+            final spatialInfo = nativeType.spatial;
             return SchemaSelectionDetails(
               nodeId: nodeId,
               kind: SchemaSelectionKind.column,
@@ -682,6 +888,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               summaryRows: <MapEntry<String, String>>[
                 MapEntry('Object', object.name),
                 MapEntry('Type', column.type),
+                MapEntry('Type family', nativeType.familyLabel),
+                if (typeMetadata?.typeInfo.valueKind.trim().isNotEmpty == true)
+                  MapEntry('Value kind', typeMetadata!.typeInfo.valueKind),
+                if (spatialInfo != null)
+                  MapEntry('Spatial', spatialInfo.summaryLabel),
+                if (nativeType.enumLabels.isNotEmpty)
+                  MapEntry('Enum labels', nativeType.enumLabels.join(', ')),
                 MapEntry('Primary key', column.primaryKey ? 'Yes' : 'No'),
                 MapEntry('Nullable', column.notNull ? 'No' : 'Yes'),
                 MapEntry('Unique', column.unique ? 'Yes' : 'No'),
@@ -699,9 +912,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                     '${column.refTable}(${column.refColumn})',
                   ),
               ],
-              notes: column.constraintSummaries.isEmpty
-                  ? const <String>['No explicit constraints exposed.']
-                  : column.constraintSummaries,
+              notes: <String>[
+                if (nativeType.isNativeV25Type)
+                  'Native DecentDB type: ${nativeType.summaryLabel}.',
+                if (column.constraintSummaries.isEmpty)
+                  'No explicit constraints exposed.'
+                else
+                  ...column.constraintSummaries,
+              ],
             );
           }
         }
@@ -991,6 +1209,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         _nativeMenuAvailable = supported ?? Platform.isMacOS;
       });
     } on MissingPluginException {
+      widget.controller.logger.debug(
+        category: 'platform',
+        operation: 'native_menu_detect',
+        message: 'Native menu plugin not available on this platform.',
+      );
       if (!mounted) {
         return;
       }
@@ -998,7 +1221,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         _didCheckNativeMenuAvailability = true;
         _nativeMenuAvailable = false;
       });
-    } catch (_) {
+    } catch (error) {
+      widget.controller.logger.debug(
+        category: 'platform',
+        operation: 'native_menu_detect',
+        message: 'Could not detect native menu availability.',
+        details: <String, Object?>{'error': error.toString()},
+      );
       if (!mounted) {
         return;
       }
@@ -1098,6 +1327,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       rowIndex: rowIndex,
       columnName: columnName,
     );
+    final editability = widget.controller.tableEditabilityForTab(
+      widget.controller.activeTabId,
+    );
+    final canEditCell = editability.canEditColumn(columnName);
+    final spatialCopyProfile = _selectedResultsCellSpatialCopyProfile(
+      rowIndex: rowIndex,
+      columnName: columnName,
+    );
     if (!mounted) {
       return;
     }
@@ -1117,16 +1354,52 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           label: 'Copy',
         ),
         _popupMenuItem(
+          value: _ResultsCellMenuAction.copySpatialWkb,
+          icon: Icons.public_outlined,
+          label: 'Copy EWKB Base64',
+          enabled: spatialCopyProfile.canCopyWkb,
+        ),
+        _popupMenuItem(
+          value: _ResultsCellMenuAction.copySpatialWkt,
+          icon: Icons.location_on_outlined,
+          label: 'Copy WKT',
+          enabled: spatialCopyProfile.canCopyWkt,
+        ),
+        _popupMenuItem(
+          value: _ResultsCellMenuAction.copySpatialGeoJson,
+          icon: Icons.data_object_outlined,
+          label: 'Copy GeoJSON',
+          enabled: spatialCopyProfile.canCopyGeoJson,
+        ),
+        _popupMenuItem(
+          value: _ResultsCellMenuAction.edit,
+          icon: Icons.edit_outlined,
+          label: 'Edit Cell',
+          enabled: canEditCell,
+        ),
+        _popupMenuItem(
+          value: _ResultsCellMenuAction.insertRow,
+          icon: Icons.add_circle_outline,
+          label: 'Insert Row',
+          enabled: editability.canInsertRows,
+        ),
+        _popupMenuItem(
           value: _ResultsCellMenuAction.paste,
           icon: Icons.content_paste_outlined,
           label: 'Paste',
-          enabled: canPaste,
+          enabled: canEditCell && canPaste,
         ),
         _popupMenuItem(
           value: _ResultsCellMenuAction.setNull,
           icon: Icons.exposure_zero_outlined,
           label: 'Set To Null',
-          enabled: canSetNull,
+          enabled: canEditCell && canSetNull,
+        ),
+        _popupMenuItem(
+          value: _ResultsCellMenuAction.deleteRow,
+          icon: Icons.delete_outline,
+          label: 'Delete Row',
+          enabled: editability.canDeleteRows,
         ),
       ],
     );
@@ -1138,9 +1411,39 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       case _ResultsCellMenuAction.copy:
         await _copyResultsSelection();
         break;
+      case _ResultsCellMenuAction.copySpatialWkb:
+        await _copySelectedSpatialWkb(
+          rowIndex: rowIndex,
+          columnName: columnName,
+        );
+        break;
+      case _ResultsCellMenuAction.copySpatialWkt:
+        await _copySelectedSpatialWkt(
+          rowIndex: rowIndex,
+          columnName: columnName,
+        );
+        break;
+      case _ResultsCellMenuAction.copySpatialGeoJson:
+        await _copySelectedSpatialGeoJson(
+          rowIndex: rowIndex,
+          columnName: columnName,
+        );
+        break;
+      case _ResultsCellMenuAction.edit:
+        await _editSelectedResultsCell(
+          rowIndex: rowIndex,
+          columnName: columnName,
+        );
+        break;
+      case _ResultsCellMenuAction.insertRow:
+        await _insertResultRow(
+          anchorRowIndex: rowIndex,
+          columnName: columnName,
+        );
+        break;
       case _ResultsCellMenuAction.paste:
         if (clipboardText != null && clipboardText.isNotEmpty) {
-          _updateSelectedResultsCellValue(
+          await _commitSelectedResultsCellValue(
             rowIndex: rowIndex,
             columnName: columnName,
             value: clipboardText,
@@ -1148,11 +1451,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         }
         break;
       case _ResultsCellMenuAction.setNull:
-        _updateSelectedResultsCellValue(
+        await _commitSelectedResultsCellValue(
           rowIndex: rowIndex,
           columnName: columnName,
           value: null,
         );
+        break;
+      case _ResultsCellMenuAction.deleteRow:
+        await _deleteSelectedResultsRow(rowIndex: rowIndex);
         break;
     }
   }
@@ -1167,6 +1473,304 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     setState(() {
       _resultsStateByTabId[tabId] = current.copyWith(pinnedColumns: nextPinned);
     });
+  }
+
+  Future<void> _showResultColumnStatistics(String columnName) async {
+    final tab = widget.controller.activeTab;
+    final usePlaceholderContent = _usePlaceholderContent(widget.controller);
+    final rows = resolveResultsRows(
+      tab,
+      usePlaceholderContent: usePlaceholderContent,
+    );
+    final contract = tab.resultContractForColumn(columnName);
+    final statistics = buildColumnStatistics(
+      columnName: columnName,
+      rows: rows,
+      nativeType: contract?.nativeTypeDescriptor,
+    );
+    await _showColumnStatisticsDialog(statistics);
+  }
+
+  Future<void> _showSchemaColumnStatistics(String nodeId) async {
+    final parts = nodeId.split(':');
+    if (parts.length < 3) {
+      return;
+    }
+    final objectName = parts[1];
+    final columnName = parts[2];
+    final object = widget.controller.schema.objectNamed(objectName);
+    final column = object == null
+        ? null
+        : _firstOrNull(object.columns.where((item) => item.name == columnName));
+    final typeMetadata = widget.controller.toolingMetadata?.columnTypeFor(
+      tableName: objectName,
+      columnName: columnName,
+    );
+    final nativeType =
+        typeMetadata?.nativeTypeDescriptor ??
+        (column == null ? null : describeNativeType(typeName: column.type));
+    final activeTab = widget.controller.activeTab;
+    final canUseLoadedRows =
+        activeTab.resultRows.isNotEmpty &&
+        activeTab.resultColumns.contains(columnName);
+    final statistics = buildColumnStatistics(
+      columnName: columnName,
+      rows: canUseLoadedRows
+          ? activeTab.resultRows
+          : const <Map<String, Object?>>[],
+      nativeType: nativeType,
+    );
+    await _showColumnStatisticsDialog(
+      statistics,
+      note: canUseLoadedRows
+          ? null
+          : 'Open or run a result set containing this column to profile loaded values.',
+    );
+  }
+
+  Future<void> _showColumnStatisticsDialog(
+    ColumnStatistics statistics, {
+    String? note,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Column Statistics: ${statistics.columnName}'),
+        content: SizedBox(
+          width: 520,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _KeyValueList(rows: statistics.summaryRows),
+              if (note != null) ...<Widget>[
+                const SizedBox(height: 12),
+                Text(note),
+              ],
+              if (statistics.topValues.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 12),
+                Text(
+                  'Top values',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                for (final value in statistics.topValues)
+                  Text('${value.label}: ${value.count}'),
+              ],
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(
+                ClipboardData(text: statistics.toClipboardText()),
+              );
+              if (context.mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+            child: const Text('Copy Summary'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showDatabaseStatisticsDashboard() async {
+    final statistics = await _buildDatabaseStatistics();
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Database Statistics'),
+        content: SizedBox(
+          width: 620,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _KeyValueList(rows: statistics.summaryRows),
+                if (statistics.operationalMetricRows.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Operational metrics',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  _KeyValueList(rows: statistics.operationalMetricRows),
+                ],
+                if (statistics.maintenanceHints.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Maintenance hints',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  for (final hint in statistics.maintenanceHints)
+                    Text('- $hint'),
+                ],
+                if (statistics.rowCountQueries.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Lazy row counts',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${statistics.rowCountQueries.length} COUNT query template'
+                    '${statistics.rowCountQueries.length == 1 ? '' : 's'} available.',
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: statistics.rowCountQueries.isEmpty
+                ? null
+                : () {
+                    Navigator.of(context).pop();
+                    _openSqlTemplate(_rowCountQuery(statistics));
+                  },
+            child: const Text('Open Row Count Query'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(
+                ClipboardData(text: statistics.toClipboardText()),
+              );
+              if (context.mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+            child: const Text('Copy Summary'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openWebConsole() async {
+    final databasePath = widget.controller.databasePath;
+    if (databasePath == null || databasePath.trim().isEmpty) {
+      await _showPlaceholderNotice(
+        'Open Web Console',
+        'Open a DecentDB database first.',
+      );
+      return;
+    }
+    try {
+      final session = await _webConsoleService.launch(
+        databasePath: databasePath,
+      );
+      if (!mounted) {
+        return;
+      }
+      await _showWebConsoleSessionDialog(session);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      await _showPlaceholderNotice('Open Web Console', error.toString());
+    }
+  }
+
+  Future<void> _showWebConsoleSessionDialog(DecentDbWebConsoleSession session) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) {
+        final endpoint = session.consoleUri?.toString() ?? 'Starting';
+        return AlertDialog(
+          title: const Text('Web Console'),
+          content: SizedBox(
+            width: 520,
+            child: _KeyValueList(
+              rows: <MapEntry<String, String>>[
+                MapEntry('Database', session.databasePath),
+                MapEntry('Endpoint', endpoint),
+                MapEntry('Process', p.basename(session.cliPath)),
+                if (session.consolePort != null)
+                  MapEntry('Port', '${session.consolePort}'),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () async {
+                await _webConsoleService.shutdown();
+                if (context.mounted) {
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text('Stop'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<DatabaseStatistics> _buildDatabaseStatistics() async {
+    final databasePath = widget.controller.databasePath;
+    final databaseFileBytes = await _fileSize(databasePath);
+    final walFileBytes = await _fileSize(
+      databasePath == null ? null : '$databasePath-wal',
+    );
+    final shmFileBytes = await _fileSize(
+      databasePath == null ? null : '$databasePath-shm',
+    );
+    final operationalMetrics = await widget.controller.loadOperationalMetrics();
+    return buildDatabaseStatistics(
+      schema: widget.controller.schema,
+      branchState: widget.controller.branchState,
+      databasePath: databasePath,
+      databaseFileBytes: databaseFileBytes,
+      walFileBytes: walFileBytes,
+      shmFileBytes: shmFileBytes,
+      operationalMetrics: operationalMetrics,
+    );
+  }
+
+  Future<int?> _fileSize(String? path) async {
+    if (path == null || path.trim().isEmpty) {
+      return null;
+    }
+    final file = File(path);
+    if (!await file.exists()) {
+      return 0;
+    }
+    return file.length();
+  }
+
+  String _rowCountQuery(DatabaseStatistics statistics) {
+    final entries = statistics.rowCountQueries.entries.toList();
+    if (entries.isEmpty) {
+      return '-- No tables are available for row counting.';
+    }
+    return entries
+        .map(
+          (entry) =>
+              'SELECT ${_quoteStringLiteral(entry.key)} AS table_name, '
+              'COUNT(*) AS row_count\nFROM ${quoteSqlIdentifier(entry.key)}',
+        )
+        .join('\nUNION ALL\n');
   }
 
   void _selectAllResultsRows() {
@@ -1373,7 +1977,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       if (pasteText == null || pasteText.isEmpty || selectedCell == null) {
         return;
       }
-      _updateSelectedResultsCellValue(
+      await _commitSelectedResultsCellValue(
         rowIndex: selectedCell.rowIndex,
         columnName: selectedCell.columnName,
         value: pasteText,
@@ -1435,7 +2039,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       final cell = state.selectedCell!;
       await Clipboard.setData(
         ClipboardData(
-          text: formatCellValue(
+          text: _formatResultCellValueForCopy(
+            tab,
+            cell.columnName,
             resolveResultsCellValue(
               tab,
               state,
@@ -1457,7 +2063,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       buffer.writeln(
         columns
             .map(
-              (column) => formatCellValue(
+              (column) => _formatResultCellValueForCopy(
+                tab,
+                column,
                 resolveResultsCellValue(
                   tab,
                   state,
@@ -1473,6 +2081,401 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     await Clipboard.setData(ClipboardData(text: buffer.toString().trimRight()));
   }
 
+  String _formatResultCellValueForCopy(
+    QueryTabState tab,
+    String columnName,
+    Object? value,
+  ) {
+    final contract = tab.resultContractForColumn(columnName);
+    return formatTypedCellValue(value, typeName: contract?.typeName);
+  }
+
+  Future<void> _copySelectedSpatialWkb({
+    required int rowIndex,
+    required String columnName,
+  }) async {
+    final tab = widget.controller.activeTab;
+    final value = _resolveSelectedResultsCellValue(
+      tab: tab,
+      state: _resultsStateFor(tab.id),
+      rowIndex: rowIndex,
+      columnName: columnName,
+    );
+    await Clipboard.setData(ClipboardData(text: formatSpatialWkbBase64(value)));
+  }
+
+  Future<void> _copySelectedSpatialWkt({
+    required int rowIndex,
+    required String columnName,
+  }) async {
+    final tab = widget.controller.activeTab;
+    final value = _resolveSelectedResultsCellValue(
+      tab: tab,
+      state: _resultsStateFor(tab.id),
+      rowIndex: rowIndex,
+      columnName: columnName,
+    );
+    final text = _formatSelectedSpatialTextValue(
+      value: value,
+      contractTypeName: tab.resultContractForColumn(columnName)?.typeName,
+    );
+    await Clipboard.setData(ClipboardData(text: text));
+  }
+
+  Future<void> _copySelectedSpatialGeoJson({
+    required int rowIndex,
+    required String columnName,
+  }) async {
+    final tab = widget.controller.activeTab;
+    final value = _resolveSelectedResultsCellValue(
+      tab: tab,
+      state: _resultsStateFor(tab.id),
+      rowIndex: rowIndex,
+      columnName: columnName,
+    );
+    final text = _formatSelectedSpatialTextValue(
+      value: value,
+      contractTypeName: tab.resultContractForColumn(columnName)?.typeName,
+    );
+    await Clipboard.setData(ClipboardData(text: text));
+  }
+
+  String _formatSelectedSpatialTextValue({
+    required Object? value,
+    required String? contractTypeName,
+  }) {
+    return value == null
+        ? ''
+        : formatTypedCellValue(value, typeName: contractTypeName);
+  }
+
+  Object? _resolveSelectedResultsCellValue({
+    required QueryTabState tab,
+    required ResultsGridInteractionState state,
+    required int rowIndex,
+    required String columnName,
+  }) {
+    return resolveResultsCellValue(
+      tab,
+      state,
+      rowIndex,
+      columnName,
+      usePlaceholderContent: _usePlaceholderContent(widget.controller),
+    );
+  }
+
+  _ResultsCellSpatialCopyProfile _selectedResultsCellSpatialCopyProfile({
+    required int rowIndex,
+    required String columnName,
+  }) {
+    final tab = widget.controller.activeTab;
+    final state = _resultsStateFor(tab.id);
+    final contract = tab.resultContractForColumn(columnName);
+    if (contract?.nativeTypeDescriptor.isSpatial != true) {
+      return const _ResultsCellSpatialCopyProfile();
+    }
+    final value = _resolveSelectedResultsCellValue(
+      tab: tab,
+      state: state,
+      rowIndex: rowIndex,
+      columnName: columnName,
+    );
+    if (value is! Uint8List && value is! String) {
+      return const _ResultsCellSpatialCopyProfile(canCopyWkb: false);
+    }
+    if (value is String) {
+      return _ResultsCellSpatialCopyProfile(
+        canCopyWkt: _looksLikeSpatialWkt(value),
+        canCopyGeoJson: _looksLikeSpatialGeoJson(value),
+      );
+    }
+
+    return const _ResultsCellSpatialCopyProfile(canCopyWkb: true);
+  }
+
+  bool _looksLikeSpatialWkt(String value) {
+    final trimmed = value.trim();
+    return trimmed.startsWith('{')
+        ? false
+        : RegExp(r'^[A-Z][A-Z0-9_]*\s*\(').hasMatch(trimmed.toUpperCase());
+  }
+
+  bool _looksLikeSpatialGeoJson(String value) {
+    final trimmed = value.trim();
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+      return false;
+    }
+    return trimmed.contains('"type"') && trimmed.contains('"coordinates"');
+  }
+
+  Future<void> _editSelectedResultsCell({
+    required int rowIndex,
+    required String columnName,
+  }) async {
+    final tab = widget.controller.activeTab;
+    final currentValue = _resolveSelectedResultsCellValue(
+      tab: tab,
+      state: _resultsStateFor(tab.id),
+      rowIndex: rowIndex,
+      columnName: columnName,
+    );
+    final editorController = TextEditingController(
+      text: currentValue?.toString() ?? '',
+    );
+    final nextValue = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Edit $columnName'),
+          content: SizedBox(
+            width: 420,
+            child: TextField(
+              controller: editorController,
+              autofocus: true,
+              maxLines: 4,
+              minLines: 1,
+              decoration: const InputDecoration(labelText: 'Value'),
+              onSubmitted: (value) => Navigator.of(context).pop(value),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(editorController.text),
+              child: const Text('Apply'),
+            ),
+          ],
+        );
+      },
+    );
+    editorController.dispose();
+    if (nextValue == null) {
+      return;
+    }
+    await _commitSelectedResultsCellValue(
+      rowIndex: rowIndex,
+      columnName: columnName,
+      value: nextValue,
+    );
+  }
+
+  Future<void> _commitSelectedResultsCellValue({
+    required int rowIndex,
+    required String columnName,
+    required Object? value,
+  }) async {
+    final editability = widget.controller.tableEditabilityForTab(
+      widget.controller.activeTabId,
+    );
+    if (!editability.canEditColumn(columnName)) {
+      _setResultsCellError(
+        rowIndex: rowIndex,
+        columnName: columnName,
+        message: editability.reason,
+      );
+      return;
+    }
+    if (!await _confirmDirectTableEdit(actionLabel: 'Apply edit')) {
+      return;
+    }
+    _updateSelectedResultsCellValue(
+      rowIndex: rowIndex,
+      columnName: columnName,
+      value: value,
+    );
+    final result = await widget.controller.updateResultCell(
+      rowIndex: rowIndex,
+      columnName: columnName,
+      value: value,
+      tabId: widget.controller.activeTabId,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (result.success) {
+      _clearResultsCellOverride(rowIndex: rowIndex, columnName: columnName);
+      return;
+    }
+    _setResultsCellError(
+      rowIndex: rowIndex,
+      columnName: columnName,
+      message: result.message,
+    );
+  }
+
+  Future<void> _deleteSelectedResultsRow({required int rowIndex}) async {
+    if (!await _confirmDirectTableEdit(actionLabel: 'Delete row')) {
+      return;
+    }
+    final tabId = widget.controller.activeTabId;
+    final selectedCell = _resultsStateFor(tabId).selectedCell;
+    final result = await widget.controller.deleteResultRow(
+      rowIndex: rowIndex,
+      tabId: tabId,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (result.success) {
+      final current = _resultsStateFor(tabId);
+      setState(() {
+        _resultsStateByTabId[tabId] = current.copyWith(
+          selectedRows: const <int>{},
+          selectedCell: null,
+          cellOverrides: <ResultsGridCellKey, Object?>{
+            for (final entry in current.cellOverrides.entries)
+              if (entry.key.rowIndex != rowIndex) entry.key: entry.value,
+          },
+          cellErrors: <ResultsGridCellKey, String>{
+            for (final entry in current.cellErrors.entries)
+              if (entry.key.rowIndex != rowIndex) entry.key: entry.value,
+          },
+        );
+      });
+      return;
+    }
+    final resultColumns = widget.controller.activeTab.resultColumns;
+    final columnName =
+        selectedCell?.columnName ??
+        (resultColumns.isEmpty ? '' : resultColumns.first);
+    if (columnName.isEmpty) {
+      return;
+    }
+    _setResultsCellError(
+      rowIndex: rowIndex,
+      columnName: columnName,
+      message: result.message,
+    );
+  }
+
+  Future<void> _insertResultRow({
+    required int anchorRowIndex,
+    required String columnName,
+  }) async {
+    final editability = widget.controller.tableEditabilityForTab(
+      widget.controller.activeTabId,
+    );
+    if (!editability.canInsertRows) {
+      _setResultsCellError(
+        rowIndex: anchorRowIndex,
+        columnName: columnName,
+        message: editability.reason,
+      );
+      return;
+    }
+    final values = await _showInsertRowDialog(editability);
+    if (values == null) {
+      return;
+    }
+    if (!await _confirmDirectTableEdit(actionLabel: 'Insert row')) {
+      return;
+    }
+    final result = await widget.controller.insertResultRow(
+      values: values,
+      tabId: widget.controller.activeTabId,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (result.success) {
+      return;
+    }
+    _setResultsCellError(
+      rowIndex: anchorRowIndex,
+      columnName: columnName,
+      message: result.message,
+    );
+  }
+
+  Future<Map<String, Object?>?> _showInsertRowDialog(
+    TableEditabilityState editability,
+  ) async {
+    final controllers = <String, TextEditingController>{
+      for (final sourceColumn in editability.insertableColumns.keys)
+        sourceColumn: TextEditingController(),
+    };
+    final result = await showDialog<Map<String, Object?>?>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(
+            'Insert Row${editability.tableName == null ? '' : ' Into ${editability.tableName}'}',
+          ),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  for (final entry in controllers.entries) ...<Widget>[
+                    TextField(
+                      controller: entry.value,
+                      decoration: InputDecoration(labelText: entry.key),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop(<String, Object?>{
+                  for (final entry in controllers.entries)
+                    if (entry.value.text.trim().isNotEmpty)
+                      entry.key: entry.value.text,
+                });
+              },
+              child: const Text('Insert'),
+            ),
+          ],
+        );
+      },
+    );
+    for (final controller in controllers.values) {
+      controller.dispose();
+    }
+    return result;
+  }
+
+  Future<bool> _confirmDirectTableEdit({required String actionLabel}) async {
+    if (widget.controller.canUseNativeBranchWorkflow) {
+      return true;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Apply table edit?'),
+          content: Text(
+            'This will run generated SQL directly against the current '
+            'database because branch-safe editing is unavailable.\n\n'
+            '${BranchController.nativeBranchApiUnavailableReason}',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(actionLabel),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed ?? false;
+  }
+
   void _updateSelectedResultsCellValue({
     required int rowIndex,
     required String columnName,
@@ -1483,6 +2486,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final nextOverrides = Map<ResultsGridCellKey, Object?>.from(
       current.cellOverrides,
     )..[ResultsGridCellKey(rowIndex: rowIndex, columnName: columnName)] = value;
+    final nextErrors = Map<ResultsGridCellKey, String>.from(current.cellErrors)
+      ..remove(ResultsGridCellKey(rowIndex: rowIndex, columnName: columnName));
     setState(() {
       _resultsStateByTabId[tabId] = current.copyWith(
         selectedRows: <int>{rowIndex},
@@ -1491,6 +2496,56 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           columnName: columnName,
         ),
         cellOverrides: nextOverrides,
+        cellErrors: nextErrors,
+      );
+    });
+    _resultsFocusNode.requestFocus();
+  }
+
+  void _clearResultsCellOverride({
+    required int rowIndex,
+    required String columnName,
+  }) {
+    final tabId = widget.controller.activeTabId;
+    final current = _resultsStateFor(tabId);
+    final key = ResultsGridCellKey(rowIndex: rowIndex, columnName: columnName);
+    final nextOverrides = Map<ResultsGridCellKey, Object?>.from(
+      current.cellOverrides,
+    )..remove(key);
+    final nextErrors = Map<ResultsGridCellKey, String>.from(current.cellErrors)
+      ..remove(key);
+    setState(() {
+      _resultsStateByTabId[tabId] = current.copyWith(
+        selectedRows: <int>{rowIndex},
+        selectedCell: ResultsGridCellSelection(
+          rowIndex: rowIndex,
+          columnName: columnName,
+        ),
+        cellOverrides: nextOverrides,
+        cellErrors: nextErrors,
+      );
+    });
+    _resultsFocusNode.requestFocus();
+  }
+
+  void _setResultsCellError({
+    required int rowIndex,
+    required String columnName,
+    required String message,
+  }) {
+    final tabId = widget.controller.activeTabId;
+    final current = _resultsStateFor(tabId);
+    final key = ResultsGridCellKey(rowIndex: rowIndex, columnName: columnName);
+    final nextErrors = Map<ResultsGridCellKey, String>.from(current.cellErrors)
+      ..[key] = message;
+    setState(() {
+      _resultsStateByTabId[tabId] = current.copyWith(
+        selectedRows: <int>{rowIndex},
+        selectedCell: ResultsGridCellSelection(
+          rowIndex: rowIndex,
+          columnName: columnName,
+        ),
+        cellErrors: nextErrors,
       );
     });
     _resultsFocusNode.requestFocus();
@@ -1618,31 +2673,38 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           onInvoke: _openWorkspace,
         ),
         command(
+          id: 'file_open_project',
+          label: 'Open Project...',
+          icon: Icons.folder_special_outlined,
+          onInvoke: _openWorkspaceProject,
+        ),
+        command(
           id: 'file_save',
           label: 'Save',
           icon: Icons.save_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Save',
-            'Workspace state already persists automatically. Database save commands will be wired when file lifecycle behavior is defined.',
-          ),
+          onInvoke: widget.controller.saveWorkspace,
+          enabled: controller.hasOpenDatabase,
         ),
         command(
           id: 'file_save_as',
           label: 'Save As...',
           icon: Icons.save_as_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Save As',
-            'Database duplication is not wired in this prerelease build yet.',
-          ),
+          onInvoke: _saveWorkspaceAs,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'file_export_project',
+          label: 'Export Project...',
+          icon: Icons.drive_folder_upload_outlined,
+          onInvoke: _exportWorkspaceProject,
+          enabled: controller.hasOpenDatabase,
         ),
         command(
           id: 'file_close',
           label: 'Close',
           icon: Icons.close_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Close Workspace',
-            'Open another workspace or use Exit. Close semantics are still being defined.',
-          ),
+          onInvoke: widget.controller.closeWorkspace,
+          enabled: controller.hasOpenDatabase,
         ),
         command(
           id: 'file_exit',
@@ -1725,22 +2787,24 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           onInvoke: _showSqlDumpImportDialog,
         ),
         command(
+          id: 'import_clipboard_table',
+          label: 'Import Clipboard Table...',
+          icon: Icons.content_paste_outlined,
+          onInvoke: _startClipboardTableImport,
+        ),
+        command(
           id: 'import_from_database',
           label: 'Import From Database...',
           icon: Icons.cloud_sync_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Import From Database',
-            'External live database imports are represented in the shell but not wired in this prerelease build yet.',
-          ),
+          onInvoke: () async {},
+          enabled: false,
         ),
         command(
           id: 'import_rerun_last',
           label: 'Re-run Last Import',
           icon: Icons.restart_alt_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Re-run Last Import',
-            'Recent import recipes are a follow-up workflow.',
-          ),
+          onInvoke: () async {},
+          enabled: false,
         ),
         command(
           id: 'import_open_wizard',
@@ -1759,55 +2823,43 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           id: 'export_results_json',
           label: 'Export Results as JSON...',
           icon: Icons.data_object_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Export JSON',
-            'JSON export is planned but not implemented yet.',
-          ),
+          onInvoke: _showJsonExportDialog,
+          enabled: controller.activeTab.canExport,
         ),
         command(
           id: 'export_results_parquet',
           label: 'Export Results as Parquet...',
           icon: Icons.view_column_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Export Parquet',
-            'Parquet export is planned but not implemented yet.',
-          ),
+          onInvoke: _showParquetExportUnavailableDialog,
+          enabled: false,
         ),
         command(
           id: 'export_results_excel',
           label: 'Export Results as Excel...',
           icon: Icons.table_view_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Export Excel',
-            'Excel export is planned but not implemented yet.',
-          ),
+          onInvoke: _showExcelExportDialog,
+          enabled: controller.activeTab.canExport,
         ),
         command(
           id: 'export_table',
           label: 'Export Table...',
           icon: Icons.table_rows_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Export Table',
-            'Table-level export workflows will reuse the results/export pipeline.',
-          ),
+          onInvoke: _showExportTableDialog,
+          enabled: controller.hasOpenDatabase,
         ),
         command(
           id: 'export_schema',
           label: 'Export Schema...',
           icon: Icons.schema_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Export Schema',
-            'Schema export is not implemented yet.',
-          ),
+          onInvoke: _showExportSchemaDialog,
+          enabled: controller.hasOpenDatabase,
         ),
         command(
           id: 'export_rerun_last',
           label: 'Re-run Last Export',
           icon: Icons.replay_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Re-run Last Export',
-            'Reusable export recipes are a follow-up workflow.',
-          ),
+          onInvoke: () async {},
+          enabled: false,
         ),
         command(
           id: 'view_reset_layout',
@@ -1848,6 +2900,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           checked: prefs.showStatusBar,
           onInvoke: () async =>
               _shellController.setStatusBarVisible(!prefs.showStatusBar),
+        ),
+        command(
+          id: 'view_command_palette',
+          label: 'Command Palette...',
+          icon: Icons.search_outlined,
+          onInvoke: () async {
+            setState(() => _showCommandPalette = !_showCommandPalette);
+          },
         ),
         command(
           id: 'view_zoom_in',
@@ -1903,16 +2963,126 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           onInvoke: () async => controller.createTab(),
         ),
         command(
+          id: 'tools_entity_relationship_diagram',
+          label: 'Entity Relationship Diagram',
+          icon: Icons.account_tree_outlined,
+          onInvoke: _showEntityRelationshipDiagram,
+        ),
+        command(
+          id: 'tools_export_erd_image',
+          label: 'Export ERD Image...',
+          icon: Icons.image_outlined,
+          onInvoke: _exportErdImageFromCommand,
+          enabled: _navigationPaneMode == _NavigationPaneMode.erd,
+        ),
+        command(
+          id: 'tools_saved_queries',
+          label: 'Saved Queries',
+          icon: Icons.bookmarks_outlined,
+          onInvoke: _showSavedQueriesDialog,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_data_quality_dashboard',
+          label: 'Data Quality Dashboard',
+          icon: Icons.fact_check_outlined,
+          onInvoke: _showQualityDashboard,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_run_quality_profile',
+          label: 'Run Quality Profile',
+          icon: Icons.play_circle_outline,
+          onInvoke: () async => controller.dataQuality.startRun(),
+          enabled:
+              controller.hasOpenDatabase && !controller.dataQuality.isRunning,
+        ),
+        command(
+          id: 'tools_manage_quality_profiles',
+          label: 'Manage Quality Profiles',
+          icon: Icons.rule_folder_outlined,
+          onInvoke: _showQualityProfileManagerDialog,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_export_quality_report',
+          label: 'Export Quality Report...',
+          icon: Icons.ios_share_outlined,
+          onInvoke: _showQualityReportExportDialog,
+          enabled:
+              controller.hasOpenDatabase &&
+              controller.dataQuality.currentRun != null,
+        ),
+        command(
           id: 'tools_query_history',
           label: 'Query History',
           icon: Icons.history_outlined,
           onInvoke: _showQueryHistoryDialog,
         ),
         command(
+          id: 'tools_database_statistics',
+          label: 'Database Statistics',
+          icon: Icons.monitor_heart_outlined,
+          onInvoke: _showDatabaseStatisticsDashboard,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_open_web_console',
+          label: 'Open Web Console',
+          icon: Icons.open_in_browser_outlined,
+          onInvoke: _openWebConsole,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_branch_workbench',
+          label: 'Branch & Snapshots',
+          icon: Icons.account_tree_outlined,
+          onInvoke: _showBranchSnapshotWorkbench,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_create_snapshot',
+          label: 'Create Snapshot...',
+          icon: Icons.camera_alt_outlined,
+          onInvoke: _showCreateSnapshotDialog,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_create_branch',
+          label: 'Create Branch...',
+          icon: Icons.call_split_outlined,
+          onInvoke: _showCreateBranchDialog,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_branch_diff',
+          label: 'Branch Diff...',
+          icon: Icons.compare_arrows_outlined,
+          onInvoke: _showBranchDiffDialog,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_restore_branch',
+          label: 'Restore Branch...',
+          icon: Icons.restore_outlined,
+          onInvoke: _showRestoreBranchDialog,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
+          id: 'tools_merge_branch',
+          label: 'Merge Branch...',
+          icon: Icons.merge_type,
+          onInvoke: _showMergeBranchDialog,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
           id: 'tools_view_log',
-          label: 'View Log',
+          label: 'View Logs',
           icon: Icons.receipt_long_outlined,
-          onInvoke: controller.openLogDatabase,
+          onInvoke: () => LogViewerDialog.show(
+            context,
+            logDirectoryPath: controller.logDirectoryPath,
+          ),
         ),
         command(
           id: 'tools_snippets',
@@ -1926,10 +3096,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           id: 'tools_manage_connections',
           label: 'Manage Connections',
           icon: Icons.settings_ethernet_outlined,
-          onInvoke: () => _showPlaceholderNotice(
-            'Manage Connections',
-            'Live connection management is a placeholder in this DecentDB-first shell.',
-          ),
+          onInvoke: () async {},
+          enabled: false,
         ),
         command(
           id: 'tools_options',
@@ -1977,11 +3145,162 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (file == null) {
       return;
     }
-    await widget.controller.openDatabase(file.path, createIfMissing: false);
+    await _openDatabaseWithMigrationOffer(file.path);
+  }
+
+  Future<void> _saveWorkspaceAs() async {
+    final currentPath = widget.controller.databasePath;
+    if (currentPath == null) {
+      return;
+    }
+
+    final defaultDirectory = p.dirname(currentPath);
+    final result = await getSaveLocation(
+      suggestedName: p.basename(currentPath),
+      initialDirectory: defaultDirectory,
+      acceptedTypeGroups: const <XTypeGroup>[_decentDbTypeGroup],
+    );
+    if (result == null) {
+      return;
+    }
+    await widget.controller.saveWorkspaceAs(result.path);
+  }
+
+  Future<void> _openDatabaseWithMigrationOffer(
+    String path, {
+    bool allowMigrationOffer = true,
+  }) async {
+    await widget.controller.openDatabase(path, createIfMissing: false);
+    if (!mounted || !allowMigrationOffer) {
+      return;
+    }
+    final openError = widget.controller.workspaceError;
+    if (!DecentDbMigrationService.isUnsupportedFormatVersionMessage(
+      openError,
+    )) {
+      return;
+    }
+    await _showLegacyDatabaseMigrationOffer(
+      sourcePath: path,
+      openError: openError ?? 'Unsupported database format version.',
+    );
+  }
+
+  Future<void> _showLegacyDatabaseMigrationOffer({
+    required String sourcePath,
+    required String openError,
+  }) async {
+    final suggestedDestination = await _migrationService.suggestDestinationPath(
+      sourcePath,
+    );
+    if (!mounted) {
+      return;
+    }
+    final migrationRequest = await showDialog<DecentDbMigrationDialogResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => DecentDbMigrationDialog(
+        sourcePath: sourcePath,
+        initialDestinationPath: suggestedDestination,
+        openError: openError,
+        onBrowse: (currentPath) => browseDecentDbMigrationDestination(
+          currentPath: currentPath,
+          fallbackPath: suggestedDestination,
+        ),
+      ),
+    );
+    if (migrationRequest == null || !mounted) {
+      return;
+    }
+
+    final migrationResult = await _showMigrationProgressDialog(
+      sourcePath: sourcePath,
+      destinationPath: migrationRequest.destinationPath,
+    );
+    if (migrationResult == null || !mounted) {
+      return;
+    }
+    await _openDatabaseWithMigrationOffer(
+      migrationResult.destinationPath,
+      allowMigrationOffer: false,
+    );
+  }
+
+  Future<DecentDbMigrationResult?> _showMigrationProgressDialog({
+    required String sourcePath,
+    required String destinationPath,
+  }) {
+    final migrationFuture = _migrationService.migrate(
+      sourcePath: sourcePath,
+      destinationPath: destinationPath,
+    );
+    return showDialog<DecentDbMigrationResult>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return FutureBuilder<DecentDbMigrationResult>(
+          future: migrationFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return DecentDbMigrationProgressDialog(
+                sourcePath: sourcePath,
+                destinationPath: destinationPath,
+              );
+            }
+            if (snapshot.hasError) {
+              return AlertDialog(
+                title: const Text('Migration failed'),
+                content: SizedBox(
+                  width: 560,
+                  child: SelectableText(snapshot.error.toString()),
+                ),
+                actions: <Widget>[
+                  FilledButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('Close'),
+                  ),
+                ],
+              );
+            }
+            final result = snapshot.data;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (Navigator.of(dialogContext).canPop()) {
+                Navigator.of(dialogContext).pop(result);
+              }
+            });
+            return DecentDbMigrationProgressDialog(
+              sourcePath: sourcePath,
+              destinationPath: destinationPath,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _openWorkspaceProject() async {
+    final file = await openFile(
+      acceptedTypeGroups: const <XTypeGroup>[_projectTypeGroup],
+    );
+    if (file == null) {
+      return;
+    }
+    await widget.controller.openWorkspaceProject(file.path);
+  }
+
+  Future<void> _exportWorkspaceProject() async {
+    final result = await getSaveLocation(
+      suggestedName: '.dbench-project.toml',
+      acceptedTypeGroups: const <XTypeGroup>[_projectTypeGroup],
+    );
+    if (result == null) {
+      return;
+    }
+    await widget.controller.exportWorkspaceProject(result.path);
   }
 
   Future<void> _openRecentWorkspace(String path) async {
-    await widget.controller.openDatabase(path, createIfMissing: false);
+    await _openDatabaseWithMigrationOffer(path);
   }
 
   Future<void> _showSqliteImportDialog({String sourcePath = ''}) async {
@@ -2066,46 +3385,103 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       _genericImportOpen = false;
     });
     if (result != null) {
+      if (!result.summary.rolledBack) {
+        await widget.controller.dataQuality.recordImportReconciliation(
+          _genericImportReconciliation(result.summary),
+          targetDatabasePath: result.targetPath,
+        );
+      }
       await widget.controller.openDatabase(
         result.targetPath,
         createIfMissing: false,
       );
+      if (result.runQualityAfterImport) {
+        widget.controller.dataQuality.selectTable(null);
+        await widget.controller.dataQuality.startRun();
+        if (mounted) {
+          setState(() {
+            _navigationPaneMode = _NavigationPaneMode.quality;
+          });
+        }
+      }
     }
   }
 
   Future<void> _showImportChooser() async {
     final file = await openFile(
-      acceptedTypeGroups: const <XTypeGroup>[
-        XTypeGroup(
-          label: 'Import sources',
-          extensions: <String>[
-            'csv',
-            'tsv',
-            'txt',
-            'dat',
-            'log',
-            'json',
-            'jsonl',
-            'ndjson',
-            'xml',
-            'html',
-            'htm',
-            'xlsx',
-            'xls',
-            'db',
-            'sqlite',
-            'sqlite3',
-            'sql',
-            'zip',
-            'gz',
-          ],
-        ),
-      ],
+      acceptedTypeGroups: <XTypeGroup>[_importSourceTypeGroup()],
     );
     if (file == null) {
       return;
     }
     await _startImportFromPath(file.path);
+  }
+
+  Future<void> _startClipboardTableImport() async {
+    final clipboardText = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+    final text = clipboardText ?? '';
+    if (text.trim().isEmpty) {
+      await _showPlaceholderNotice(
+        'Clipboard is empty',
+        'Copy a TSV, CSV, Markdown pipe table, or HTML table before starting clipboard import.',
+      );
+      return;
+    }
+    const maxClipboardCharacters = 5 * 1024 * 1024;
+    if (text.length > maxClipboardCharacters) {
+      await _showPlaceholderNotice(
+        'Clipboard table is too large',
+        'Clipboard import is limited to 5 MiB of text in this build. Save the source as a file and import it from disk.',
+      );
+      return;
+    }
+
+    final tempDir = await Directory.systemTemp.createTemp(
+      'decent-bench-clipboard-',
+    );
+    final detected = _clipboardImportPayload(text);
+    final file = File(p.join(tempDir.path, detected.fileName))
+      ..writeAsStringSync(detected.text, flush: true);
+    await _startImportFromPath(file.path);
+  }
+
+  ImportReconciliationSummary _genericImportReconciliation(
+    GenericImportSummary summary,
+  ) {
+    final warningsByCode = <String, int>{};
+    for (final warning in summary.warnings) {
+      final code = normalizeImportWarningCode(warning);
+      warningsByCode[code] = (warningsByCode[code] ?? 0) + 1;
+    }
+    return ImportReconciliationSummary(
+      importJobId: summary.jobId,
+      sourcePathDisplay: summary.sourcePath,
+      sourceFormat: summary.formatLabel,
+      sourceFingerprint: null,
+      startedAt: null,
+      completedAt: DateTime.now().toUtc(),
+      tableMappings: <ImportTableReconciliation>[
+        for (final entry in summary.rowsCopiedByTable.entries)
+          ImportTableReconciliation(
+            sourceName: entry.key,
+            targetTable: entry.key,
+            sourceRowCount: null,
+            importedRowCount: entry.value,
+            skippedRowCount: 0,
+            rejectedRowCount: 0,
+            transformedRowCount: 0,
+            typeCoercionFailureCount:
+                warningsByCode['type_coercion_failed'] ?? 0,
+            warningCount: summary.warnings.length,
+          ),
+      ],
+      warningCount: summary.warnings.length,
+      warningsByTable: <String, int>{
+        for (final table in summary.importedTables)
+          table: summary.warnings.length,
+      },
+      warningsByCode: warningsByCode,
+    );
   }
 
   Future<void> _handleStartupLaunchOptions(
@@ -2115,7 +3491,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       launchOptions,
       showNotice: _showPlaceholderNotice,
       openDatabase: (path) {
-        return widget.controller.openDatabase(path, createIfMissing: false);
+        return _openDatabaseWithMigrationOffer(path);
       },
       startImport: _startImportFromPath,
     );
@@ -2125,7 +3501,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final detection = await _importManager.detectSource(path);
     switch (detection.format.implementationKind) {
       case ImportImplementationKind.directOpen:
-        await widget.controller.openDatabase(path, createIfMissing: false);
+        await _openDatabaseWithMigrationOffer(path);
         break;
       case ImportImplementationKind.legacyWizard:
         switch (detection.format.key) {
@@ -2160,9 +3536,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         await _handleArchiveImport(detection);
         break;
       case ImportImplementationKind.recognizedUnsupported:
-        final note = detection.format.note == null
-            ? ''
-            : '\n\n${detection.format.note}';
+        final module = _importManager.moduleForDetection(detection);
+        final note = _moduleLimitationsText(module.limitations);
         await _showPlaceholderNotice(
           '${detection.format.label} not available yet',
           'Decent Bench recognizes this format as `${detection.format.supportState.name}`, but it is not implemented in this build yet.$note',
@@ -2171,10 +3546,126 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       case ImportImplementationKind.unknown:
         await _showPlaceholderNotice(
           'Unknown file type',
-          'Supported import sources currently include `.csv`, `.tsv`, `.txt`, `.json`, `.jsonl`, `.ndjson`, `.xml`, `.html`, `.db`/`.sqlite`/`.sqlite3`, `.xls`/`.xlsx`, `.sql`, `.zip`, `.gz`, and `.bz2` (including `.tar.bz2` and `.tar.gz` archives).',
+          'Supported import sources currently include ${_supportedImportExtensionSummary()}.',
         );
         break;
     }
+  }
+
+  XTypeGroup _importSourceTypeGroup() {
+    return XTypeGroup(
+      label: 'Import sources',
+      extensions: _importManager.registry
+          .implementedExtensions()
+          .map(_fileSelectorExtension)
+          .where((extension) => extension.isNotEmpty)
+          .toList(growable: false),
+    );
+  }
+
+  String _supportedImportExtensionSummary() {
+    final extensions = _importManager.registry.implementedExtensions();
+    final display = <String>[
+      for (final extension in extensions)
+        if (!extension.contains('.tar.')) '`$extension`',
+    ];
+    final compound = <String>[
+      for (final extension in extensions)
+        if (extension.contains('.tar.')) '`$extension`',
+    ];
+    if (compound.isNotEmpty) {
+      display.add('including ${compound.join(' and ')} archives');
+    }
+    if (display.length <= 1) {
+      return display.join();
+    }
+    return '${display.take(display.length - 1).join(', ')}, and ${display.last}';
+  }
+
+  String _moduleLimitationsText(List<ImportModuleLimitation> limitations) {
+    if (limitations.isEmpty) {
+      return '';
+    }
+    return '\n\n${limitations.map((limitation) => limitation.message).join('\n')}';
+  }
+
+  String _fileSelectorExtension(String extension) {
+    return extension.startsWith('.') ? extension.substring(1) : extension;
+  }
+
+  _ClipboardImportPayload _clipboardImportPayload(String text) {
+    final lower = text.toLowerCase();
+    if (lower.contains('<table')) {
+      return _ClipboardImportPayload(
+        fileName: 'clipboard_table.html',
+        text: _sanitizeClipboardHtml(text),
+      );
+    }
+    if (_looksLikeMarkdownClipboardTable(text)) {
+      return _ClipboardImportPayload(
+        fileName: 'clipboard_table.md',
+        text: text,
+      );
+    }
+    if (text.contains('\t')) {
+      return _ClipboardImportPayload(
+        fileName: 'clipboard_table.tsv',
+        text: text,
+      );
+    }
+    return _ClipboardImportPayload(fileName: 'clipboard_table.csv', text: text);
+  }
+
+  bool _looksLikeMarkdownClipboardTable(String text) {
+    final lines = const LineSplitter()
+        .convert(text)
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList(growable: false);
+    for (var index = 0; index + 1 < lines.length; index++) {
+      if (!lines[index].contains('|')) {
+        continue;
+      }
+      final separatorCells = lines[index + 1]
+          .split('|')
+          .map((cell) => cell.trim())
+          .where((cell) => cell.isNotEmpty)
+          .toList(growable: false);
+      if (separatorCells.isNotEmpty &&
+          separatorCells.every(
+            (cell) => RegExp(r'^:?-{3,}:?$').hasMatch(cell),
+          )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  String _sanitizeClipboardHtml(String text) {
+    return text
+        .replaceAll(
+          RegExp(
+            r'<script\b[^>]*>.*?</script>',
+            caseSensitive: false,
+            dotAll: true,
+          ),
+          '',
+        )
+        .replaceAll(
+          RegExp(
+            r'<style\b[^>]*>.*?</style>',
+            caseSensitive: false,
+            dotAll: true,
+          ),
+          '',
+        )
+        .replaceAll(
+          RegExp(
+            r'''\son[a-z]+\s*=\s*("[^"]*"|'[^']*')''',
+            caseSensitive: false,
+          ),
+          '',
+        );
   }
 
   Future<void> _showCsvExportDialog() async {
@@ -2211,6 +3702,340 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     await controller.updateCsvDelimiter(result.delimiter);
     await controller.updateCsvIncludeHeaders(result.includeHeaders);
     await controller.exportCurrentQuery();
+  }
+
+  Future<void> _showJsonExportDialog() async {
+    final controller = widget.controller;
+    final activeTab = controller.activeTab;
+    final result = await showDialog<JsonExportDialogResult>(
+      context: context,
+      builder: (context) {
+        final currentPath = activeTab.exportPath.trim();
+        final suggestedPath = currentPath.isEmpty
+            ? controller.suggestExportPath().replaceAll(
+                RegExp(r'\.csv$', caseSensitive: false),
+                '.json',
+              )
+            : currentPath.replaceAll(
+                RegExp(r'\.(csv|jsonl|ndjson)$', caseSensitive: false),
+                '.json',
+              );
+        return JsonExportDialog(
+          queryTitle: activeTab.title,
+          initialPath: suggestedPath,
+          onBrowse: (currentPath) async {
+            final initialName = currentPath.trim().isEmpty
+                ? p.basename(suggestedPath)
+                : p.basename(currentPath.trim());
+            final location = await getSaveLocation(
+              suggestedName: initialName,
+              acceptedTypeGroups: const <XTypeGroup>[_jsonTypeGroup],
+            );
+            return location?.path;
+          },
+        );
+      },
+    );
+    if (result == null) {
+      return;
+    }
+
+    controller.updateActiveExportPath(result.path);
+    await controller.exportCurrentQueryAsJson(
+      path: result.path,
+      format: result.format,
+      pretty: result.pretty,
+      includeMetadata: result.includeMetadata,
+    );
+  }
+
+  Future<void> _showExcelExportDialog() async {
+    final controller = widget.controller;
+    final activeTab = controller.activeTab;
+    final result = await showDialog<ExcelExportDialogResult>(
+      context: context,
+      builder: (context) {
+        final currentPath = activeTab.exportPath.trim();
+        final suggestedPath = currentPath.isEmpty
+            ? controller.suggestExportPath().replaceAll(
+                RegExp(r'\.csv$', caseSensitive: false),
+                '.xlsx',
+              )
+            : currentPath.replaceAll(
+                RegExp(
+                  r'\.(csv|json|jsonl|ndjson|xlsx)$',
+                  caseSensitive: false,
+                ),
+                '.xlsx',
+              );
+        return ExcelExportDialog(
+          queryTitle: activeTab.title,
+          initialPath: suggestedPath,
+          initialIncludeHeaders: controller.config.csvIncludeHeaders,
+          onBrowse: (currentPath) async {
+            final initialName = currentPath.trim().isEmpty
+                ? p.basename(suggestedPath)
+                : p.basename(currentPath.trim());
+            final location = await getSaveLocation(
+              suggestedName: initialName,
+              acceptedTypeGroups: const <XTypeGroup>[_excelExportTypeGroup],
+            );
+            return location?.path;
+          },
+        );
+      },
+    );
+    if (result == null) {
+      return;
+    }
+
+    controller.updateActiveExportPath(result.path);
+    await controller.exportCurrentQueryAsExcel(
+      path: result.path,
+      includeHeaders: result.includeHeaders,
+    );
+  }
+
+  Future<void> _showExportTableDialog() async {
+    final controller = widget.controller;
+    final tableName = _selectedTableNameForExport(controller);
+    if (tableName == null) {
+      await _showInfoDialog(
+        'Export Table',
+        'Select a table in the schema explorer before exporting table data.',
+      );
+      return;
+    }
+    final previousTabId = controller.activeTabId;
+    final query = 'SELECT *\nFROM ${_quoteIdentifier(tableName)}';
+    controller.createTab(sql: query);
+    final exportTabId = controller.activeTabId;
+    try {
+      await controller.runActiveTab();
+      if (controller.tabById(exportTabId)?.canExport != true) {
+        await _showInfoDialog(
+          'Export Table',
+          'No exportable result rows were returned from "$tableName".',
+        );
+        return;
+      }
+      await _showCsvExportDialog();
+    } finally {
+      if (controller.tabById(previousTabId) != null) {
+        controller.selectTab(previousTabId);
+      }
+      if (controller.tabById(exportTabId) != null &&
+          exportTabId != previousTabId) {
+        await controller.closeTab(exportTabId);
+      }
+    }
+  }
+
+  Future<void> _showExportSchemaDialog() async {
+    final controller = widget.controller;
+    final result = await getSaveLocation(
+      suggestedName:
+          'schema_export_${p.basenameWithoutExtension(controller.databasePath ?? 'sample.decentdb')}.sql',
+      acceptedTypeGroups: const <XTypeGroup>[_schemaExportTypeGroup],
+    );
+    if (result == null) {
+      return;
+    }
+    final contents = _schemaExportContents(controller);
+    try {
+      await File(result.path).writeAsString(contents);
+    } catch (error) {
+      await _showInfoDialog(
+        'Export Schema',
+        'Unable to write schema export file to ${result.path}.\n\n$error',
+      );
+      return;
+    }
+    await _showInfoDialog(
+      'Export Schema',
+      'Schema export written to:\n${result.path}',
+    );
+  }
+
+  Future<void> _showParquetExportUnavailableDialog() {
+    return _showPlaceholderNotice(
+      'Export Parquet',
+      'Parquet export remains blocked until a maintained Apache-compatible Dart or FFI writer is selected and validated for desktop builds. Excel export is available now.',
+    );
+  }
+
+  Future<void> _showQualityDashboard() async {
+    _shellController.setSchemaExplorerVisible(true);
+    setState(() {
+      _navigationPaneMode = _NavigationPaneMode.quality;
+    });
+  }
+
+  Future<void> _showQualityProfileManagerDialog() {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        child: SizedBox(
+          width: 960,
+          height: 700,
+          child: ValidationProfileEditor(
+            controller: widget.controller.dataQuality,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showQualityReportExportDialog() async {
+    final qualityController = widget.controller.dataQuality;
+    if (qualityController.currentRun == null) {
+      await _showInfoDialog(
+        'Export Quality Report',
+        'Run a quality profile before exporting a quality report.',
+      );
+      return;
+    }
+    final result = await showDialog<QualityReportExportDialogResult>(
+      context: context,
+      builder: (context) => QualityReportExportDialog(
+        initialPath: _defaultQualityReportPath(
+          QualityReportFormat.markdown.extension,
+        ),
+        onBrowse: (format, currentPath) async {
+          final initialName = currentPath.trim().isEmpty
+              ? p.basename(_defaultQualityReportPath(format.extension))
+              : p.basename(currentPath.trim());
+          final location = await getSaveLocation(
+            suggestedName: initialName,
+            acceptedTypeGroups: <XTypeGroup>[
+              XTypeGroup(
+                label: 'Quality report',
+                extensions: <String>[format.extension.substring(1)],
+              ),
+            ],
+          );
+          return location?.path;
+        },
+      ),
+    );
+    if (result == null) {
+      return;
+    }
+    try {
+      await qualityController.exportReport(
+        QualityReportOptions(
+          format: result.format,
+          destinationPath: result.path,
+          includeSampleValues: result.includeSampleValues,
+          includeViolationDetailRows: result.includeViolationSamples,
+          includeImportReconciliation: result.includeImportReconciliation,
+          includeRuleDefinitions: result.includeRuleDefinitions,
+          freshnessStatus: qualityController.freshness,
+        ),
+      );
+      if (!mounted) {
+        return;
+      }
+      await _showInfoDialog(
+        'Export Quality Report',
+        'Quality report written to:\n${result.path}',
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      await _showInfoDialog(
+        'Export Quality Report',
+        'Unable to write quality report to ${result.path}.\n\n$error',
+      );
+    }
+  }
+
+  String _defaultQualityReportPath(String extension) {
+    final databasePath = widget.controller.databasePath;
+    final baseName = p.basenameWithoutExtension(
+      databasePath ?? 'workspace.ddb',
+    );
+    final directory = databasePath == null
+        ? Directory.current.path
+        : p.dirname(databasePath);
+    return p.join(directory, '${baseName}_quality_report$extension');
+  }
+
+  String _schemaExportContents(WorkspaceController controller) {
+    final snapshot = controller.schema;
+    final objects = snapshot.objects.toList()
+      ..sort((left, right) => left.name.compareTo(right.name));
+    final buffer = StringBuffer()
+      ..writeln('-- Decent Bench schema export')
+      ..writeln('-- Database: ${controller.databasePath ?? 'sample.decentdb'}')
+      ..writeln('-- Exported: ${DateTime.now().toUtc().toIso8601String()}')
+      ..writeln('--')
+      ..writeln(
+        '-- Objects: ${snapshot.objects.length} | '
+        'Tables: ${snapshot.tables.length} | '
+        'Views: ${snapshot.views.length}',
+      )
+      ..writeln();
+
+    for (final object in objects) {
+      final indexes = snapshot.indexesForObject(object.name).toList()
+        ..sort((left, right) => left.name.compareTo(right.name));
+      final triggers = snapshot.triggersForObject(object.name).toList()
+        ..sort((left, right) => left.name.compareTo(right.name));
+      buffer
+        ..writeln(
+          '-- === ${object.kind.name.toUpperCase()}: ${object.name} ===',
+        )
+        ..writeln('-- Temporary: ${object.temporary}');
+      if (object.ddl == null || object.ddl!.trim().isEmpty) {
+        buffer.writeln(
+          '-- DDL unavailable for ${object.kind.name} ${object.name}.',
+        );
+      } else {
+        final ddl = object.ddl!.trim();
+        buffer.writeln(ddl.endsWith(';') ? ddl : '$ddl;');
+      }
+      if (object.columns.isNotEmpty) {
+        buffer.writeln(
+          '-- Columns (${object.columns.length}): ${object.columns.map((column) => column.name).join(', ')}',
+        );
+      }
+      if (indexes.isNotEmpty) {
+        buffer.writeln('-- Indexes');
+        for (final index in indexes) {
+          if (index.ddl == null || index.ddl!.trim().isEmpty) {
+            buffer.writeln('-- Index ${index.name} has no DDL.');
+          } else {
+            final ddl = index.ddl!.trim();
+            buffer.writeln(ddl.endsWith(';') ? ddl : '$ddl;');
+          }
+        }
+      }
+      if (triggers.isNotEmpty) {
+        buffer.writeln('-- Triggers');
+        for (final trigger in triggers) {
+          final ddl = trigger.ddl.trim();
+          buffer.writeln(ddl.endsWith(';') ? ddl : '$ddl;');
+        }
+      }
+      buffer.writeln();
+    }
+
+    return buffer.toString();
+  }
+
+  String? _selectedTableNameForExport(WorkspaceController controller) {
+    final nodeId = _selectedSchemaNodeId ?? _fallbackSchemaNodeId(controller);
+    if (!nodeId.startsWith('table:')) {
+      return null;
+    }
+    final tableName = nodeId.substring('table:'.length);
+    final object = controller.schema.objectNamed(tableName);
+    if (object == null || object.kind != SchemaObjectKind.table) {
+      return null;
+    }
+    return tableName;
   }
 
   Future<void> _handleIncomingFiles(Iterable<String> rawPaths) async {
@@ -2259,6 +4084,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
     try {
       await _startImportFromPath(extractedPath);
+    } catch (error) {
+      widget.controller.logger.error(
+        category: 'import',
+        operation: 'archive_extract_start',
+        message: 'Failed to start import from extracted archive candidate.',
+        error: error,
+        details: <String, Object?>{'archive_path': detection.sourcePath},
+      );
     } finally {
       final extractedDir = Directory(p.dirname(extractedPath));
       if (await extractedDir.exists()) {
@@ -2304,6 +4137,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           await _openObjectDataQuery(objectName);
         }
         break;
+      case _SchemaNodeMenuAction.showInErd:
+        if (objectName != null) {
+          await _showEntityRelationshipDiagram(tableName: objectName);
+        }
+        break;
       case _SchemaNodeMenuAction.scriptInsert:
         if (objectName != null) {
           _openSqlTemplate(_insertTemplateForTable(objectName));
@@ -2344,12 +4182,24 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       case _SchemaNodeMenuAction.newView:
         _openSqlTemplate(_newViewTemplate());
         break;
+      case _SchemaNodeMenuAction.columnStatistics:
+        await _showSchemaColumnStatistics(nodeId);
+        break;
     }
   }
 
   List<PopupMenuEntry<_SchemaNodeMenuAction>> _schemaMenuItemsForNode(
     String nodeId,
   ) {
+    if (nodeId.startsWith('column:')) {
+      return <PopupMenuEntry<_SchemaNodeMenuAction>>[
+        _popupMenuItem(
+          value: _SchemaNodeMenuAction.columnStatistics,
+          icon: Icons.query_stats_outlined,
+          label: 'Column Statistics',
+        ),
+      ];
+    }
     if (nodeId.startsWith('table:')) {
       return <PopupMenuEntry<_SchemaNodeMenuAction>>[
         _popupMenuItem(
@@ -2377,6 +4227,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           value: _SchemaNodeMenuAction.viewData,
           icon: Icons.table_view_outlined,
           label: 'View Data',
+        ),
+        _popupMenuItem(
+          value: _SchemaNodeMenuAction.showInErd,
+          icon: Icons.account_tree_outlined,
+          label: 'Show in ER Diagram',
         ),
         _popupMenuItem(
           value: _SchemaNodeMenuAction.renameObject,
@@ -2450,6 +4305,32 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (widget.controller.hasOpenDatabase) {
       await widget.controller.runActiveTab();
     }
+  }
+
+  Future<void> _openTableFromErd(String tableName) async {
+    setState(() {
+      _navigationPaneMode = _NavigationPaneMode.erd;
+      _selectedSchemaNodeId = 'table:$tableName';
+    });
+    await _openObjectDataQuery(tableName);
+  }
+
+  Future<void> _showEntityRelationshipDiagram({String? tableName}) async {
+    _shellController.setSchemaExplorerVisible(true);
+    _logErdNavigationSelected();
+    setState(() {
+      _navigationPaneMode = _NavigationPaneMode.erd;
+      if (tableName != null) {
+        _selectedSchemaNodeId = 'table:$tableName';
+      }
+    });
+  }
+
+  Future<void> _exportErdImageFromCommand() async {
+    if (_navigationPaneMode != _NavigationPaneMode.erd) {
+      await _showEntityRelationshipDiagram();
+    }
+    await _erdDiagramKey.currentState?.exportImageFromCommand();
   }
 
   void _openObjectDefinitionQuery(String objectName) {
@@ -2551,6 +4432,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     return '"${value.replaceAll('"', '""')}"';
   }
 
+  String _quoteStringLiteral(String value) {
+    return "'${value.replaceAll("'", "''")}'";
+  }
+
   T? _firstOrNull<T>(Iterable<T> values) {
     final iterator = values.iterator;
     return iterator.moveNext() ? iterator.current : null;
@@ -2579,6 +4464,22 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   Future<void> _runPrimarySqlTarget() async {
     final executionTarget = _sqlExecutionTarget();
     if (!executionTarget.isBufferTarget) {
+      final decision = await _confirmRiskySqlIfNeeded(executionTarget.sql);
+      if (decision == _RiskySqlDecision.cancel) {
+        return;
+      }
+      if (decision == _RiskySqlDecision.newBranch) {
+        await widget.controller.runSqlOnNewBranch(
+          executionTarget.sql,
+          bufferStartOffset: executionTarget.startOffset,
+          description: switch (executionTarget.kind) {
+            SqlExecutionTargetKind.selection => 'selected SQL',
+            SqlExecutionTargetKind.statement => 'statement',
+            SqlExecutionTargetKind.buffer => 'SQL',
+          },
+        );
+        return;
+      }
       await widget.controller.runActiveSql(
         executionTarget.sql,
         bufferStartOffset: executionTarget.startOffset,
@@ -2590,11 +4491,82 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       );
       return;
     }
+    final decision = await _confirmRiskySqlIfNeeded(
+      widget.controller.activeTab.sql,
+    );
+    if (decision == _RiskySqlDecision.cancel) {
+      return;
+    }
+    if (decision == _RiskySqlDecision.newBranch) {
+      await widget.controller.runSqlOnNewBranch(
+        widget.controller.activeTab.sql,
+        description: 'SQL buffer',
+      );
+      return;
+    }
     await widget.controller.runActiveTab();
   }
 
   Future<void> _runEntireSqlBuffer() async {
+    final decision = await _confirmRiskySqlIfNeeded(
+      widget.controller.activeTab.sql,
+    );
+    if (decision == _RiskySqlDecision.cancel) {
+      return;
+    }
+    if (decision == _RiskySqlDecision.newBranch) {
+      await widget.controller.runSqlOnNewBranch(
+        widget.controller.activeTab.sql,
+        description: 'SQL buffer',
+      );
+      return;
+    }
     await widget.controller.runActiveTab();
+  }
+
+  Future<_RiskySqlDecision> _confirmRiskySqlIfNeeded(String sql) async {
+    final assessment = assessSqlRisk(sql);
+    if (!assessment.requiresConfirmation) {
+      return _RiskySqlDecision.currentDatabase;
+    }
+    final branchState = widget.controller.branchState;
+    final canUseNativeBranch = widget.controller.canUseNativeBranchWorkflow;
+    final result = await showDialog<_RiskySqlDecision>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(
+            assessment.isDestructive
+                ? 'Confirm Destructive SQL'
+                : 'Confirm Mutating SQL',
+          ),
+          content: Text(
+            '${assessment.reason}\n\n'
+            '${canUseNativeBranch ? 'Run on New Branch creates a temporary DecentDB branch and executes this SQL there first.' : branchState.nativeBranchApiUnavailableReason}',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(_RiskySqlDecision.cancel),
+              child: const Text('Cancel'),
+            ),
+            OutlinedButton.icon(
+              onPressed: canUseNativeBranch
+                  ? () => Navigator.of(context).pop(_RiskySqlDecision.newBranch)
+                  : null,
+              icon: const Icon(Icons.account_tree_outlined),
+              label: const Text('Run on New Branch'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(_RiskySqlDecision.currentDatabase),
+              child: const Text('Run on Current Database'),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? _RiskySqlDecision.cancel;
   }
 
   void _insertSnippet(SqlSnippet snippet) {
@@ -2632,6 +4604,222 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       selection: TextSelection.collapsed(offset: offset),
     );
     widget.controller.updateActiveSql(updated);
+  }
+
+  Future<void> _showSavedQueriesDialog() async {
+    final filterController = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AnimatedBuilder(
+              animation: widget.controller,
+              builder: (context, _) {
+                final queries = _filterSavedQueries(
+                  widget.controller.savedQueries,
+                  filterController.text,
+                );
+                return AlertDialog(
+                  title: const Text('Saved Queries'),
+                  content: SizedBox(
+                    width: 780,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        TextField(
+                          controller: filterController,
+                          decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.search_outlined),
+                            labelText: 'Filter by name, folder, tag, or SQL',
+                          ),
+                          onChanged: (_) => setDialogState(() {}),
+                        ),
+                        const SizedBox(height: 12),
+                        Flexible(
+                          child: queries.isEmpty
+                              ? const Text(
+                                  'No saved queries match this workspace filter.',
+                                )
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  itemCount: queries.length,
+                                  separatorBuilder: (_, _) =>
+                                      const Divider(height: 1),
+                                  itemBuilder: (context, index) {
+                                    final query = queries[index];
+                                    return ListTile(
+                                      dense: true,
+                                      leading: Icon(
+                                        query.hasSchemaDrift(
+                                              widget.controller.toolingMetadata,
+                                            )
+                                            ? Icons.warning_amber_outlined
+                                            : Icons.bookmark_outline,
+                                      ),
+                                      title: Text(query.name),
+                                      subtitle: Text(
+                                        _savedQuerySubtitle(query),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      trailing: Wrap(
+                                        spacing: 6,
+                                        children: <Widget>[
+                                          TextButton(
+                                            onPressed: () {
+                                              widget.controller.loadSavedQuery(
+                                                query.id,
+                                              );
+                                              Navigator.of(context).pop();
+                                            },
+                                            child: const Text('Open'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () {
+                                              widget.controller.loadSavedQuery(
+                                                query.id,
+                                                openInNewTab: true,
+                                              );
+                                              Navigator.of(context).pop();
+                                            },
+                                            child: const Text('New Tab'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () async {
+                                              await widget.controller
+                                                  .deleteSavedQuery(query.id);
+                                            },
+                                            child: const Text('Delete'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  actions: <Widget>[
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Close'),
+                    ),
+                    FilledButton.icon(
+                      onPressed: () async =>
+                          _showSaveActiveQueryDialog(context),
+                      icon: const Icon(Icons.bookmark_add_outlined),
+                      label: const Text('Save Active Query'),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+    filterController.dispose();
+  }
+
+  List<SavedQuery> _filterSavedQueries(
+    List<SavedQuery> queries,
+    String filter,
+  ) {
+    final normalized = filter.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return queries;
+    }
+    return queries.where((query) {
+      return query.name.toLowerCase().contains(normalized) ||
+          query.folder.toLowerCase().contains(normalized) ||
+          query.tags.any((tag) => tag.toLowerCase().contains(normalized)) ||
+          query.sql.toLowerCase().contains(normalized);
+    }).toList();
+  }
+
+  Future<void> _showSaveActiveQueryDialog(BuildContext dialogContext) async {
+    final nameController = TextEditingController(
+      text: widget.controller.activeTab.title,
+    );
+    final folderController = TextEditingController();
+    final tagsController = TextEditingController();
+    final descriptionController = TextEditingController();
+    final saved = await showDialog<bool>(
+      context: dialogContext,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Save Active Query'),
+          content: SizedBox(
+            width: 460,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                TextField(
+                  controller: nameController,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: 'Name'),
+                ),
+                TextField(
+                  controller: folderController,
+                  decoration: const InputDecoration(labelText: 'Folder'),
+                ),
+                TextField(
+                  controller: tagsController,
+                  decoration: const InputDecoration(
+                    labelText: 'Tags',
+                    hintText: 'comma,separated',
+                  ),
+                ),
+                TextField(
+                  controller: descriptionController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(labelText: 'Description'),
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+    if (saved == true) {
+      await widget.controller.saveActiveQuery(
+        name: nameController.text,
+        folder: folderController.text,
+        description: descriptionController.text,
+        tags: tagsController.text
+            .split(',')
+            .map((tag) => tag.trim())
+            .where((tag) => tag.isNotEmpty)
+            .toList(),
+      );
+    }
+    nameController.dispose();
+    folderController.dispose();
+    tagsController.dispose();
+    descriptionController.dispose();
+  }
+
+  String _savedQuerySubtitle(SavedQuery query) {
+    final parts = <String>[
+      if (query.folder.trim().isNotEmpty) query.folder,
+      if (query.tags.isNotEmpty) query.tags.join(', '),
+      if (query.hasSchemaDrift(widget.controller.toolingMetadata))
+        'schema drift',
+      query.sql.replaceAll('\n', ' '),
+    ];
+    return parts.join(' - ');
   }
 
   Future<void> _showQueryHistoryDialog() {
@@ -2716,6 +4904,382 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
+  Future<void> _showBranchSnapshotWorkbench() {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AnimatedBuilder(
+          animation: widget.controller,
+          builder: (context, _) {
+            final controller = widget.controller;
+            final state = controller.branchState;
+            final diff = controller.lastBranchDiff;
+            final canUseNative = controller.canUseNativeBranchWorkflow;
+            return AlertDialog(
+              title: const Text('Branch & Snapshot Workbench'),
+              content: SizedBox(
+                width: 680,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 520),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            canUseNative
+                                ? Icons.account_tree_outlined
+                                : Icons.info_outline,
+                          ),
+                          title: Text(state.branchLabel),
+                          subtitle: Text(
+                            canUseNative
+                                ? 'Native DecentDB branch operations are available through the workspace gateway.'
+                                : state.nativeBranchApiUnavailableReason,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Branches',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 4),
+                        if (state.branches.isEmpty)
+                          const Text('No native branch list is available.')
+                        else
+                          ...state.branches.map(
+                            (branch) => ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(Icons.call_split_outlined),
+                              title: Text(branch.name),
+                              subtitle: Text(
+                                branch.isCurrent
+                                    ? 'Current branch'
+                                    : 'Parent ${branch.parentRef ?? 'unknown'}',
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Snapshots',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 4),
+                        if (state.snapshots.isEmpty)
+                          const Text('No native snapshots are available.')
+                        else
+                          ...state.snapshots.map(
+                            (snapshot) => ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(Icons.camera_alt_outlined),
+                              title: Text(snapshot.name),
+                              subtitle: Text(
+                                '${snapshot.ref}'
+                                '${snapshot.branch == null ? '' : ' on ${snapshot.branch}'}',
+                              ),
+                            ),
+                          ),
+                        if (diff != null) ...<Widget>[
+                          const SizedBox(height: 12),
+                          Text(
+                            'Last Diff',
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${diff.leftRef} -> ${diff.rightRef}: '
+                            '${diff.addedRows} added, '
+                            '${diff.modifiedRows} modified, '
+                            '${diff.removedRows} removed.',
+                          ),
+                          const SizedBox(height: 4),
+                          for (final row in diff.rows.take(5))
+                            Text(
+                              '${row.tableName} ${row.operation}'
+                              '${row.primaryKey == null ? '' : ' ${row.primaryKey}'}',
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => controller.refreshBranchState(),
+                  child: const Text('Refresh'),
+                ),
+                TextButton(
+                  onPressed: canUseNative
+                      ? () {
+                          Navigator.of(dialogContext).pop();
+                          _showCreateSnapshotDialog();
+                        }
+                      : null,
+                  child: const Text('Create Snapshot'),
+                ),
+                TextButton(
+                  onPressed: canUseNative
+                      ? () {
+                          Navigator.of(dialogContext).pop();
+                          _showCreateBranchDialog();
+                        }
+                      : null,
+                  child: const Text('Create Branch'),
+                ),
+                TextButton(
+                  onPressed: canUseNative
+                      ? () {
+                          Navigator.of(dialogContext).pop();
+                          _showBranchDiffDialog();
+                        }
+                      : null,
+                  child: const Text('Diff'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showCreateSnapshotDialog() async {
+    if (!widget.controller.canUseNativeBranchWorkflow) {
+      await _showBranchSnapshotWorkbench();
+      return;
+    }
+    final name = await _promptBranchWorkflowValue(
+      title: 'Create Snapshot',
+      label: 'Snapshot name',
+      initialValue: 'snapshot_${_branchWorkflowTimestamp()}',
+    );
+    if (name == null) {
+      return;
+    }
+    await widget.controller.createSnapshot(name);
+  }
+
+  Future<void> _showCreateBranchDialog() async {
+    if (!widget.controller.canUseNativeBranchWorkflow) {
+      await _showBranchSnapshotWorkbench();
+      return;
+    }
+    final branchName = await _promptBranchWorkflowValue(
+      title: 'Create Branch',
+      label: 'Branch name',
+      initialValue: 'safe_run_${_branchWorkflowTimestamp()}',
+    );
+    if (branchName == null) {
+      return;
+    }
+    final fromRef = await _promptBranchWorkflowValue(
+      title: 'Create Branch',
+      label: 'Source branch or snapshot ref',
+      initialValue: widget.controller.branchState.currentBranch,
+    );
+    if (fromRef == null) {
+      return;
+    }
+    await widget.controller.createBranch(
+      branchName: branchName,
+      fromRef: fromRef,
+    );
+  }
+
+  Future<void> _showBranchDiffDialog() async {
+    if (!widget.controller.canUseNativeBranchWorkflow) {
+      await _showBranchSnapshotWorkbench();
+      return;
+    }
+    final leftRef = await _promptBranchWorkflowValue(
+      title: 'Branch Diff',
+      label: 'Left ref',
+      initialValue: 'main',
+    );
+    if (leftRef == null) {
+      return;
+    }
+    final rightRef = await _promptBranchWorkflowValue(
+      title: 'Branch Diff',
+      label: 'Right ref',
+      initialValue: widget.controller.branchState.currentBranch,
+    );
+    if (rightRef == null) {
+      return;
+    }
+    await widget.controller.previewBranchDiff(
+      leftRef: leftRef,
+      rightRef: rightRef,
+    );
+    if (mounted) {
+      await _showBranchSnapshotWorkbench();
+    }
+  }
+
+  Future<void> _showRestoreBranchDialog() async {
+    if (!widget.controller.canUseNativeBranchWorkflow) {
+      await _showBranchSnapshotWorkbench();
+      return;
+    }
+    final branchName = await _promptBranchWorkflowValue(
+      title: 'Restore Branch',
+      label: 'Branch name',
+      initialValue: widget.controller.branchState.currentBranch,
+    );
+    if (branchName == null) {
+      return;
+    }
+    final targetRef = await _promptBranchWorkflowValue(
+      title: 'Restore Branch',
+      label: 'Target branch or snapshot ref',
+      initialValue: 'main',
+    );
+    if (targetRef == null) {
+      return;
+    }
+    final diff = await widget.controller.previewRestoreBranch(
+      branchName: branchName,
+      targetRef: targetRef,
+    );
+    if (!mounted || diff == null) {
+      return;
+    }
+    final apply = await _confirmBranchApply(
+      title: 'Apply Restore',
+      message:
+          'Dry run found ${diff.totalChanges} row changes. A pre-restore '
+          'snapshot will be created before applying the restore.',
+    );
+    if (apply == true) {
+      await widget.controller.applyRestoreBranch(
+        branchName: branchName,
+        targetRef: targetRef,
+      );
+    }
+  }
+
+  Future<void> _showMergeBranchDialog() async {
+    if (!widget.controller.canUseNativeBranchWorkflow) {
+      await _showBranchSnapshotWorkbench();
+      return;
+    }
+    final sourceBranch = await _promptBranchWorkflowValue(
+      title: 'Merge Branch',
+      label: 'Source branch',
+      initialValue: widget.controller.branchState.currentBranch,
+    );
+    if (sourceBranch == null) {
+      return;
+    }
+    final targetBranch = await _promptBranchWorkflowValue(
+      title: 'Merge Branch',
+      label: 'Target branch',
+      initialValue: 'main',
+    );
+    if (targetBranch == null) {
+      return;
+    }
+    final diff = await widget.controller.previewMergeBranch(
+      sourceBranch: sourceBranch,
+      targetBranch: targetBranch,
+    );
+    if (!mounted || diff == null) {
+      return;
+    }
+    final apply = await _confirmBranchApply(
+      title: 'Apply Merge',
+      message:
+          'Dry run found ${diff.totalChanges} row changes. Apply the '
+          'constrained DecentDB merge now?',
+    );
+    if (apply == true) {
+      await widget.controller.applyMergeBranch(
+        sourceBranch: sourceBranch,
+        targetBranch: targetBranch,
+      );
+    }
+  }
+
+  Future<String?> _promptBranchWorkflowValue({
+    required String title,
+    required String label,
+    required String initialValue,
+  }) async {
+    final controller = TextEditingController(text: initialValue);
+    try {
+      return showDialog<String>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: Text(title),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: InputDecoration(labelText: label),
+              onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.of(context).pop(controller.text.trim()),
+                child: const Text('Continue'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<bool?> _confirmBranchApply({
+    required String title,
+    required String message,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Apply'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _branchWorkflowTimestamp() {
+    return DateTime.now()
+        .toUtc()
+        .toIso8601String()
+        .replaceAll(RegExp(r'[^0-9A-Za-z]+'), '_')
+        .replaceAll(RegExp(r'_+$'), '');
+  }
+
   Future<void> _showShortcutDialog(Map<String, ShortcutBinding> shortcuts) {
     final sorted = shortcuts.values.toList()
       ..sort((left, right) => left.commandId.compareTo(right.commandId));
@@ -2756,9 +5320,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   Future<void> _showDocumentationDialog() {
-    return _showPlaceholderNotice(
-      'Documentation',
-      'Decent Bench emphasizes import, query, and export workflows. Use the menu bar, keyboard shortcuts, and draggable panes to work through the desktop layout.',
+    return showDialog<void>(
+      context: context,
+      builder: (context) =>
+          const HelpCenterDialog(initialArticleId: 'getting-started'),
     );
   }
 
@@ -2822,16 +5387,61 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     }
   }
 
-  Future<void> _showAboutDialog() {
-    showAboutDialog(
+  Future<void> _showAboutDialog() async {
+    final action = await showDialog<_AboutDialogAction>(
+      context: context,
+      builder: (dialogContext) {
+        return DecentBenchAboutDialog(
+          onViewLicenses: () {
+            Navigator.of(dialogContext).pop(_AboutDialogAction.viewLicenses);
+          },
+          onClose: () {
+            Navigator.of(dialogContext).pop();
+          },
+        );
+      },
+    );
+
+    if (!mounted || action != _AboutDialogAction.viewLicenses) {
+      return;
+    }
+
+    showLicensePage(
       context: context,
       applicationName: kDecentBenchDisplayName,
       applicationVersion: kDecentBenchVersion,
-      children: const <Widget>[
-        Text('Classic desktop SQL workbench for DecentDB.'),
-      ],
+      applicationIcon: Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Image.asset(
+          kDecentBenchLogoAsset,
+          width: 88,
+          height: 88,
+          fit: BoxFit.contain,
+          semanticLabel: 'Decent Bench logo',
+        ),
+      ),
     );
-    return Future<void>.value();
+  }
+
+  Future<void> _showInfoDialog(String title, String message) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(child: SelectableText(message)),
+          ),
+          actions: <Widget>[
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _showPlaceholderNotice(String title, String message) {
@@ -2868,6 +5478,75 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           Text(label),
         ],
       ),
+    );
+  }
+}
+
+enum _NavigationPaneMode { schema, quality, erd }
+
+class _WorkspaceNavigationPane extends StatelessWidget {
+  const _WorkspaceNavigationPane({
+    required this.mode,
+    required this.onModeChanged,
+    required this.schemaExplorer,
+    required this.qualityDashboard,
+    required this.erdViewer,
+  });
+
+  final _NavigationPaneMode mode;
+  final ValueChanged<_NavigationPaneMode> onModeChanged;
+  final Widget schemaExplorer;
+  final Widget qualityDashboard;
+  final Widget erdViewer;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            border: Border(
+              bottom: BorderSide(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+          ),
+          child: SegmentedButton<_NavigationPaneMode>(
+            segments: const <ButtonSegment<_NavigationPaneMode>>[
+              ButtonSegment<_NavigationPaneMode>(
+                value: _NavigationPaneMode.schema,
+                icon: Icon(Icons.schema_outlined, size: 16),
+                label: Text('Schema'),
+              ),
+              ButtonSegment<_NavigationPaneMode>(
+                value: _NavigationPaneMode.quality,
+                icon: Icon(Icons.fact_check_outlined, size: 16),
+                label: Text('Quality'),
+              ),
+              ButtonSegment<_NavigationPaneMode>(
+                value: _NavigationPaneMode.erd,
+                icon: Icon(Icons.account_tree_outlined, size: 16),
+                label: Text('ERD'),
+              ),
+            ],
+            selected: <_NavigationPaneMode>{mode},
+            onSelectionChanged: (value) => onModeChanged(value.single),
+          ),
+        ),
+        Expanded(
+          child: IndexedStack(
+            index: switch (mode) {
+              _NavigationPaneMode.schema => 0,
+              _NavigationPaneMode.quality => 1,
+              _NavigationPaneMode.erd => 2,
+            },
+            children: <Widget>[schemaExplorer, qualityDashboard, erdViewer],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -2913,11 +5592,49 @@ class _DropOverlay extends StatelessWidget {
   }
 }
 
+class _KeyValueList extends StatelessWidget {
+  const _KeyValueList({required this.rows});
+
+  final List<MapEntry<String, String>> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: <Widget>[
+        for (final row in rows)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SizedBox(
+                  width: 130,
+                  child: Text(
+                    row.key,
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                ),
+                Expanded(child: Text(row.value)),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _TextMatch {
   const _TextMatch(this.start, this.end);
 
   final int start;
   final int end;
+}
+
+class _ClipboardImportPayload {
+  const _ClipboardImportPayload({required this.fileName, required this.text});
+
+  final String fileName;
+  final String text;
 }
 
 class _EditableFieldBinding {
@@ -2934,7 +5651,29 @@ class _EditableFieldBinding {
   final ValueChanged<String> onChanged;
 }
 
-enum _ResultsCellMenuAction { copy, paste, setNull }
+enum _ResultsCellMenuAction {
+  copy,
+  copySpatialWkb,
+  copySpatialWkt,
+  copySpatialGeoJson,
+  edit,
+  insertRow,
+  paste,
+  setNull,
+  deleteRow,
+}
+
+class _ResultsCellSpatialCopyProfile {
+  const _ResultsCellSpatialCopyProfile({
+    this.canCopyWkb = false,
+    this.canCopyWkt = false,
+    this.canCopyGeoJson = false,
+  });
+
+  final bool canCopyWkb;
+  final bool canCopyWkt;
+  final bool canCopyGeoJson;
+}
 
 enum _SchemaNodeMenuAction {
   scriptDdl,
@@ -2942,10 +5681,12 @@ enum _SchemaNodeMenuAction {
   scriptUpdate,
   scriptDelete,
   viewData,
+  showInErd,
   renameObject,
   deleteObject,
   refresh,
   newIndex,
   rebuildAllIndexes,
   newView,
+  columnStatistics,
 }

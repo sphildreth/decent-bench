@@ -1,8 +1,15 @@
 import 'dart:io';
 
+import 'package:decent_bench/features/workspace/infrastructure/decentdb_native_release_asset.dart';
 import 'package:decent_bench/features/workspace/infrastructure/native_library_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+
+String _currentPinnedTag() {
+  return DecentDbNativeReleaseAsset.parsePinnedTagFromPubspecLock(
+    File('pubspec.lock').readAsStringSync(),
+  )!;
+}
 
 void main() {
   test('runtime resolution checks bundled library locations first', () async {
@@ -24,12 +31,13 @@ void main() {
     'packaging resolution prefers the cached pinned release asset',
     () async {
       final appDir = Directory.current.path;
+      final pinnedTag = _currentPinnedTag();
       final cachedLibraryPath = p.join(
         appDir,
         '.dart_tool',
         'decentdb',
         'native',
-        'v2.3.0',
+        pinnedTag,
         'Linux-x64',
         'libdecentdb.so',
       );
@@ -102,10 +110,26 @@ void main() {
       'Contents/Frameworks/libdecentdb.dylib',
     );
     expect(windows.bundleRelativeInstallPath, 'decentdb.dll');
+    expect(
+      linux.migrationToolBundleRelativeInstallPath,
+      'bin/decentdb-migrate',
+    );
+    expect(
+      macos.migrationToolBundleRelativeInstallPath,
+      'Contents/MacOS/decentdb-migrate',
+    );
+    expect(
+      windows.migrationToolBundleRelativeInstallPath,
+      'decentdb-migrate.exe',
+    );
+    expect(linux.cliToolBundleRelativeInstallPath, 'bin/decentdb');
+    expect(macos.cliToolBundleRelativeInstallPath, 'Contents/MacOS/decentdb');
+    expect(windows.cliToolBundleRelativeInstallPath, 'decentdb.exe');
   });
 
   test('failure includes checked candidates', () async {
     final appDir = Directory.current.path;
+    final pinnedTag = _currentPinnedTag();
     final resolver = NativeLibraryResolver(
       currentDirectoryPath: appDir,
       scriptDirectoryPath: p.join(appDir, 'tool'),
@@ -128,7 +152,7 @@ void main() {
                 '.dart_tool',
                 'decentdb',
                 'native',
-                'v2.3.0',
+                pinnedTag,
                 'Linux-x64',
                 'libdecentdb.so',
               ),

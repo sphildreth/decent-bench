@@ -7,6 +7,7 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include "flutter_menu_plugin.h"
+#include "window_placement_plugin.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
@@ -14,9 +15,49 @@ struct _MyApplication {
   FlView *view;
   GtkWidget *content_box;
   FlutterMenuPlugin *menu_plugin;
+  WindowPlacementPlugin *window_placement_plugin;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
+
+static gchar *resolve_logo_asset_path() {
+  g_autoptr(GError) error = nullptr;
+  g_autofree gchar *executable_path =
+      g_file_read_link("/proc/self/exe", &error);
+  if (executable_path == nullptr) {
+    g_warning("Failed to resolve Decent Bench executable path: %s",
+              error != nullptr ? error->message : "unknown error");
+    return nullptr;
+  }
+
+  g_autofree gchar *bundle_dir = g_path_get_dirname(executable_path);
+  return g_build_filename(bundle_dir, "data", "flutter_assets", "assets",
+                          "logo-256x256.png", nullptr);
+}
+
+static void set_decent_bench_window_icon(GtkWindow *window,
+                                         GtkHeaderBar *header_bar) {
+  g_autofree gchar *icon_path = resolve_logo_asset_path();
+  if (icon_path == nullptr || !g_file_test(icon_path, G_FILE_TEST_EXISTS)) {
+    g_warning("Decent Bench logo asset was not found in the app bundle.");
+    return;
+  }
+
+  g_autoptr(GError) error = nullptr;
+  if (!gtk_window_set_icon_from_file(window, icon_path, &error)) {
+    g_warning("Failed to set Decent Bench window icon: %s",
+              error != nullptr ? error->message : "unknown error");
+  }
+
+  if (header_bar != nullptr) {
+    GtkWidget *app_icon = gtk_image_new_from_file(icon_path);
+    gtk_image_set_pixel_size(GTK_IMAGE(app_icon), 24);
+    gtk_widget_set_margin_start(app_icon, 6);
+    gtk_widget_set_margin_end(app_icon, 6);
+    gtk_widget_show(app_icon);
+    gtk_header_bar_pack_start(header_bar, app_icon);
+  }
+}
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication *self, FlView *view) {
@@ -46,8 +87,9 @@ static void my_application_activate(GApplication *application) {
     }
   }
 #endif
+  GtkHeaderBar *header_bar = nullptr;
   if (use_header_bar) {
-    GtkHeaderBar *header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
+    header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
     gtk_header_bar_set_title(header_bar, "Decent Bench");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
@@ -56,6 +98,7 @@ static void my_application_activate(GApplication *application) {
     gtk_window_set_title(window, "Decent Bench");
   }
 
+  set_decent_bench_window_icon(window, header_bar);
   gtk_window_set_default_size(window, 1280, 720);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
@@ -88,6 +131,7 @@ static void my_application_activate(GApplication *application) {
   FlBinaryMessenger *messenger = fl_engine_get_binary_messenger(engine);
   self->menu_plugin =
       new FlutterMenuPlugin(messenger, window, GTK_BOX(content_box));
+  self->window_placement_plugin = new WindowPlacementPlugin(messenger, window);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
@@ -136,6 +180,8 @@ static void my_application_dispose(GObject *object) {
   MyApplication *self = MY_APPLICATION(object);
   delete self->menu_plugin;
   self->menu_plugin = nullptr;
+  delete self->window_placement_plugin;
+  self->window_placement_plugin = nullptr;
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
@@ -153,6 +199,7 @@ static void my_application_init(MyApplication *self) {
   self->view = nullptr;
   self->content_box = nullptr;
   self->menu_plugin = nullptr;
+  self->window_placement_plugin = nullptr;
 }
 
 MyApplication *my_application_new() {

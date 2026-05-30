@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -109,6 +111,7 @@ class SqlEditorPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tokens = context.decentBenchTheme;
+    final parameterContractHint = _parameterContractHint(activeTab);
     final effectiveTabs = tabs.length >= 2
         ? tabs
         : <QueryTabState>[
@@ -162,20 +165,36 @@ class SqlEditorPane extends StatelessWidget {
               color: tokens.colors.panelBg,
               border: Border(bottom: BorderSide(color: tokens.colors.border)),
             ),
-            child: TextField(
-              focusNode: paramsFocusNode,
-              controller: paramsController,
-              undoController: paramsUndoController,
-              onChanged: onParamsChanged,
-              style: TextStyle(
-                fontSize: tokens.fonts.uiSize * zoomFactor,
-                color: tokens.dialog.inputText,
-              ),
-              decoration: const InputDecoration(
-                isDense: true,
-                labelText: 'Parameters (JSON array)',
-                hintText: '[1, "alice", true]',
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                if (activeTab.parameterContracts.isNotEmpty) ...<Widget>[
+                  _ParameterContractPanel(
+                    tab: activeTab,
+                    zoomFactor: zoomFactor,
+                    onChanged: (parameter, rawValue) =>
+                        _updateParameterField(activeTab, parameter, rawValue),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                TextField(
+                  focusNode: paramsFocusNode,
+                  controller: paramsController,
+                  undoController: paramsUndoController,
+                  onChanged: onParamsChanged,
+                  style: TextStyle(
+                    fontSize: tokens.fonts.uiSize * zoomFactor,
+                    color: tokens.dialog.inputText,
+                  ),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: 'Parameters (JSON array)',
+                    hintText: '[1, "alice", true]',
+                    helperText: parameterContractHint,
+                    helperMaxLines: 2,
+                  ),
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -335,6 +354,305 @@ class SqlEditorPane extends StatelessWidget {
     }
     return '\n'.allMatches(text).length + 1;
   }
+
+  String? _parameterContractHint(QueryTabState tab) {
+    final parameters = tab.parameterContracts;
+    if (parameters.isEmpty) {
+      final diagnostics = tab.queryContract?.diagnostics ?? const <String>[];
+      final diagnostic = diagnostics.isEmpty ? null : diagnostics.first;
+      return diagnostic == null ? null : 'Contract diagnostic: $diagnostic';
+    }
+    final shown = parameters
+        .take(4)
+        .map((parameter) {
+          return '${parameter.name} ${parameter.displayType}';
+        })
+        .join(', ');
+    final hiddenCount = parameters.length - 4;
+    final suffix = hiddenCount > 0 ? ', +$hiddenCount more' : '';
+    final diagnostics = tab.queryContract?.diagnostics ?? const <String>[];
+    final diagnostic = diagnostics.isEmpty ? null : diagnostics.first;
+    return diagnostic == null
+        ? 'Expected: $shown$suffix'
+        : 'Expected: $shown$suffix | $diagnostic';
+  }
+
+  void _updateParameterField(
+    QueryTabState tab,
+    QueryParameterContract parameter,
+    String rawValue,
+  ) {
+    final values = _decodeParameterJsonArray(tab.parameterJson);
+    final index = parameter.position <= 0 ? 0 : parameter.position - 1;
+    while (values.length <= index) {
+      values.add(null);
+    }
+    values[index] = _coerceParameterValue(rawValue, parameter);
+    final encoded = const JsonEncoder.withIndent('  ').convert(values);
+    paramsController.value = TextEditingValue(
+      text: encoded,
+      selection: TextSelection.collapsed(offset: encoded.length),
+    );
+    onParamsChanged(encoded);
+  }
+}
+
+class _ParameterContractPanel extends StatelessWidget {
+  const _ParameterContractPanel({
+    required this.tab,
+    required this.zoomFactor,
+    required this.onChanged,
+  });
+
+  final QueryTabState tab;
+  final double zoomFactor;
+  final void Function(QueryParameterContract parameter, String rawValue)
+  onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = context.decentBenchTheme;
+    final values = _decodeParameterJsonArray(tab.parameterJson);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          'Typed parameters',
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: tokens.editor.tabActiveText,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            for (final parameter in tab.parameterContracts)
+              _ParameterContractField(
+                key: ValueKey<String>(
+                  'sql_editor.parameter.${tab.id}.${parameter.name}',
+                ),
+                parameter: parameter,
+                value: _parameterValueAt(values, parameter),
+                zoomFactor: zoomFactor,
+                onChanged: (value) => onChanged(parameter, value),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ParameterContractField extends StatefulWidget {
+  const _ParameterContractField({
+    super.key,
+    required this.parameter,
+    required this.value,
+    required this.zoomFactor,
+    required this.onChanged,
+  });
+
+  final QueryParameterContract parameter;
+  final Object? value;
+  final double zoomFactor;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_ParameterContractField> createState() =>
+      _ParameterContractFieldState();
+}
+
+class _ParameterContractFieldState extends State<_ParameterContractField> {
+  late final TextEditingController _controller = TextEditingController(
+    text: _parameterFieldText(widget.value),
+  );
+  late final FocusNode _focusNode = FocusNode(
+    debugLabel: 'parameter-${widget.parameter.name}',
+  );
+
+  @override
+  void didUpdateWidget(covariant _ParameterContractField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextText = _parameterFieldText(widget.value);
+    if (!_focusNode.hasFocus && _controller.text != nextText) {
+      _controller.text = nextText;
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.decentBenchTheme;
+    final parameter = widget.parameter;
+    final parseError = _parameterInputParseError(_controller.text, parameter);
+    final missingRequired =
+        parameter.nullable == false && _controller.text.trim().isEmpty;
+    final helperText = parseError ?? _parameterInputHint(parameter);
+    return SizedBox(
+      width: 190,
+      child: TextField(
+        controller: _controller,
+        focusNode: _focusNode,
+        onChanged: widget.onChanged,
+        style: TextStyle(
+          fontSize: tokens.fonts.uiSize * widget.zoomFactor,
+          color: tokens.dialog.inputText,
+        ),
+        keyboardType: _parameterInputKeyboardType(parameter),
+        decoration: InputDecoration(
+          isDense: true,
+          labelText: '${parameter.name} ${parameter.displayType}',
+          helperText: parameter.sourceLabel.isEmpty
+              ? helperText
+              : '$helperText • ${parameter.sourceLabel}',
+          helperMaxLines: 1,
+          errorText: missingRequired ? 'Required' : parseError,
+        ),
+      ),
+    );
+  }
+}
+
+List<Object?> _decodeParameterJsonArray(String raw) {
+  if (raw.trim().isEmpty) {
+    return <Object?>[];
+  }
+  try {
+    final decoded = jsonDecode(raw);
+    return decoded is List ? <Object?>[...decoded] : <Object?>[];
+  } catch (_) {
+    return <Object?>[];
+  }
+}
+
+Object? _parameterValueAt(
+  List<Object?> values,
+  QueryParameterContract parameter,
+) {
+  final index = parameter.position <= 0 ? 0 : parameter.position - 1;
+  if (index < 0 || index >= values.length) {
+    return null;
+  }
+  return values[index];
+}
+
+String _parameterFieldText(Object? value) {
+  if (value == null) {
+    return '';
+  }
+  if (value is String) {
+    return value;
+  }
+  return jsonEncode(value);
+}
+
+Object? _coerceParameterValue(
+  String rawValue,
+  QueryParameterContract parameter,
+) {
+  final trimmed = rawValue.trim();
+  if (trimmed.isEmpty || trimmed.toLowerCase() == 'null') {
+    return null;
+  }
+  final descriptor = parameter.nativeTypeDescriptor;
+  switch (descriptor.family) {
+    case NativeTypeFamily.boolean:
+      if (trimmed.toLowerCase() == 'true') {
+        return true;
+      }
+      if (trimmed.toLowerCase() == 'false') {
+        return false;
+      }
+      return rawValue;
+    case NativeTypeFamily.numeric:
+      if (descriptor.baseTypeName == 'FLOAT' ||
+          descriptor.baseTypeName == 'FLOAT64' ||
+          descriptor.baseTypeName == 'DOUBLE' ||
+          descriptor.baseTypeName == 'REAL' ||
+          descriptor.baseTypeName == 'DECIMAL') {
+        return num.tryParse(trimmed) ?? rawValue;
+      }
+      return int.tryParse(trimmed) ?? rawValue;
+    case NativeTypeFamily.text:
+    case NativeTypeFamily.binary:
+    case NativeTypeFamily.uuid:
+    case NativeTypeFamily.enumValue:
+    case NativeTypeFamily.temporal:
+    case NativeTypeFamily.network:
+    case NativeTypeFamily.macAddress:
+    case NativeTypeFamily.spatial:
+    case NativeTypeFamily.unknown:
+      return rawValue;
+  }
+}
+
+String _parameterInputHint(QueryParameterContract parameter) {
+  return switch (parameter.nativeTypeDescriptor.family) {
+    NativeTypeFamily.boolean => 'Boolean (true/false)',
+    NativeTypeFamily.numeric => 'Numeric',
+    NativeTypeFamily.text ||
+    NativeTypeFamily.binary ||
+    NativeTypeFamily.uuid ||
+    NativeTypeFamily.enumValue ||
+    NativeTypeFamily.temporal ||
+    NativeTypeFamily.network ||
+    NativeTypeFamily.macAddress ||
+    NativeTypeFamily.spatial ||
+    NativeTypeFamily.unknown => 'String-like JSON value',
+  };
+}
+
+TextInputType _parameterInputKeyboardType(QueryParameterContract parameter) {
+  return switch (parameter.nativeTypeDescriptor.family) {
+    NativeTypeFamily.numeric => const TextInputType.numberWithOptions(
+      decimal: true,
+    ),
+    NativeTypeFamily.boolean => TextInputType.text,
+    NativeTypeFamily.text ||
+    NativeTypeFamily.binary ||
+    NativeTypeFamily.uuid ||
+    NativeTypeFamily.enumValue ||
+    NativeTypeFamily.temporal ||
+    NativeTypeFamily.network ||
+    NativeTypeFamily.macAddress ||
+    NativeTypeFamily.spatial ||
+    NativeTypeFamily.unknown => TextInputType.text,
+  };
+}
+
+String? _parameterInputParseError(
+  String rawValue,
+  QueryParameterContract parameter,
+) {
+  final trimmed = rawValue.trim();
+  if (trimmed.isEmpty || trimmed.toLowerCase() == 'null') {
+    return null;
+  }
+  final descriptor = parameter.nativeTypeDescriptor;
+  return switch (descriptor.family) {
+    NativeTypeFamily.boolean => switch (trimmed.toLowerCase()) {
+      'true' || 'false' => null,
+      _ => 'Use true or false',
+    },
+    NativeTypeFamily.numeric =>
+      (descriptor.baseTypeName == 'FLOAT' ||
+              descriptor.baseTypeName == 'FLOAT64' ||
+              descriptor.baseTypeName == 'DOUBLE' ||
+              descriptor.baseTypeName == 'REAL' ||
+              descriptor.baseTypeName == 'DECIMAL')
+          ? (num.tryParse(trimmed) == null ? 'Invalid number' : null)
+          : (int.tryParse(trimmed) == null ? 'Invalid integer' : null),
+    _ => null,
+  };
 }
 
 class _FindBar extends StatelessWidget {

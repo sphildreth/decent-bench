@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:decent_bench/app/logging/app_logger.dart';
 import 'package:decent_bench/features/workspace/domain/app_config.dart';
 import 'package:decent_bench/features/workspace/domain/excel_import_models.dart';
+import 'package:decent_bench/features/workspace/domain/saved_query_models.dart';
 import 'package:decent_bench/features/workspace/domain/sql_dump_import_models.dart';
 import 'package:decent_bench/features/workspace/domain/sqlite_import_models.dart';
 import 'package:decent_bench/features/workspace/domain/workspace_models.dart';
@@ -11,6 +12,7 @@ import 'package:decent_bench/features/workspace/domain/workspace_state.dart';
 import 'package:decent_bench/features/workspace/infrastructure/app_config_store.dart';
 import 'package:decent_bench/features/workspace/infrastructure/app_lifecycle_service.dart';
 import 'package:decent_bench/features/workspace/infrastructure/decentdb_bridge.dart';
+import 'package:decent_bench/features/workspace/infrastructure/saved_query_library_store.dart';
 import 'package:decent_bench/features/workspace/infrastructure/workspace_state_store.dart';
 
 class InMemoryConfigStore implements WorkspaceConfigStore {
@@ -48,6 +50,38 @@ class InMemoryWorkspaceStateStore implements WorkspaceStateStore {
   @override
   Future<void> save(String databasePath, PersistedWorkspaceState state) async {
     _states[databasePath] = state;
+  }
+}
+
+class InMemorySavedQueryLibraryStore implements SavedQueryLibraryStore {
+  final Map<String, SavedQueryLibrary> _libraries =
+      <String, SavedQueryLibrary>{};
+  final Map<String, SavedQueryLibrary> _pathLibraries =
+      <String, SavedQueryLibrary>{};
+
+  @override
+  String describeLocation(String databasePath) {
+    return 'memory://$databasePath/queries.toml';
+  }
+
+  @override
+  Future<SavedQueryLibrary> load(String databasePath) async {
+    return _libraries[databasePath] ?? SavedQueryLibrary.empty;
+  }
+
+  @override
+  Future<SavedQueryLibrary> loadFromPath(String path) async {
+    return _pathLibraries[path] ?? SavedQueryLibrary.empty;
+  }
+
+  @override
+  Future<void> save(String databasePath, SavedQueryLibrary library) async {
+    _libraries[databasePath] = library;
+  }
+
+  @override
+  Future<void> saveToPath(String path, SavedQueryLibrary library) async {
+    _pathLibraries[path] = library;
   }
 }
 
@@ -90,7 +124,10 @@ class RecordingAppLogger extends AppLogger {
   RecordingAppLogger({this.minimumLevel = LogVerbosity.debug});
 
   @override
-  String get logDatabasePath => '/tmp/decent-bench-log.ddb';
+  String get logDirectoryPath => '/tmp/decent-bench-logs';
+
+  @override
+  String get sessionLogFilePath => '/tmp/decent-bench-logs/test.log';
 
   LogVerbosity minimumLevel;
   final List<RecordedLogEntry> entries = <RecordedLogEntry>[];
@@ -170,7 +207,25 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
 
   int cancelCount = 0;
   String? lastExportPath;
+  bool? lastExcelIncludeHeaders;
   String? lastRunQuerySql;
+  List<Object?>? lastRunQueryParams;
+  WriteQueueSettings? lastWriteQueueSettings;
+  String? lastQueuedWriteSql;
+  List<Object?>? lastQueuedWriteParams;
+  String? lastBranchQuerySql;
+  String? lastCreatedBranchName;
+  String? lastCreatedBranchFromRef;
+  String? lastCreatedSnapshotName;
+  String? lastBranchQueryBranchName;
+  String? lastBranchDiffLeftRef;
+  String? lastBranchDiffRightRef;
+  String? lastRestoreBranchName;
+  String? lastRestoreTargetRef;
+  bool? lastRestoreDryRun;
+  String? lastMergeSourceBranch;
+  String? lastMergeTargetBranch;
+  bool? lastMergeDryRun;
   ExcelImportInspection excelInspection;
   SqlDumpImportInspection sqlDumpInspection;
   SqliteImportInspection sqliteInspection;
@@ -186,6 +241,16 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   bool holdSqlDumpImportOpen = false;
   bool failNextSqlDumpImport = false;
   Object? openDatabaseError;
+  bool branchApiAvailable = false;
+  String branchApiUnavailableReason =
+      'Native DecentDB branch and snapshot operations require a public Dart '
+      'binding API. Decent Bench does not call private binding internals or '
+      'C ABI surfaces that are not exported by the public Dart package.';
+  List<WorkspaceBranchInfo> branches = const <WorkspaceBranchInfo>[
+    WorkspaceBranchInfo(name: 'main', isCurrent: true),
+  ];
+  List<WorkspaceSnapshotInfo> snapshots = const <WorkspaceSnapshotInfo>[];
+  WorkspaceBranchDiff branchDiffResult = WorkspaceBranchDiff.empty;
   StreamController<ExcelImportUpdate>? _excelImportController;
   StreamController<SqlDumpImportUpdate>? _sqlDumpImportController;
   StreamController<SqliteImportUpdate>? _importController;
@@ -282,6 +347,46 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
     ],
     loadedAt: DateTime(2026, 3, 9),
   );
+  ToolingMetadata toolingMetadata = const ToolingMetadata(
+    metadataVersion: 1,
+    engineVersion: '2.8.0',
+    databaseFormatVersion: 8,
+    schemaCookie: 1,
+    tempSchemaCookie: 0,
+    schemaFingerprint:
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    schemaFingerprintAlgorithm: 'sha256:decentdb-tooling-schema-v1',
+    columnTypeMetadata: <ToolingColumnTypeMetadata>[
+      ToolingColumnTypeMetadata(
+        tableName: 'tasks',
+        columnName: 'id',
+        columnType: 'INT64',
+        typeInfo: ToolingTypeInfo(
+          typeName: 'INT64',
+          valueKind: 'int64',
+          cValueTag: 1,
+        ),
+      ),
+      ToolingColumnTypeMetadata(
+        tableName: 'tasks',
+        columnName: 'title',
+        columnType: 'TEXT',
+        typeInfo: ToolingTypeInfo(
+          typeName: 'TEXT',
+          valueKind: 'text',
+          cValueTag: 4,
+        ),
+      ),
+    ],
+    capabilities: ToolingCapabilities(
+      queryContractVersion: 1,
+      queryDescribe: true,
+      deterministicJson: true,
+    ),
+  );
+  Object? toolingMetadataError;
+  Object? queryContractError;
+  String? lastDescribedQuerySql;
 
   @override
   Future<void> cancelQuery(String cursorId) async {
@@ -333,6 +438,124 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   }
 
   @override
+  Future<List<WorkspaceBranchInfo>> listBranches() async {
+    _ensureBranchApiAvailable();
+    return branches;
+  }
+
+  @override
+  Future<WorkspaceBranchInfo> createBranch({
+    required String branchName,
+    required String fromRef,
+  }) async {
+    _ensureBranchApiAvailable();
+    lastCreatedBranchName = branchName;
+    lastCreatedBranchFromRef = fromRef;
+    final branch = WorkspaceBranchInfo(name: branchName, parentRef: fromRef);
+    branches = <WorkspaceBranchInfo>[...branches, branch];
+    return branch;
+  }
+
+  @override
+  Future<void> deleteBranch({required String branchName}) async {
+    _ensureBranchApiAvailable();
+    branches = <WorkspaceBranchInfo>[
+      for (final branch in branches)
+        if (branch.name != branchName) branch,
+    ];
+  }
+
+  @override
+  Future<List<WorkspaceSnapshotInfo>> listSnapshots() async {
+    _ensureBranchApiAvailable();
+    return snapshots;
+  }
+
+  @override
+  Future<WorkspaceSnapshotInfo> createSnapshot({required String name}) async {
+    _ensureBranchApiAvailable();
+    lastCreatedSnapshotName = name;
+    final snapshot = WorkspaceSnapshotInfo(
+      name: name,
+      ref: 'snapshot:$name',
+      branch: branches
+          .firstWhere(
+            (branch) => branch.isCurrent,
+            orElse: () => branches.first,
+          )
+          .name,
+      createdAt: DateTime(2026, 5, 19, 12),
+    );
+    snapshots = <WorkspaceSnapshotInfo>[...snapshots, snapshot];
+    return snapshot;
+  }
+
+  @override
+  Future<void> deleteSnapshot({required String ref}) async {
+    _ensureBranchApiAvailable();
+    snapshots = <WorkspaceSnapshotInfo>[
+      for (final snapshot in snapshots)
+        if (snapshot.ref != ref) snapshot,
+    ];
+  }
+
+  @override
+  Future<QueryResultPage> runQueryOnBranch({
+    required String sql,
+    required String branchName,
+    required List<Object?> params,
+    required int pageSize,
+  }) async {
+    _ensureBranchApiAvailable();
+    lastBranchQuerySql = sql;
+    lastBranchQueryBranchName = branchName;
+    return runQuery(sql: sql, params: params, pageSize: pageSize);
+  }
+
+  @override
+  Future<WorkspaceBranchDiff> branchDiff({
+    required String leftRef,
+    required String rightRef,
+  }) async {
+    _ensureBranchApiAvailable();
+    lastBranchDiffLeftRef = leftRef;
+    lastBranchDiffRightRef = rightRef;
+    return branchDiffResult;
+  }
+
+  @override
+  Future<WorkspaceBranchDiff> restoreBranch({
+    required String branchName,
+    required String targetRef,
+    required bool dryRun,
+  }) async {
+    _ensureBranchApiAvailable();
+    lastRestoreBranchName = branchName;
+    lastRestoreTargetRef = targetRef;
+    lastRestoreDryRun = dryRun;
+    return branchDiffResult;
+  }
+
+  @override
+  Future<WorkspaceBranchDiff> mergeBranch({
+    required String sourceBranch,
+    required String targetBranch,
+    required bool dryRun,
+  }) async {
+    _ensureBranchApiAvailable();
+    lastMergeSourceBranch = sourceBranch;
+    lastMergeTargetBranch = targetBranch;
+    lastMergeDryRun = dryRun;
+    return branchDiffResult;
+  }
+
+  void _ensureBranchApiAvailable() {
+    if (!branchApiAvailable) {
+      throw BranchWorkflowUnavailable(branchApiUnavailableReason);
+    }
+  }
+
+  @override
   Future<void> dispose() async {
     await _excelImportController?.close();
     _excelImportController = null;
@@ -350,15 +573,46 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
     required String path,
     required String delimiter,
     required bool includeHeaders,
+    Duration? timeout,
   }) async {
     lastExportPath = path;
     return CsvExportResult(rowCount: 2, path: path);
   }
 
   @override
+  Future<JsonExportResult> exportJson({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    required String format,
+    required bool pretty,
+    required bool includeMetadata,
+    Duration? timeout,
+  }) async {
+    lastExportPath = path;
+    return JsonExportResult(rowCount: 2, path: path);
+  }
+
+  @override
+  Future<ExcelExportResult> exportExcel({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    required bool includeHeaders,
+    Duration? timeout,
+  }) async {
+    lastExportPath = path;
+    lastExcelIncludeHeaders = includeHeaders;
+    return ExcelExportResult(rowCount: 2, path: path);
+  }
+
+  @override
   Future<QueryResultPage> fetchNextPage({
     required String cursorId,
     required int pageSize,
+    Duration? timeout,
   }) async {
     return switch (cursorId) {
       'cursor-projects' => QueryResultPage(
@@ -649,6 +903,28 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   Future<SchemaSnapshot> loadSchema() async => snapshot;
 
   @override
+  Future<ToolingMetadata> getToolingMetadata() async {
+    final error = toolingMetadataError;
+    if (error != null) {
+      throw error;
+    }
+    return toolingMetadata;
+  }
+
+  @override
+  Future<QueryContract> describeQueryContract(String sql) async {
+    lastDescribedQuerySql = sql;
+    final error = queryContractError;
+    if (error != null) {
+      throw error;
+    }
+    if (sql.toUpperCase().contains('BROKEN')) {
+      throw const BridgeFailure('syntax error near BROKEN', code: 'ERR_SQL');
+    }
+    return _fakeQueryContract(sql, toolingMetadata.schemaFingerprint);
+  }
+
+  @override
   Future<SqliteImportPreview> loadSqlitePreview({
     required String sourcePath,
     required String tableName,
@@ -662,7 +938,11 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   }
 
   @override
-  Future<DatabaseSession> openDatabase(String path) async {
+  Future<DatabaseSession> openDatabase(
+    String path, {
+    WriteQueueSettings? writeQueue,
+  }) async {
+    lastWriteQueueSettings = writeQueue;
     final error = openDatabaseError;
     if (error != null) {
       throw error;
@@ -676,12 +956,21 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   }
 
   @override
+  Future<OperationalMetricsSnapshot> loadOperationalMetrics({
+    int maxRows = 20,
+  }) async {
+    return OperationalMetricsSnapshot.empty();
+  }
+
+  @override
   Future<QueryResultPage> runQuery({
     required String sql,
     required List<Object?> params,
     required int pageSize,
+    Duration? timeout,
   }) async {
     lastRunQuerySql = sql;
+    lastRunQueryParams = <Object?>[...params];
     if (sql.toUpperCase().startsWith('EXPLAIN')) {
       if (sql.toLowerCase().contains('projects')) {
         return QueryResultPage(
@@ -724,6 +1013,18 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
         elapsed: const Duration(milliseconds: 2),
       );
     }
+    if (sql.toUpperCase().startsWith('INSERT') ||
+        sql.toUpperCase().startsWith('UPDATE') ||
+        sql.toUpperCase().startsWith('DELETE')) {
+      return QueryResultPage(
+        cursorId: null,
+        columns: const <String>[],
+        rows: const <Map<String, Object?>>[],
+        done: true,
+        rowsAffected: 1,
+        elapsed: const Duration(milliseconds: 2),
+      );
+    }
     if (sql.toLowerCase().contains('projects')) {
       return QueryResultPage(
         cursorId: 'cursor-projects',
@@ -746,6 +1047,17 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
       rowsAffected: null,
       elapsed: const Duration(milliseconds: 5),
     );
+  }
+
+  @override
+  Future<QueuedWriteResult> executeQueuedWrite({
+    required String sql,
+    required List<Object?> params,
+    int? timeoutMs,
+  }) async {
+    lastQueuedWriteSql = sql;
+    lastQueuedWriteParams = <Object?>[...params];
+    return const QueuedWriteResult(rowsAffected: 1);
   }
 
   SqliteImportSummary _buildCompletedSummary(SqliteImportRequest request) {
@@ -922,6 +1234,84 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
       rolledBack: true,
     );
   }
+}
+
+QueryContract _fakeQueryContract(String sql, String schemaFingerprint) {
+  final upperSql = sql.toUpperCase();
+  final isCreate = upperSql.startsWith('CREATE');
+  final usesProjects = sql.toLowerCase().contains('projects');
+  final columns = usesProjects
+      ? const <QueryResultColumnContract>[
+          QueryResultColumnContract(
+            ordinal: 0,
+            name: 'id',
+            typeName: 'INT64',
+            nullable: false,
+            source: 'catalog_column',
+            sourceTable: 'projects',
+            sourceColumn: 'id',
+            diagnostics: <String>[],
+          ),
+          QueryResultColumnContract(
+            ordinal: 1,
+            name: 'name',
+            typeName: 'TEXT',
+            nullable: false,
+            source: 'catalog_column',
+            sourceTable: 'projects',
+            sourceColumn: 'name',
+            diagnostics: <String>[],
+          ),
+        ]
+      : isCreate
+      ? const <QueryResultColumnContract>[]
+      : const <QueryResultColumnContract>[
+          QueryResultColumnContract(
+            ordinal: 0,
+            name: 'id',
+            typeName: 'INT64',
+            nullable: false,
+            source: 'catalog_column',
+            sourceTable: 'tasks',
+            sourceColumn: 'id',
+            diagnostics: <String>[],
+          ),
+          QueryResultColumnContract(
+            ordinal: 1,
+            name: 'title',
+            typeName: 'TEXT',
+            nullable: false,
+            source: 'catalog_column',
+            sourceTable: 'tasks',
+            sourceColumn: 'title',
+            diagnostics: <String>[],
+          ),
+        ];
+  return QueryContract(
+    contractVersion: 1,
+    sql: sql,
+    statementKind: isCreate ? 'create' : 'query',
+    readOnly: !isCreate,
+    schemaCookie: 1,
+    tempSchemaCookie: 0,
+    schemaFingerprint: schemaFingerprint,
+    parameters: sql.contains(r'$1')
+        ? const <QueryParameterContract>[
+            QueryParameterContract(
+              position: 1,
+              name: r'$1',
+              typeName: 'INT64',
+              nullable: false,
+              source: 'catalog_column',
+              sourceTable: 'tasks',
+              sourceColumn: 'id',
+              diagnostics: <String>[],
+            ),
+          ]
+        : const <QueryParameterContract>[],
+    resultColumns: columns,
+    diagnostics: const <String>[],
+  );
 }
 
 ExcelImportInspection _defaultExcelInspection(String sourcePath) {

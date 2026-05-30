@@ -37,7 +37,10 @@ class AppSupportPaths {
     return p.join(resolveConfigDirectoryPath(), 'themes');
   }
 
-  static String resolveLogDatabasePath() {
-    return p.join(resolveConfigDirectoryPath(), 'decent-bench-log.ddb');
+  static String resolveLogDirectoryPath(String logDirectory) {
+    if (p.isAbsolute(logDirectory)) {
+      return logDirectory;
+    }
+    return p.join(resolveConfigDirectoryPath(), logDirectory);
   }
 }

@@ -1,198 +1,44 @@
 import 'dart:convert';
 
+export 'sql_snippet_model.dart';
+export 'editor_settings_model.dart';
+export 'logging_settings_model.dart';
+export 'write_queue_settings_model.dart';
+export 'appearance_settings_model.dart';
+export 'window_placement_model.dart';
+
+import 'sql_snippet_model.dart';
+import 'editor_settings_model.dart';
+import 'logging_settings_model.dart';
+import 'write_queue_settings_model.dart';
+import 'appearance_settings_model.dart';
+import 'window_placement_model.dart';
 import 'workspace_shell_preferences.dart';
 
-class SqlSnippet {
-  const SqlSnippet({
-    required this.id,
-    required this.name,
-    required this.trigger,
-    required this.body,
-    this.description = '',
-  });
-
-  final String id;
-  final String name;
-  final String trigger;
-  final String description;
-  final String body;
-
-  SqlSnippet copyWith({
-    String? id,
-    String? name,
-    String? trigger,
-    String? description,
-    String? body,
-  }) {
-    return SqlSnippet(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      trigger: trigger ?? this.trigger,
-      description: description ?? this.description,
-      body: body ?? this.body,
-    );
-  }
-
-  Map<String, Object?> toJson() {
-    return <String, Object?>{
-      'id': id,
-      'name': name,
-      'trigger': trigger,
-      'description': description,
-      'body': body,
-    };
-  }
-
-  factory SqlSnippet.fromJson(Map<String, Object?> map) {
-    return SqlSnippet(
-      id: map['id']! as String,
-      name: map['name']! as String,
-      trigger: map['trigger']! as String,
-      description: map['description'] as String? ?? '',
-      body: map['body']! as String,
-    );
-  }
-}
-
-class EditorSettings {
-  static const bool defaultAutocompleteEnabled = true;
-  static const int defaultAutocompleteMaxSuggestions = 12;
-  static const bool defaultFormatUppercaseKeywords = true;
-  static const int defaultIndentSpaces = 2;
-  static const bool defaultShowLineNumbers = true;
-
-  const EditorSettings({
-    required this.autocompleteEnabled,
-    required this.autocompleteMaxSuggestions,
-    required this.formatUppercaseKeywords,
-    required this.indentSpaces,
-    required this.showLineNumbers,
-  });
-
-  final bool autocompleteEnabled;
-  final int autocompleteMaxSuggestions;
-  final bool formatUppercaseKeywords;
-  final int indentSpaces;
-  final bool showLineNumbers;
-
-  factory EditorSettings.defaults() {
-    return const EditorSettings(
-      autocompleteEnabled: defaultAutocompleteEnabled,
-      autocompleteMaxSuggestions: defaultAutocompleteMaxSuggestions,
-      formatUppercaseKeywords: defaultFormatUppercaseKeywords,
-      indentSpaces: defaultIndentSpaces,
-      showLineNumbers: defaultShowLineNumbers,
-    );
-  }
-
-  EditorSettings copyWith({
-    bool? autocompleteEnabled,
-    int? autocompleteMaxSuggestions,
-    bool? formatUppercaseKeywords,
-    int? indentSpaces,
-    bool? showLineNumbers,
-  }) {
-    return EditorSettings(
-      autocompleteEnabled: autocompleteEnabled ?? this.autocompleteEnabled,
-      autocompleteMaxSuggestions:
-          autocompleteMaxSuggestions ?? this.autocompleteMaxSuggestions,
-      formatUppercaseKeywords:
-          formatUppercaseKeywords ?? this.formatUppercaseKeywords,
-      indentSpaces: indentSpaces ?? this.indentSpaces,
-      showLineNumbers: showLineNumbers ?? this.showLineNumbers,
-    );
-  }
-}
-
-enum LogVerbosity {
-  debug(0, 'Debug'),
-  information(1, 'Information'),
-  warning(2, 'Warning'),
-  error(3, 'Errors');
-
-  const LogVerbosity(this.value, this.label);
-
-  final int value;
-  final String label;
-
-  String get tomlValue => name;
-
-  static LogVerbosity parse(String raw) {
-    final normalized = raw.trim().toLowerCase();
-    for (final value in LogVerbosity.values) {
-      if (value.name == normalized || value.label.toLowerCase() == normalized) {
-        return value;
-      }
-    }
-    return LogVerbosity.warning;
-  }
-}
-
-class LoggingSettings {
-  const LoggingSettings({required this.verbosity});
-
-  final LogVerbosity verbosity;
-
-  factory LoggingSettings.defaults() {
-    return const LoggingSettings(verbosity: LogVerbosity.warning);
-  }
-
-  LoggingSettings copyWith({LogVerbosity? verbosity}) {
-    return LoggingSettings(verbosity: verbosity ?? this.verbosity);
-  }
-}
-
-class AppearanceSettings {
-  static const String defaultActiveTheme = 'classic-dark';
-  static const Object _unset = Object();
-
-  const AppearanceSettings({required this.activeTheme, this.themesDir});
-
-  final String activeTheme;
-  final String? themesDir;
-
-  factory AppearanceSettings.defaults() {
-    return const AppearanceSettings(activeTheme: defaultActiveTheme);
-  }
-
-  AppearanceSettings copyWith({
-    String? activeTheme,
-    Object? themesDir = _unset,
-  }) {
-    return AppearanceSettings(
-      activeTheme: activeTheme ?? this.activeTheme,
-      themesDir: themesDir == _unset ? this.themesDir : themesDir as String?,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) {
-    return other is AppearanceSettings &&
-        other.activeTheme == activeTheme &&
-        other.themesDir == themesDir;
-  }
-
-  @override
-  int get hashCode => Object.hash(activeTheme, themesDir);
-}
-
 class AppConfig {
-  static const int currentConfigVersion = 1;
+  static const int currentConfigVersion = 4;
   static const int defaultPageSizeValue = 1000;
+  static const int defaultQueryHistoryLimitValue = 40;
+  static const int defaultQueryTimeoutSeconds = 60;
   static const String defaultCsvDelimiter = ',';
   static const bool defaultCsvIncludeHeaders = true;
   static const int maxRecentFiles = 8;
+  static const Object _unset = Object();
 
   const AppConfig({
     required this.configVersion,
     required this.appearance,
     required this.logging,
+    required this.writeQueue,
     required this.recentFiles,
     required this.defaultPageSize,
+    required this.queryHistoryLimit,
+    required this.queryTimeoutSeconds,
     required this.csvDelimiter,
     required this.csvIncludeHeaders,
     required this.editorSettings,
     required this.shellPreferences,
+    required this.windowPlacement,
     required this.shortcutBindings,
     required this.snippets,
   });
@@ -200,12 +46,16 @@ class AppConfig {
   final int configVersion;
   final AppearanceSettings appearance;
   final LoggingSettings logging;
+  final WriteQueueSettings writeQueue;
   final List<String> recentFiles;
   final int defaultPageSize;
+  final int queryHistoryLimit;
+  final int queryTimeoutSeconds;
   final String csvDelimiter;
   final bool csvIncludeHeaders;
   final EditorSettings editorSettings;
   final WorkspaceShellPreferences shellPreferences;
+  final WindowPlacement? windowPlacement;
   final Map<String, String> shortcutBindings;
   final List<SqlSnippet> snippets;
 
@@ -214,12 +64,16 @@ class AppConfig {
       configVersion: currentConfigVersion,
       appearance: AppearanceSettings.defaults(),
       logging: LoggingSettings.defaults(),
+      writeQueue: WriteQueueSettings.defaults(),
       recentFiles: const <String>[],
       defaultPageSize: defaultPageSizeValue,
+      queryHistoryLimit: defaultQueryHistoryLimitValue,
+      queryTimeoutSeconds: defaultQueryTimeoutSeconds,
       csvDelimiter: defaultCsvDelimiter,
       csvIncludeHeaders: defaultCsvIncludeHeaders,
       editorSettings: EditorSettings.defaults(),
       shellPreferences: WorkspaceShellPreferences.defaults(),
+      windowPlacement: null,
       shortcutBindings: defaultShortcutBindings(),
       snippets: defaultSnippets(),
     );
@@ -229,12 +83,16 @@ class AppConfig {
     int? configVersion,
     AppearanceSettings? appearance,
     LoggingSettings? logging,
+    WriteQueueSettings? writeQueue,
     List<String>? recentFiles,
     int? defaultPageSize,
+    int? queryHistoryLimit,
+    int? queryTimeoutSeconds,
     String? csvDelimiter,
     bool? csvIncludeHeaders,
     EditorSettings? editorSettings,
     WorkspaceShellPreferences? shellPreferences,
+    Object? windowPlacement = _unset,
     Map<String, String>? shortcutBindings,
     List<SqlSnippet>? snippets,
   }) {
@@ -242,12 +100,18 @@ class AppConfig {
       configVersion: configVersion ?? this.configVersion,
       appearance: appearance ?? this.appearance,
       logging: logging ?? this.logging,
+      writeQueue: writeQueue ?? this.writeQueue,
       recentFiles: recentFiles ?? this.recentFiles,
       defaultPageSize: defaultPageSize ?? this.defaultPageSize,
+      queryHistoryLimit: queryHistoryLimit ?? this.queryHistoryLimit,
+      queryTimeoutSeconds: queryTimeoutSeconds ?? this.queryTimeoutSeconds,
       csvDelimiter: csvDelimiter ?? this.csvDelimiter,
       csvIncludeHeaders: csvIncludeHeaders ?? this.csvIncludeHeaders,
       editorSettings: editorSettings ?? this.editorSettings,
       shellPreferences: shellPreferences ?? this.shellPreferences,
+      windowPlacement: windowPlacement == _unset
+          ? this.windowPlacement
+          : windowPlacement as WindowPlacement?,
       shortcutBindings: shortcutBindings ?? this.shortcutBindings,
       snippets: snippets ?? this.snippets,
     );
@@ -285,6 +149,8 @@ class AppConfig {
       ..writeln('# Decent Bench configuration')
       ..writeln('config_version = $configVersion')
       ..writeln('default_page_size = $defaultPageSize')
+      ..writeln('query_history_limit = $queryHistoryLimit')
+      ..writeln('query_timeout_seconds = $queryTimeoutSeconds')
       ..writeln('csv_delimiter = ${jsonEncode(csvDelimiter)}')
       ..writeln('csv_include_headers = $csvIncludeHeaders')
       ..writeln('recent_files = ${jsonEncode(recentFiles)}')
@@ -313,7 +179,43 @@ class AppConfig {
       ..writeln()
       ..writeln('[logging]')
       ..writeln('verbosity = ${jsonEncode(logging.verbosity.tomlValue)}')
+      ..writeln('log_directory = ${jsonEncode(logging.logDirectory)}')
       ..writeln()
+      ..writeln('[write_queue]')
+      ..writeln('enabled = ${writeQueue.enabled}')
+      ..writeln('capacity = ${writeQueue.capacity}')
+      ..writeln('default_timeout_ms = ${writeQueue.defaultTimeoutMs}')
+      ..writeln('max_batch = ${writeQueue.maxBatch}')
+      ..writeln('max_group_delay_us = ${writeQueue.maxGroupDelayUs}');
+
+    final window = windowPlacement?.normalized();
+    if (window != null) {
+      buffer
+        ..writeln()
+        ..writeln('[window]')
+        ..writeln('state = ${jsonEncode(window.state.tomlValue)}')
+        ..writeln('x = ${window.x}')
+        ..writeln('y = ${window.y}')
+        ..writeln('width = ${window.width}')
+        ..writeln('height = ${window.height}');
+      if (window.displayId != null) {
+        buffer.writeln('display_id = ${jsonEncode(window.displayId)}');
+      }
+      if (window.displayX != null) {
+        buffer.writeln('display_x = ${window.displayX}');
+      }
+      if (window.displayY != null) {
+        buffer.writeln('display_y = ${window.displayY}');
+      }
+      if (window.displayWidth != null) {
+        buffer.writeln('display_width = ${window.displayWidth}');
+      }
+      if (window.displayHeight != null) {
+        buffer.writeln('display_height = ${window.displayHeight}');
+      }
+    }
+
+    buffer
       ..writeln()
       ..writeln('[layout]')
       ..writeln(
@@ -358,6 +260,16 @@ class AppConfig {
     Map<String, Object?>? pendingSnippet;
     int? declaredSnippetCount;
     String? currentTable;
+    var windowState = WindowPlacementState.normal;
+    int? windowX;
+    int? windowY;
+    int? windowWidth;
+    int? windowHeight;
+    String? windowDisplayId;
+    int? windowDisplayX;
+    int? windowDisplayY;
+    int? windowDisplayWidth;
+    int? windowDisplayHeight;
 
     void flushSnippet() {
       if (pendingSnippet == null) {
@@ -450,10 +362,99 @@ class AppConfig {
             );
           }
           break;
+        case 'logging.log_directory':
+          final parsed = _decodeJsonString(value);
+          if (parsed != null && parsed.trim().isNotEmpty) {
+            config = config.copyWith(
+              logging: config.logging.copyWith(
+                logDirectory: parsed.trim(),
+              ),
+            );
+          }
+          break;
+        case 'write_queue.enabled':
+          final parsed = _parseBool(value);
+          if (parsed != null) {
+            config = config.copyWith(
+              writeQueue: config.writeQueue.copyWith(enabled: parsed),
+            );
+          }
+          break;
+        case 'write_queue.capacity':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed > 0) {
+            config = config.copyWith(
+              writeQueue: config.writeQueue.copyWith(capacity: parsed),
+            );
+          }
+          break;
+        case 'write_queue.default_timeout_ms':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed >= 0) {
+            config = config.copyWith(
+              writeQueue: config.writeQueue.copyWith(defaultTimeoutMs: parsed),
+            );
+          }
+          break;
+        case 'write_queue.max_batch':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed > 0) {
+            config = config.copyWith(
+              writeQueue: config.writeQueue.copyWith(maxBatch: parsed),
+            );
+          }
+          break;
+        case 'write_queue.max_group_delay_us':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed >= 0) {
+            config = config.copyWith(
+              writeQueue: config.writeQueue.copyWith(maxGroupDelayUs: parsed),
+            );
+          }
+          break;
+        case 'window.state':
+          final parsed = _decodeJsonString(value);
+          if (parsed != null) {
+            windowState = WindowPlacementState.parse(parsed);
+          }
+          break;
+        case 'window.x':
+          windowX = int.tryParse(value);
+          break;
+        case 'window.y':
+          windowY = int.tryParse(value);
+          break;
+        case 'window.width':
+          windowWidth = int.tryParse(value);
+          break;
+        case 'window.height':
+          windowHeight = int.tryParse(value);
+          break;
+        case 'window.display_id':
+          windowDisplayId = _decodeJsonString(value);
+          break;
+        case 'window.display_x':
+          windowDisplayX = int.tryParse(value);
+          break;
+        case 'window.display_y':
+          windowDisplayY = int.tryParse(value);
+          break;
+        case 'window.display_width':
+          windowDisplayWidth = int.tryParse(value);
+          break;
+        case 'window.display_height':
+          windowDisplayHeight = int.tryParse(value);
+          break;
         case 'default_page_size':
           final parsed = int.tryParse(value);
           if (parsed != null && parsed > 0) {
             config = config.copyWith(defaultPageSize: parsed);
+          }
+          break;
+        case 'query_history_limit':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed > 0) {
+            config = config.copyWith(queryHistoryLimit: parsed);
           }
           break;
         case 'csv_delimiter':
@@ -649,12 +650,66 @@ class AppConfig {
     if (declaredSnippetCount != null || parsedSnippets.isNotEmpty) {
       config = config.copyWith(snippets: parsedSnippets);
     }
+    final parsedWindowPlacement = _buildWindowPlacement(
+      x: windowX,
+      y: windowY,
+      width: windowWidth,
+      height: windowHeight,
+      state: windowState,
+      displayId: windowDisplayId,
+      displayX: windowDisplayX,
+      displayY: windowDisplayY,
+      displayWidth: windowDisplayWidth,
+      displayHeight: windowDisplayHeight,
+    );
+    if (parsedWindowPlacement != null) {
+      config = config.copyWith(windowPlacement: parsedWindowPlacement);
+    }
 
     return config.copyWith(
       configVersion: config.configVersion == 0
           ? currentConfigVersion
           : config.configVersion,
       shellPreferences: config.shellPreferences.normalized(),
+    );
+  }
+
+  static WindowPlacement? _buildWindowPlacement({
+    required int? x,
+    required int? y,
+    required int? width,
+    required int? height,
+    required WindowPlacementState state,
+    required String? displayId,
+    required int? displayX,
+    required int? displayY,
+    required int? displayWidth,
+    required int? displayHeight,
+  }) {
+    if (x == null || y == null || width == null || height == null) {
+      return null;
+    }
+    if (width < WindowPlacement.minimumWidth ||
+        height < WindowPlacement.minimumHeight) {
+      return null;
+    }
+    return WindowPlacement(
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      state: state,
+      displayId: displayId == null || displayId.trim().isEmpty
+          ? null
+          : displayId.trim(),
+      displayX: displayX,
+      displayY: displayY,
+      displayWidth: displayWidth != null && displayWidth > 0
+          ? displayWidth
+          : null,
+      displayHeight: displayHeight != null && displayHeight > 0
+          ? displayHeight
+          : null,
     );
   }
 
@@ -681,6 +736,7 @@ class AppConfig {
       'tools_run_buffer': 'Ctrl+Alt+Enter',
       'tools_stop_query': 'Esc',
       'view_reset_layout': 'Ctrl+Shift+R',
+      'view_command_palette': 'Ctrl+Shift+P',
       'view_zoom_in': 'Ctrl+=',
       'view_zoom_out': 'Ctrl+-',
       'view_zoom_reset': 'Ctrl+0',
@@ -723,7 +779,7 @@ class AppConfig {
         description: 'Use json_each as a table-valued function.',
         body:
             'SELECT entry.key, entry.value\n'
-            'FROM json_each(\'{"name":"decent","type":"bench"}\') AS entry;',
+            "FROM json_each('{\"name\":\"decent\",\"type\":\"bench\"}') AS entry;",
       ),
       SqlSnippet(
         id: 'explain',
@@ -735,6 +791,32 @@ class AppConfig {
             'SELECT *\n'
             'FROM your_table\n'
             'WHERE id = \$1;',
+      ),
+      SqlSnippet(
+        id: 'native_types',
+        name: 'Native Types Table',
+        trigger: 'native',
+        description: 'Create a table with DecentDB native semantic types.',
+        body:
+            'CREATE TABLE native_sample (\n'
+            '  id INT64 PRIMARY KEY,\n'
+            "  status ENUM('draft', 'published') NOT NULL,\n"
+            '  seen_at TIMESTAMPTZ,\n'
+            '  service_ip IPADDR,\n'
+            '  service_net CIDR,\n'
+            '  device_mac MACADDR\n'
+            ');',
+      ),
+      SqlSnippet(
+        id: 'spatial_nearby',
+        name: 'Spatial Nearby Query',
+        trigger: 'spatial',
+        description: 'Filter geography points by distance in meters.',
+        body:
+            'SELECT id, name, ST_AsText(geog) AS wkt\n'
+            'FROM places\n'
+            'WHERE ST_DWithin(geog, ST_GeogPoint(\$1, \$2), \$3)\n'
+            'ORDER BY geog <-> ST_GeogPoint(\$1, \$2);',
       ),
     ];
   }

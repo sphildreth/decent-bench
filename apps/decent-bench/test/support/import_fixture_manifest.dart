@@ -261,21 +261,21 @@ const Map<String, Map<String, String>> _htmlDataTypesTestColumnTypes =
 const List<GenericImportFixtureEntry> genericImportRoundTripFixtures =
     <GenericImportFixtureEntry>[
       GenericImportFixtureEntry(
-        relativePath: 'test-data/text_seperated_values/customers_basic.csv',
+        relativePath: 'test-data/text_separated_values/customers_basic.csv',
         formatKey: ImportFormatKey.csv,
       ),
       GenericImportFixtureEntry(
-        relativePath: 'test-data/text_seperated_values/customers_basic.csv.gz',
+        relativePath: 'test-data/text_separated_values/customers_basic.csv.gz',
         formatKey: ImportFormatKey.csv,
         extractWrappedSource: true,
       ),
       GenericImportFixtureEntry(
-        relativePath: 'test-data/text_seperated_values/products.tsv',
+        relativePath: 'test-data/text_separated_values/products.tsv',
         formatKey: ImportFormatKey.tsv,
         options: GenericImportOptions(delimiter: '\t'),
       ),
       GenericImportFixtureEntry(
-        relativePath: 'test-data/text_seperated_values/orders_pipe.psv',
+        relativePath: 'test-data/text_separated_values/orders_pipe.psv',
         formatKey: ImportFormatKey.genericDelimited,
         options: GenericImportOptions(delimiter: '|'),
       ),
@@ -586,6 +586,10 @@ const List<SqlDumpImportFixtureEntry> sqlDumpImportRoundTripFixtures =
         relativePath: 'test-data/sql_related/schema_seed.sql',
       ),
       SqlDumpImportFixtureEntry(
+        relativePath: 'test-data/sql_related/decentdb-v2_5_native_fixture.sql',
+        encoding: 'utf8',
+      ),
+      SqlDumpImportFixtureEntry(
         relativePath: 'test-data/sql_related/mysql_export.sql',
       ),
       SqlDumpImportFixtureEntry(
@@ -612,8 +616,8 @@ const List<SqlDumpImportFixtureEntry> sqlDumpImportRoundTripFixtures =
 
 const List<DetectionFixtureEntry> detectionFixtures = <DetectionFixtureEntry>[
   DetectionFixtureEntry(
-    relativePath: 'test-data/text_seperated_values/employees_fixed_width.txt',
-    expectedFormatKey: ImportFormatKey.genericDelimited,
+    relativePath: 'test-data/text_separated_values/employees_fixed_width.txt',
+    expectedFormatKey: ImportFormatKey.fixedWidth,
     expectedSupportState: ImportSupportState.complete,
     expectedImplementationKind: ImportImplementationKind.genericWizard,
   ),

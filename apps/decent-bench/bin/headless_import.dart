@@ -9,6 +9,11 @@ Future<void> main(List<String> args) async {
   switch (cliDecision.behavior) {
     case StartupCliBehavior.runHeadlessImport:
       exit(await runHeadlessImportCli(cliDecision.headlessImportOptions!));
+    case StartupCliBehavior.runHeadlessQuality:
+      stderr.writeln(
+        'The headless import helper only supports import flags. Use `dbench quality` from the main executable for quality reports.',
+      );
+      exit(2);
     case StartupCliBehavior.printHelp:
     case StartupCliBehavior.printVersion:
       stdout.writeln(cliDecision.output ?? '');

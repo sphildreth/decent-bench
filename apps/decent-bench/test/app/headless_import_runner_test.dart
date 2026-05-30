@@ -46,7 +46,7 @@ void main() {
         '..',
         '..',
         'test-data',
-        'text_seperated_values',
+        'text_separated_values',
         'customers_basic.csv',
       ),
     );
@@ -160,7 +160,7 @@ void main() {
     },
   );
 
-  test('rejects plan files until plan execution is implemented', () async {
+  test('loads a profile document for headless plan execution', () async {
     final stdoutLines = <String>[];
     final stderrLines = <String>[];
     final targetPath = p.join(tempDir.path, 'customers_basic.ddb');
@@ -170,16 +170,75 @@ void main() {
         '..',
         '..',
         'test-data',
-        'text_seperated_values',
+        'text_separated_values',
         'customers_basic.csv',
       ),
+    );
+    final profilePath = p.join(tempDir.path, 'import-profile.json');
+    await File(profilePath).writeAsString(
+      jsonEncode(<String, Object?>{
+        'config_version': 1,
+        'import': <String, Object?>{
+          'name': 'Customers CSV',
+          'source_format': 'csv',
+          'header_row': true,
+          'native_type_mappings': <String, Object?>{'email': 'TEXT'},
+        },
+        'exports': <Map<String, Object?>>[
+          <String, Object?>{
+            'id': 'csv-default',
+            'name': 'CSV Default',
+            'format': 'csv',
+            'include_headers': true,
+          },
+        ],
+      }),
     );
 
     final exitCode = await runHeadlessImportCli(
       HeadlessImportCliOptions(
         sourcePath: sourcePath,
         targetPath: targetPath,
-        planPath: p.join(tempDir.path, 'import-plan.json'),
+        planPath: profilePath,
+      ),
+      stdoutWriter: stdoutLines.add,
+      stderrWriter: stderrLines.add,
+    );
+
+    expect(exitCode, 0);
+    expect(stdoutLines, isNotEmpty);
+    expect(
+      stderrLines.join('\n'),
+      contains('Using import profile: Customers CSV'),
+    );
+    final report = jsonDecode(stdoutLines.last) as Map<String, Object?>;
+    expect(report['format_key'], 'csv');
+  });
+
+  test('rejects invalid profile documents', () async {
+    final stdoutLines = <String>[];
+    final stderrLines = <String>[];
+    final targetPath = p.join(tempDir.path, 'customers_basic.ddb');
+    final sourcePath = p.normalize(
+      p.join(
+        Directory.current.path,
+        '..',
+        '..',
+        'test-data',
+        'text_separated_values',
+        'customers_basic.csv',
+      ),
+    );
+    final profilePath = p.join(tempDir.path, 'bad-profile.json');
+    await File(
+      profilePath,
+    ).writeAsString(jsonEncode(<String, Object?>{'config_version': 99}));
+
+    final exitCode = await runHeadlessImportCli(
+      HeadlessImportCliOptions(
+        sourcePath: sourcePath,
+        targetPath: targetPath,
+        planPath: profilePath,
       ),
       stdoutWriter: stdoutLines.add,
       stderrWriter: stderrLines.add,
@@ -187,9 +246,6 @@ void main() {
 
     expect(exitCode, 2);
     expect(stdoutLines, isEmpty);
-    expect(
-      stderrLines.join('\n'),
-      contains('Headless import plan execution is not implemented yet'),
-    );
+    expect(stderrLines.join('\n'), contains('Invalid import/export profile'));
   });
 }

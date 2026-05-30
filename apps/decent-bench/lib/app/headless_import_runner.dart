@@ -9,7 +9,9 @@ import '../features/import/application/import_manager.dart';
 import '../features/import/domain/import_models.dart';
 import '../features/import/infrastructure/import_execution_service.dart';
 import '../features/import/infrastructure/import_preview_service.dart';
+import '../features/import_modules/infrastructure/import_module_option_defaults.dart';
 import '../features/workspace/domain/excel_import_models.dart';
+import '../features/workspace/domain/import_export_profiles.dart';
 import '../features/workspace/domain/sql_dump_import_models.dart';
 import '../features/workspace/domain/sqlite_import_models.dart';
 import '../features/workspace/infrastructure/decentdb_bridge.dart';
@@ -140,11 +142,16 @@ Future<int> runHeadlessImportCli(
   Directory? extractedDirectory;
 
   try {
+    ImportExportProfileDocument? profileDocument;
     if (options.planPath != null) {
-      writeStderr(
-        'Headless import plan execution is not implemented yet. Remove `--plan` for now.',
-      );
-      return 2;
+      try {
+        profileDocument = await ImportExportProfileDocument.loadFile(
+          options.planPath!,
+        );
+      } on FormatException catch (error) {
+        writeStderr('Invalid import/export profile: ${error.message}');
+        return 2;
+      }
     }
 
     final sourcePath = options.sourcePath.trim();
@@ -155,6 +162,13 @@ Future<int> runHeadlessImportCli(
     }
     if (targetPath.isEmpty) {
       writeStderr('Headless import requires a target `.ddb` path.');
+      return 2;
+    }
+    if (!targetPath.toLowerCase().endsWith('.ddb')) {
+      writeStderr(
+        'Target path must end with `.ddb` '
+        '(DecentDB files use .ddb, not .db).',
+      );
       return 2;
     }
     if (!File(sourcePath).existsSync()) {
@@ -183,6 +197,10 @@ Future<int> runHeadlessImportCli(
     if (!options.silent) {
       for (final warning in resolved.warnings) {
         writeStderr('Warning: $warning');
+      }
+      final profile = profileDocument?.importPlan;
+      if (profile != null && profile.name.trim().isNotEmpty) {
+        writeStderr('Using import profile: ${profile.name}');
       }
       writeStderr(
         'Importing ${p.basename(resolved.resolvedSourcePath)} as ${resolved.format.label}...',
@@ -297,7 +315,7 @@ Future<HeadlessImportCliReport> _runGenericHeadlessImport({
   required HeadlessImportLineWriter writeStderr,
   required NativeLibraryResolver libraryResolver,
 }) async {
-  final options = defaultGenericImportOptionsFor(source.format.key);
+  final options = defaultGenericImportOptionsForModule(source.format.key);
   final inspection = await previewService.inspect(
     sourcePath: source.resolvedSourcePath,
     format: source.format,

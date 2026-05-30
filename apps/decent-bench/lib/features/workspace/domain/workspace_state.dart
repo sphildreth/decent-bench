@@ -9,6 +9,7 @@ class WorkspaceTabDraft {
     required this.sql,
     required this.parameterJson,
     required this.exportPath,
+    this.queryContract,
     this.messageHistory = const <QueryMessageEntry>[],
     this.queryHistory = const <QueryHistoryEntry>[],
   });
@@ -18,6 +19,7 @@ class WorkspaceTabDraft {
   final String sql;
   final String parameterJson;
   final String exportPath;
+  final QueryContract? queryContract;
   final List<QueryMessageEntry> messageHistory;
   final List<QueryHistoryEntry> queryHistory;
 
@@ -28,6 +30,7 @@ class WorkspaceTabDraft {
       'sql': sql,
       'parameterJson': parameterJson,
       'exportPath': exportPath,
+      'queryContract': queryContract?.toJson(),
       'messageHistory': <Map<String, Object?>>[
         for (final entry in messageHistory) entry.toJson(),
       ],
@@ -44,6 +47,7 @@ class WorkspaceTabDraft {
       sql: map['sql']! as String,
       parameterJson: map['parameterJson']! as String,
       exportPath: map['exportPath'] as String? ?? '',
+      queryContract: _decodeQueryContract(map['queryContract']),
       messageHistory: ((map['messageHistory'] as List?) ?? const <Object?>[])
           .cast<Map<Object?, Object?>>()
           .map(
@@ -64,23 +68,43 @@ class WorkspaceTabDraft {
   }
 }
 
+Map<String, Object?>? _decodeStringMap(Object? value) {
+  if (value is! Map) {
+    return null;
+  }
+  return <String, Object?>{
+    for (final entry in value.entries) '${entry.key}': entry.value,
+  };
+}
+
+QueryContract? _decodeQueryContract(Object? value) {
+  final map = _decodeStringMap(value);
+  return map == null ? null : QueryContract.fromMap(map);
+}
+
 class PersistedWorkspaceState {
   const PersistedWorkspaceState({
     required this.schemaVersion,
     required this.activeTabId,
+    this.schemaFingerprint,
+    this.schemaFingerprintAlgorithm,
     required this.tabs,
   });
 
-  static const int currentSchemaVersion = 2;
+  static const int currentSchemaVersion = 3;
 
   final int schemaVersion;
   final String? activeTabId;
+  final String? schemaFingerprint;
+  final String? schemaFingerprintAlgorithm;
   final List<WorkspaceTabDraft> tabs;
 
   factory PersistedWorkspaceState.empty() {
     return const PersistedWorkspaceState(
       schemaVersion: currentSchemaVersion,
       activeTabId: null,
+      schemaFingerprint: null,
+      schemaFingerprintAlgorithm: null,
       tabs: <WorkspaceTabDraft>[],
     );
   }
@@ -89,6 +113,8 @@ class PersistedWorkspaceState {
     return <String, Object?>{
       'schemaVersion': schemaVersion,
       'activeTabId': activeTabId,
+      'schemaFingerprint': schemaFingerprint,
+      'schemaFingerprintAlgorithm': schemaFingerprintAlgorithm,
       'tabs': <Map<String, Object?>>[for (final tab in tabs) tab.toJson()],
     };
   }
@@ -104,6 +130,8 @@ class PersistedWorkspaceState {
     return PersistedWorkspaceState(
       schemaVersion: map['schemaVersion'] as int? ?? currentSchemaVersion,
       activeTabId: map['activeTabId'] as String?,
+      schemaFingerprint: map['schemaFingerprint'] as String?,
+      schemaFingerprintAlgorithm: map['schemaFingerprintAlgorithm'] as String?,
       tabs: ((map['tabs'] as List?) ?? const <Object?>[])
           .cast<Map<Object?, Object?>>()
           .map(

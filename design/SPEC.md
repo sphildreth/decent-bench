@@ -76,6 +76,11 @@ formatter, JSON/Parquet/Excel export, and multi-tab editing.
 - SQLite (`.db`, `.sqlite`, `.sqlite3`)
 - MariaDB/MySQL-style `.sql` dump (**MVP-lite**; common `CREATE TABLE` +
   `INSERT` patterns)
+- Additional module-backed imports now include clipboard tables, fixed-width
+  text, JSON log streams, common web/app log templates, Markdown tables,
+  SpreadsheetML, XZ wrappers, ODS, PostgreSQL plain dump expansion, and HAR.
+  These follow the same preview, type override, background execution, and
+  warning contracts as the original import wizard paths.
 - Import transforms before commit:
   - Rename columns
   - Type overrides
@@ -129,13 +134,19 @@ formatter, JSON/Parquet/Excel export, and multi-tab editing.
 - Plain Postgres import unless later added by ADR and PRD/SPEC update
 - Multi-workspace support
 - Collaboration features
-- Full migration tooling
+- Full migration tooling beyond the ADR-0037 official legacy-file upgrade
+  wrapper
 - External databases as first-class query targets
-- ERD designer
+- ERD designer/schema modeling workflows
 - Query plan visualizer
 - Stored procedure workflow tooling
 - Script orchestration engine
 - Computed-column transforms during import
+
+The read-only ERD viewer is intentionally not classified as an ERD designer.
+ADR-0035 accepts it as a post-`v1.0.0` scope expansion for schema discovery,
+navigation, table-preview loading, and PNG/JPG image export; the implementation
+must remain read-only and must not create, edit, or drop schema objects.
 
 ---
 
@@ -223,6 +234,12 @@ concerns is required.
 - If DecentDB:
   - Open workspace
   - Load schema browser immediately
+  - If open fails with an unsupported legacy DecentDB format-version error,
+    offer the ADR-0037 migration workflow:
+    - keep the original file untouched
+    - suggest a new `*_migrated.ddb` destination
+    - run the official `decentdb-migrate --source <old> --dest <new>` tool
+    - open the migrated copy after success
 - Otherwise:
   - Launch import wizard with source file preselected
 - If launched with `--import <path>`:
@@ -240,7 +257,7 @@ desktop UI:
   using inferred defaults
 - `dbench --in <source-path> --out <target.ddb> --plan <plan.json>` runs
   a headless import with explicit import options from a versioned JSON plan
-  file (see `docs/HEADLESS_IMPORT_PLAN_DETAILS.md`)
+  file (see `design/HEADLESS_IMPORT_PLAN_DETAILS.md`)
 - `dbench --silent` suppresses non-error console output in headless mode
 
 This mode is governed by ADR-0022 and is intended for scripting and batch
@@ -314,6 +331,36 @@ Selecting an object shows details such as:
 
 Search/filter should be responsive and operate on an in-memory metadata model
 derived from the latest loaded schema snapshot.
+
+### 4.4a Read-only ERD viewer
+
+The ERD viewer is a schema-navigation surface generated from foreign-key
+metadata in the latest loaded `SchemaSnapshot`.
+
+Required behavior:
+
+- derive table nodes and FK edges from in-memory schema metadata
+- exclude views from the first implementation unless a separate view-overlay
+  design is accepted
+- remain read-only; no schema editing, modeling, migration, or DDL mutation
+- integrate as a non-modal tab/mode in the upper-left navigation pane alongside
+  the schema explorer, preserving the ADR-0010 2x2 shell
+- double-clicking a table node selects that table in schema navigation, opens or
+  activates a top-X table-preview query, and loads the first page of results when
+  a database is open
+- group FK column pairs into deterministic relationship edges, using upstream FK
+  constraint identity when available and synthetic same-table-pair grouping when
+  not available
+- render missing referenced tables as non-editable warning placeholder nodes
+- support search, zoom, zoom-to-fit, selected-table focus, isolated-table
+  visibility, and keyboard focus traversal
+- export the full diagram or visible viewport as PNG or JPG/JPEG
+- enforce conservative raster export size limits before allocating image canvases
+
+The initial implementation should use a simple deterministic Flutter-native
+layout. It should avoid a third-party diagram/layout dependency unless the custom
+layout timebox proves insufficient and a separate dependency review and ADR
+accept the package.
 
 ### 4.5 Export flow
 
@@ -567,12 +614,13 @@ Edge cases:
 - SQLite virtual generated columns are imported as regular value columns with
   warnings because DecentDB currently supports stored generated columns
 
-### 7.4 SQL dump import (MariaDB/MySQL style)
+### 7.4 SQL dump import (MariaDB/MySQL style plus PostgreSQL plain dumps)
 
 MVP-lite parsing scope:
 
 - `CREATE TABLE`
 - `INSERT INTO`
+- PostgreSQL plain dump `COPY FROM stdin`
 - common scalar types
 - unsupported statements may be skipped with warnings
 
@@ -760,6 +808,8 @@ Config should include:
 - editor settings
 - snippets
 - export defaults
+- desktop window placement, including size, state, and monitor/display
+  restoration where the host platform allows it
 
 ### 12.2 Workspace state vs user config
 
@@ -767,6 +817,9 @@ The implementation must distinguish between:
 
 - **user config**: global preferences and defaults
 - **workspace state**: open-file-specific UI state
+
+Desktop window placement is user config. It is not tied to a specific DecentDB
+workspace file.
 
 They may be stored separately even if both use TOML.
 
@@ -791,6 +844,21 @@ storage includes an independent schema version for file-specific UI state.
 ---
 
 ## 13. Testing and quality
+
+### 13.0 Data quality suite
+
+The `Data quality, profiling, and validation suite` is implemented under
+`design/WIN_DATA_QUALITY_PROFILING_VALIDATION_PLAN.md` with ADR contracts in
+`design/adr/0046-data-quality-persistence-and-project-contract.md`,
+`design/adr/0047-data-quality-execution-and-paging-contract.md`, and
+`design/adr/0048-data-quality-report-privacy-contract.md`.
+
+The workspace exposes a first-class Quality pane and Tools menu commands for
+running profile-driven quality scans, managing validation profiles, inspecting
+paged violation rows, and exporting Markdown, HTML, or JSON quality reports.
+Import summaries can launch a quality run immediately after a successful import,
+and query-result targets are profiled through temporary DecentDB tables. The
+headless CLI exposes the same workflow through `dbench quality`.
 
 ### 13.1 Minimum automated tests
 

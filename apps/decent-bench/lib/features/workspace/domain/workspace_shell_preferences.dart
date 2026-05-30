@@ -1,4 +1,4 @@
-enum ResultsPaneTab { results, messages, executionPlan }
+enum ResultsPaneTab { results, messages, executionPlan, chart, history }
 
 class WorkspaceShellPreferences {
   static const double _minSplit = 0.18;
@@ -88,6 +88,8 @@ class WorkspaceShellPreferences {
     return switch (raw) {
       'messages' => ResultsPaneTab.messages,
       'execution_plan' => ResultsPaneTab.executionPlan,
+      'chart' => ResultsPaneTab.chart,
+      'history' => ResultsPaneTab.history,
       _ => ResultsPaneTab.results,
     };
   }
@@ -97,6 +99,8 @@ class WorkspaceShellPreferences {
       ResultsPaneTab.results => 'results',
       ResultsPaneTab.messages => 'messages',
       ResultsPaneTab.executionPlan => 'execution_plan',
+      ResultsPaneTab.chart => 'chart',
+      ResultsPaneTab.history => 'history',
     };
   }
 }

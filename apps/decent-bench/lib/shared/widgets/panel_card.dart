@@ -19,21 +19,15 @@ class PanelCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+    return Material(
+      color: theme.colorScheme.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(
+        side: BorderSide(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.45),
         ),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: theme.colorScheme.shadow.withValues(alpha: 0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 16),
-          ),
-        ],
       ),
+      elevation: 0,
       child: Padding(
         padding: padding,
         child: Column(
@@ -58,6 +52,7 @@ class PanelCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                // ignore: use_null_aware_elements
                 if (actions != null) ...actions!,
               ],
             ),

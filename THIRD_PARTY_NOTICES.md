@@ -7,7 +7,7 @@ Apache 2.0 distribution. This file tracks attributions and license details.
 
 - `decentdb`
   - Version/source: Git dependency from `https://github.com/sphildreth/decentdb`,
-    path `bindings/dart/dart`, ref `v2.3.0`
+    path `bindings/dart/dart`, ref `v2.8.0`
   - License: Apache License 2.0
   - Upstream project: `https://github.com/sphildreth/decentdb`
 
@@ -21,6 +21,11 @@ Apache 2.0 distribution. This file tracks attributions and license details.
   - Copyright: Brendan Duncan
   - Source: `https://pub.dev/packages/archive`
 
+- `crypto` `3.0.6`
+  - License: MIT
+  - Copyright: Dart project authors
+  - Source: `https://pub.dev/packages/crypto`
+
 - `excel` `4.0.6`
   - License: MIT
   - Copyright: package contributors
@@ -31,10 +36,20 @@ Apache 2.0 distribution. This file tracks attributions and license details.
   - Copyright: The Flutter Authors
   - Source: `https://pub.dev/packages/file_selector`
 
+- `flutter_markdown_plus` `1.0.7`
+  - License: BSD-3-Clause
+  - Copyright: package contributors
+  - Source: `https://pub.dev/packages/flutter_markdown_plus`
+
 - `html` `0.15.6`
   - License: MIT
   - Copyright: package contributors and Google LLC
   - Source: `https://pub.dev/packages/html`
+
+- `image` `4.3.0`
+  - License: MIT
+  - Copyright: Brendan Duncan
+  - Source: `https://pub.dev/packages/image`
 
 - `sqlite3` `3.1.7`
   - License: MIT
@@ -58,7 +73,10 @@ Apache 2.0 distribution. This file tracks attributions and license details.
 The following transitive dependencies are brought in by direct dependencies.
 Their licenses are compatible with Apache 2.0 distribution:
 
-- `archive` brings `crypto` (MIT, Dart project authors) and `convert`
-  (BSD-style, Dart project authors)
+- `archive` brings `convert` (BSD-style, Dart project authors) and also uses
+  `crypto`, which is listed above as a direct dependency.
+- `flutter_markdown_plus` brings `markdown` and `args` (BSD-style, Dart
+  project authors) and reuses `meta` and `path` from the Dart project
+  dependency set
 - `sqlite3` brings `collection` and `meta` (BSD-style, Dart project authors)
 - `excel` brings `equatable` (MIT), `ffi` (BSD-style), and `recase` (MIT)

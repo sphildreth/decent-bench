@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../../workspace/domain/import_target_types.dart';
+import 'import_transforms.dart';
 
 const int genericImportPreviewRowLimit = 8;
 const int genericImportProgressBatchSize = 200;
@@ -48,6 +49,7 @@ enum ImportFormatKey {
   json,
   ndjson,
   xml,
+  spreadsheetMl,
   yaml,
   toml,
   htmlTable,
@@ -66,6 +68,7 @@ enum ImportFormatKey {
   xzArchive,
   jsonLogStream,
   delimitedLog,
+  har,
   clipboardTable,
   pdfTables,
   unknown,
@@ -186,12 +189,14 @@ class ImportDetectionResult {
     required this.sourcePath,
     required this.format,
     required this.warnings,
+    this.moduleId,
     this.archiveCandidates = const <ImportArchiveCandidate>[],
   });
 
   final String sourcePath;
   final ImportFormatDefinition format;
   final List<String> warnings;
+  final String? moduleId;
   final List<ImportArchiveCandidate> archiveCandidates;
 
   bool get isWrapper => format.isWrapper;
@@ -264,6 +269,7 @@ class ImportTableDraft {
     required this.previewRows,
     this.description,
     this.warnings = const <String>[],
+    this.transformPlan = const ImportTransformPlan(),
   });
 
   final String sourceId;
@@ -275,6 +281,7 @@ class ImportTableDraft {
   final List<Map<String, Object?>> previewRows;
   final String? description;
   final List<String> warnings;
+  final ImportTransformPlan transformPlan;
 
   ImportTableDraft copyWith({
     String? sourceId,
@@ -286,6 +293,7 @@ class ImportTableDraft {
     List<Map<String, Object?>>? previewRows,
     Object? description = _unset,
     List<String>? warnings,
+    ImportTransformPlan? transformPlan,
   }) {
     return ImportTableDraft(
       sourceId: sourceId ?? this.sourceId,
@@ -299,6 +307,7 @@ class ImportTableDraft {
           ? this.description
           : description as String?,
       warnings: warnings ?? this.warnings,
+      transformPlan: transformPlan ?? this.transformPlan,
     );
   }
 
@@ -315,6 +324,7 @@ class ImportTableDraft {
       'previewRows': previewRows,
       'description': description,
       'warnings': warnings,
+      'transformPlan': transformPlan.toMap(),
     };
   }
 
@@ -340,6 +350,19 @@ class ImportTableDraft {
       description: map['description'] as String?,
       warnings: ((map['warnings'] as List?) ?? const <Object?>[])
           .cast<String>(),
+      transformPlan: map['transformPlan'] is Map<Object?, Object?>
+          ? ImportTransformPlan.fromMap(
+              (map['transformPlan']! as Map<Object?, Object?>).map(
+                (key, value) => MapEntry(key as String, value),
+              ),
+            )
+          : map['transforms'] is Map<Object?, Object?>
+          ? ImportTransformPlan.fromMap(
+              (map['transforms']! as Map<Object?, Object?>).map(
+                (key, value) => MapEntry(key as String, value),
+              ),
+            )
+          : const ImportTransformPlan(),
     );
   }
 }
@@ -725,10 +748,12 @@ class GenericImportDialogResult {
   const GenericImportDialogResult({
     required this.targetPath,
     required this.summary,
+    this.runQualityAfterImport = false,
   });
 
   final String targetPath;
   final GenericImportSummary summary;
+  final bool runQualityAfterImport;
 }
 
 String placeholderForTargetType(String targetType, int index) {

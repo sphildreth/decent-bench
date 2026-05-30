@@ -1,9 +1,17 @@
 import 'dart:math' as math;
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
+import 'package:file_selector/file_selector.dart';
 
+import '../../../../app/theme_system/decent_bench_theme.dart';
 import '../../../../app/theme_system/decent_bench_theme_extension.dart';
+import '../../domain/explain_plan_visualization.dart';
+import '../../domain/result_visualization.dart';
 import '../../domain/workspace_models.dart';
 import '../../domain/workspace_shell_preferences.dart';
 import 'shell_pane_frame.dart';
@@ -44,6 +52,7 @@ class ResultsGridInteractionState {
     this.selectedCell,
     this.pinnedColumns = const <String>{},
     this.cellOverrides = const <ResultsGridCellKey, Object?>{},
+    this.cellErrors = const <ResultsGridCellKey, String>{},
     this.executionGeneration = 0,
   });
 
@@ -51,6 +60,7 @@ class ResultsGridInteractionState {
   final ResultsGridCellSelection? selectedCell;
   final Set<String> pinnedColumns;
   final Map<ResultsGridCellKey, Object?> cellOverrides;
+  final Map<ResultsGridCellKey, String> cellErrors;
   final int executionGeneration;
 
   ResultsGridInteractionState copyWith({
@@ -58,6 +68,7 @@ class ResultsGridInteractionState {
     Object? selectedCell = _unset,
     Set<String>? pinnedColumns,
     Map<ResultsGridCellKey, Object?>? cellOverrides,
+    Map<ResultsGridCellKey, String>? cellErrors,
     int? executionGeneration,
   }) {
     return ResultsGridInteractionState(
@@ -67,6 +78,7 @@ class ResultsGridInteractionState {
           : selectedCell as ResultsGridCellSelection?,
       pinnedColumns: pinnedColumns ?? this.pinnedColumns,
       cellOverrides: cellOverrides ?? this.cellOverrides,
+      cellErrors: cellErrors ?? this.cellErrors,
       executionGeneration: executionGeneration ?? this.executionGeneration,
     );
   }
@@ -154,7 +166,12 @@ class ResultsPane extends StatelessWidget {
     required this.onShowCellMenu,
     required this.onSelectRow,
     required this.onTogglePinnedColumn,
+    required this.onShowColumnStatistics,
     required this.usePlaceholderContent,
+    required this.tableEditabilityLabel,
+    this.onLoadHistoryEntry,
+    this.onRunHistoryEntry,
+    this.onClearHistory,
   });
 
   final QueryTabState activeTab;
@@ -169,7 +186,12 @@ class ResultsPane extends StatelessWidget {
   onShowCellMenu;
   final ValueChanged<int> onSelectRow;
   final ValueChanged<String> onTogglePinnedColumn;
+  final ValueChanged<String> onShowColumnStatistics;
   final bool usePlaceholderContent;
+  final String tableEditabilityLabel;
+  final ValueChanged<QueryHistoryEntry>? onLoadHistoryEntry;
+  final Future<void> Function(QueryHistoryEntry entry)? onRunHistoryEntry;
+  final VoidCallback? onClearHistory;
 
   @override
   Widget build(BuildContext context) {
@@ -181,6 +203,7 @@ class ResultsPane extends StatelessWidget {
         activeTab: activeTab,
         pinnedColumnCount: interactionState.pinnedColumns.length,
         selectedRowCount: interactionState.selectedRows.length,
+        tableEditabilityLabel: tableEditabilityLabel,
       ),
       padding: EdgeInsets.zero,
       child: Column(
@@ -201,11 +224,22 @@ class ResultsPane extends StatelessWidget {
                 onShowCellMenu: onShowCellMenu,
                 onSelectRow: onSelectRow,
                 onTogglePinnedColumn: onTogglePinnedColumn,
+                onShowColumnStatistics: onShowColumnStatistics,
                 usePlaceholderContent: usePlaceholderContent,
               ),
               ResultsPaneTab.messages => _MessagesPanel(tab: activeTab),
               ResultsPaneTab.executionPlan => _ExecutionPlanPanel(
                 tab: activeTab,
+              ),
+              ResultsPaneTab.chart => _ChartPanel(
+                tab: activeTab,
+                usePlaceholderContent: usePlaceholderContent,
+              ),
+              ResultsPaneTab.history => _HistoryPanel(
+                tab: activeTab,
+                onLoad: onLoadHistoryEntry,
+                onRun: onRunHistoryEntry,
+                onClear: onClearHistory,
               ),
             },
           ),
@@ -230,11 +264,13 @@ class _ResultsToolbar extends StatelessWidget {
     required this.activeTab,
     required this.pinnedColumnCount,
     required this.selectedRowCount,
+    required this.tableEditabilityLabel,
   });
 
   final QueryTabState activeTab;
   final int pinnedColumnCount;
   final int selectedRowCount;
+  final String tableEditabilityLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -255,6 +291,10 @@ class _ResultsToolbar extends StatelessWidget {
           label: 'Messages ${activeTab.messageHistory.length}',
         ),
         _InfoBadge(
+          icon: Icons.edit_note_outlined,
+          label: _shortLabel(tableEditabilityLabel),
+        ),
+        _InfoBadge(
           icon: activeTab.hasMoreRows
               ? Icons.unfold_more_outlined
               : Icons.check_circle_outline,
@@ -262,6 +302,13 @@ class _ResultsToolbar extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _shortLabel(String label) {
+    if (label.length <= 52) {
+      return label;
+    }
+    return '${label.substring(0, 49)}...';
   }
 }
 
@@ -296,6 +343,16 @@ class _ResultsSubtabs extends StatelessWidget {
             label: 'Execution Plan',
             selected: selectedTab == ResultsPaneTab.executionPlan,
             onTap: () => onSelected(ResultsPaneTab.executionPlan),
+          ),
+          _ResultTabButton(
+            label: 'Chart',
+            selected: selectedTab == ResultsPaneTab.chart,
+            onTap: () => onSelected(ResultsPaneTab.chart),
+          ),
+          _ResultTabButton(
+            label: 'History',
+            selected: selectedTab == ResultsPaneTab.history,
+            onTap: () => onSelected(ResultsPaneTab.history),
           ),
         ],
       ),
@@ -358,6 +415,7 @@ class _ResultsGrid extends StatefulWidget {
     required this.onShowCellMenu,
     required this.onSelectRow,
     required this.onTogglePinnedColumn,
+    required this.onShowColumnStatistics,
     required this.usePlaceholderContent,
   });
 
@@ -371,6 +429,7 @@ class _ResultsGrid extends StatefulWidget {
   onShowCellMenu;
   final ValueChanged<int> onSelectRow;
   final ValueChanged<String> onTogglePinnedColumn;
+  final ValueChanged<String> onShowColumnStatistics;
   final bool usePlaceholderContent;
 
   @override
@@ -485,11 +544,14 @@ class _ResultsGridState extends State<_ResultsGrid> {
                                     'results.header.$column',
                                   ),
                                   text: column,
+                                  tooltip: _headerTooltipFor(column),
                                   isHeader: true,
                                   width: _widthFor(column),
                                   pinned: true,
                                   onPinToggle: () =>
                                       widget.onTogglePinnedColumn(column),
+                                  onStatistics: () =>
+                                      widget.onShowColumnStatistics(column),
                                   onResize: (delta) =>
                                       _resizeColumn(column, delta),
                                   resizeHandleKey: ValueKey<String>(
@@ -519,7 +581,8 @@ class _ResultsGridState extends State<_ResultsGrid> {
                                   ),
                                   for (final column in pinnedColumns)
                                     _GridCell(
-                                      text: formatCellValue(
+                                      text: _formatCellValue(
+                                        column,
                                         resolveResultsCellValue(
                                           widget.tab,
                                           widget.interactionState,
@@ -534,6 +597,7 @@ class _ResultsGridState extends State<_ResultsGrid> {
                                       selected: _isCellSelected(index, column),
                                       rowSelected: rowSelected,
                                       edited: _isCellEdited(index, column),
+                                      errorText: _cellError(index, column),
                                       onTap: () =>
                                           widget.onSelectCell(index, column),
                                       onSecondaryTapDown: (position) =>
@@ -572,11 +636,14 @@ class _ResultsGridState extends State<_ResultsGrid> {
                                           'results.header.$column',
                                         ),
                                         text: column,
+                                        tooltip: _headerTooltipFor(column),
                                         isHeader: true,
                                         width: _widthFor(column),
                                         pinned: false,
                                         onPinToggle: () =>
                                             widget.onTogglePinnedColumn(column),
+                                        onStatistics: () => widget
+                                            .onShowColumnStatistics(column),
                                         onResize: (delta) =>
                                             _resizeColumn(column, delta),
                                         resizeHandleKey: ValueKey<String>(
@@ -600,7 +667,8 @@ class _ResultsGridState extends State<_ResultsGrid> {
                                       children: <Widget>[
                                         for (final column in remainingColumns)
                                           _GridCell(
-                                            text: formatCellValue(
+                                            text: _formatCellValue(
+                                              column,
                                               resolveResultsCellValue(
                                                 widget.tab,
                                                 widget.interactionState,
@@ -617,6 +685,10 @@ class _ResultsGridState extends State<_ResultsGrid> {
                                             ),
                                             rowSelected: rowSelected,
                                             edited: _isCellEdited(
+                                              index,
+                                              column,
+                                            ),
+                                            errorText: _cellError(
                                               index,
                                               column,
                                             ),
@@ -680,6 +752,13 @@ class _ResultsGridState extends State<_ResultsGrid> {
     );
   }
 
+  String? _cellError(int rowIndex, String columnName) {
+    return widget.interactionState.cellErrors[ResultsGridCellKey(
+      rowIndex: rowIndex,
+      columnName: columnName,
+    )];
+  }
+
   double _widthFor(String columnName) =>
       _columnWidths[columnName] ?? _columnWidth;
 
@@ -690,6 +769,28 @@ class _ResultsGridState extends State<_ResultsGrid> {
         _widthFor(columnName) + delta,
       );
     });
+  }
+
+  String? _headerTooltipFor(String columnName) {
+    final contract = widget.tab.resultContractForColumn(columnName);
+    if (contract == null) {
+      return null;
+    }
+    final descriptor = contract.nativeTypeDescriptor;
+    final parts = <String>[
+      '$columnName: ${contract.displayType}',
+      'Family: ${descriptor.familyLabel}',
+      if (descriptor.isNativeV25Type) descriptor.summaryLabel,
+      contract.nullabilityLabel,
+      'Source: ${contract.sourceLabel}',
+      if (contract.diagnostics.isNotEmpty) contract.diagnostics.first,
+    ];
+    return parts.join('\n');
+  }
+
+  String _formatCellValue(String columnName, Object? value) {
+    final contract = widget.tab.resultContractForColumn(columnName);
+    return formatTypedCellValue(value, typeName: contract?.typeName);
   }
 
   void _pruneColumnWidths() {
@@ -743,9 +844,12 @@ class _GridCell extends StatelessWidget {
     this.rowSelected = false,
     this.edited = false,
     this.pinned = false,
+    this.errorText,
+    this.tooltip,
     this.onTap,
     this.onSecondaryTapDown,
     this.onPinToggle,
+    this.onStatistics,
     this.onResize,
     this.resizeHandleKey,
   });
@@ -757,9 +861,12 @@ class _GridCell extends StatelessWidget {
   final bool rowSelected;
   final bool edited;
   final bool pinned;
+  final String? errorText;
+  final String? tooltip;
   final VoidCallback? onTap;
   final ValueChanged<Offset>? onSecondaryTapDown;
   final VoidCallback? onPinToggle;
+  final VoidCallback? onStatistics;
   final ValueChanged<double>? onResize;
   final Key? resizeHandleKey;
 
@@ -767,10 +874,13 @@ class _GridCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tokens = context.decentBenchTheme;
+    final hasError = errorText != null && errorText!.trim().isNotEmpty;
     final background = isHeader
         ? tokens.resultsGrid.headerBackground
         : selected
         ? tokens.resultsGrid.rowSelectedBackground
+        : hasError
+        ? tokens.colors.error.withValues(alpha: 0.16)
         : edited
         ? tokens.colors.warning.withValues(alpha: 0.18)
         : rowSelected
@@ -780,64 +890,93 @@ class _GridCell extends StatelessWidget {
     final child = Container(
       width: width,
       padding: EdgeInsets.symmetric(
-        horizontal: isHeader ? 8 : 10,
+        horizontal: isHeader ? 4 : 10,
         vertical: isHeader ? 6 : 8,
       ),
       decoration: BoxDecoration(
         color: background,
         border: Border(
           right: BorderSide(color: tokens.resultsGrid.gridLine),
-          bottom: BorderSide(color: tokens.resultsGrid.gridLine),
+          bottom: BorderSide(
+            color: hasError ? tokens.colors.error : tokens.resultsGrid.gridLine,
+          ),
         ),
       ),
       child: isHeader
-          ? Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    text,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: tokens.resultsGrid.headerText,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  tooltip: pinned ? 'Unpin column' : 'Pin column',
-                  onPressed: onPinToggle,
-                  icon: Icon(
-                    pinned ? Icons.push_pin : Icons.push_pin_outlined,
-                    size: 14,
-                    color: tokens.colors.accent,
-                  ),
-                ),
-                if (onResize != null)
-                  MouseRegion(
-                    cursor: SystemMouseCursors.resizeColumn,
-                    child: GestureDetector(
-                      key: resizeHandleKey,
-                      behavior: HitTestBehavior.translucent,
-                      dragStartBehavior: DragStartBehavior.down,
-                      onHorizontalDragUpdate: (details) =>
-                          onResize!(details.delta.dx),
-                      child: Container(
-                        width: 12,
-                        alignment: Alignment.center,
-                        child: Container(
-                          width: 2,
-                          height: 18,
-                          decoration: BoxDecoration(
-                            color: tokens.resultsGrid.gridLine,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
+          ? LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 112;
+                return Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        text,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: tokens.resultsGrid.headerText,
                         ),
                       ),
                     ),
-                  ),
-              ],
+                    if (!compact)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 18,
+                          height: 24,
+                        ),
+                        tooltip: 'Column statistics',
+                        onPressed: onStatistics,
+                        icon: Icon(
+                          Icons.query_stats_outlined,
+                          size: 14,
+                          color: tokens.colors.accent,
+                        ),
+                      ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 18,
+                        height: 24,
+                      ),
+                      tooltip: pinned ? 'Unpin column' : 'Pin column',
+                      onPressed: onPinToggle,
+                      icon: Icon(
+                        pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                        size: 14,
+                        color: tokens.colors.accent,
+                      ),
+                    ),
+                    if (onResize != null)
+                      MouseRegion(
+                        cursor: SystemMouseCursors.resizeColumn,
+                        child: GestureDetector(
+                          key: resizeHandleKey,
+                          behavior: HitTestBehavior.translucent,
+                          dragStartBehavior: DragStartBehavior.down,
+                          onHorizontalDragUpdate: (details) =>
+                              onResize!(details.delta.dx),
+                          child: Container(
+                            width: 12,
+                            height: 24,
+                            alignment: Alignment.center,
+                            child: Container(
+                              width: 2,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                color: tokens.resultsGrid.gridLine,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             )
           : Text(
               text,
@@ -854,15 +993,24 @@ class _GridCell extends StatelessWidget {
             ),
     );
 
+    final effectiveTooltip = <String>[
+      if (hasError) errorText!.trim(),
+      if (tooltip != null && tooltip!.trim().isNotEmpty) tooltip!.trim(),
+    ].join('\n\n');
+
+    final wrappedChild = effectiveTooltip.isEmpty
+        ? child
+        : Tooltip(message: effectiveTooltip, child: child);
+
     if (isHeader || onTap == null) {
-      return child;
+      return wrappedChild;
     }
     return InkWell(
       onTap: onTap,
       onSecondaryTapDown: onSecondaryTapDown == null
           ? null
           : (details) => onSecondaryTapDown!(details.globalPosition),
-      child: child,
+      child: wrappedChild,
     );
   }
 }
@@ -1055,6 +1203,170 @@ class _MessagesPanel extends StatelessWidget {
   }
 }
 
+class _HistoryPanel extends StatelessWidget {
+  const _HistoryPanel({
+    required this.tab,
+    required this.onLoad,
+    required this.onRun,
+    required this.onClear,
+  });
+
+  final QueryTabState tab;
+  final ValueChanged<QueryHistoryEntry>? onLoad;
+  final Future<void> Function(QueryHistoryEntry entry)? onRun;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.decentBenchTheme;
+    final entries = tab.queryHistory.reversed.toList();
+    if (entries.isEmpty) {
+      return const _ExecutionPlanEmptyState(
+        icon: Icons.history_outlined,
+        label: 'Run SQL in this tab to populate history.',
+      );
+    }
+    return Column(
+      children: <Widget>[
+        Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: tokens.colors.panelBg,
+            border: Border(
+              bottom: BorderSide(color: tokens.resultsGrid.gridLine),
+            ),
+          ),
+          child: Row(
+            children: <Widget>[
+              Text(
+                '${entries.length} entries',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: tokens.colors.textMuted,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: onClear,
+                icon: const Icon(Icons.delete_sweep_outlined, size: 16),
+                label: const Text('Clear'),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: entries.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final entry = entries[index];
+              return Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: tokens.colors.panelAltBg,
+                  border: Border.all(color: tokens.resultsGrid.gridLine),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Icon(
+                      _historyIcon(entry.outcome),
+                      size: 18,
+                      color: _historyColor(tokens, entry.outcome),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            _firstSqlLine(entry.sql),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  fontFamily: tokens.fonts.editorFamily,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _historySubtitle(entry),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: tokens.colors.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: onLoad == null ? null : () => onLoad!(entry),
+                      child: const Text('Load'),
+                    ),
+                    TextButton(
+                      onPressed: onRun == null ? null : () => onRun!(entry),
+                      child: const Text('Run'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _firstSqlLine(String sql) {
+    for (final line in sql.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isNotEmpty) {
+        return trimmed;
+      }
+    }
+    return '(empty SQL)';
+  }
+
+  String _historySubtitle(QueryHistoryEntry entry) {
+    final parts = <String>[
+      _formatTimestamp(entry.ranAt),
+      entry.outcome.name,
+      '${entry.elapsed.inMilliseconds} ms',
+      if (entry.rowsLoaded != null) 'rows ${entry.rowsLoaded}',
+      if (entry.rowsAffected != null) 'affected ${entry.rowsAffected}',
+      if (entry.errorMessage != null) entry.errorMessage!,
+    ];
+    return parts.join(' | ');
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final local = timestamp.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    final second = local.second.toString().padLeft(2, '0');
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} $hour:$minute:$second';
+  }
+
+  IconData _historyIcon(QueryHistoryOutcome outcome) {
+    return switch (outcome) {
+      QueryHistoryOutcome.completed => Icons.check_circle_outline,
+      QueryHistoryOutcome.failed => Icons.error_outline,
+      QueryHistoryOutcome.cancelled => Icons.cancel_outlined,
+    };
+  }
+
+  Color _historyColor(DecentBenchTheme tokens, QueryHistoryOutcome outcome) {
+    return switch (outcome) {
+      QueryHistoryOutcome.completed => tokens.colors.success,
+      QueryHistoryOutcome.failed => tokens.colors.error,
+      QueryHistoryOutcome.cancelled => tokens.colors.warning,
+    };
+  }
+}
+
 class _ExecutionPlanPanel extends StatelessWidget {
   const _ExecutionPlanPanel({required this.tab});
 
@@ -1077,11 +1389,19 @@ class _ExecutionPlanPanel extends StatelessWidget {
             'Run a query to populate the execution plan with EXPLAIN results.',
       );
     }
+    final isQueryPlanText =
+        plan.columns.length == 1 &&
+        plan.columns.first.toLowerCase() == 'query_plan';
+    final visualization = isQueryPlanText
+        ? buildExplainPlanVisualization(plan.rows, plan.columns.first)
+        : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (plan.isLoading) const LinearProgressIndicator(minHeight: 2),
+        if (visualization != null && visualization.hasNodes)
+          _ExecutionPlanToolbar(visualization: visualization),
         if (plan.errorMessage != null)
           Container(
             margin: const EdgeInsets.all(12),
@@ -1100,51 +1420,8 @@ class _ExecutionPlanPanel extends StatelessWidget {
                   icon: Icons.report_gmailerrorred_outlined,
                   label: 'No EXPLAIN rows were captured for this statement.',
                 )
-              : plan.columns.length == 1 &&
-                    plan.columns.first.toLowerCase() == 'query_plan'
-              ? ListView.separated(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: plan.rows.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final row = plan.rows[index];
-                    return Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: tokens.colors.panelAltBg,
-                        border: Border.all(color: tokens.resultsGrid.gridLine),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          SizedBox(
-                            width: 34,
-                            child: Text(
-                              '${index + 1}',
-                              textAlign: TextAlign.right,
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(
-                                    fontFamily: tokens.fonts.editorFamily,
-                                    color: tokens.colors.textMuted,
-                                  ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              formatCellValue(row[plan.columns.first]),
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    fontFamily: tokens.fonts.editorFamily,
-                                    color: tokens.resultsGrid.cellText,
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                )
+              : visualization != null && visualization.hasNodes
+              ? _ExplainPlanTree(visualization: visualization)
               : SingleChildScrollView(
                   padding: const EdgeInsets.all(12),
                   scrollDirection: Axis.horizontal,
@@ -1188,6 +1465,498 @@ class _ExecutionPlanPanel extends StatelessWidget {
                 ),
         ),
       ],
+    );
+  }
+}
+
+class _ChartPanel extends StatefulWidget {
+  const _ChartPanel({required this.tab, required this.usePlaceholderContent});
+
+  final QueryTabState tab;
+  final bool usePlaceholderContent;
+
+  @override
+  State<_ChartPanel> createState() => _ChartPanelState();
+}
+
+class _ChartPanelState extends State<_ChartPanel> {
+  static const XTypeGroup _pngTypeGroup = XTypeGroup(
+    label: 'PNG',
+    extensions: <String>['png'],
+  );
+
+  final GlobalKey _chartKey = GlobalKey();
+  ResultChartType _chartType = ResultChartType.bar;
+  String? _xColumn;
+  String? _yColumn;
+
+  @override
+  void didUpdateWidget(covariant _ChartPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tab.id != widget.tab.id ||
+        oldWidget.tab.executionGeneration != widget.tab.executionGeneration) {
+      _xColumn = null;
+      _yColumn = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final columns = resolveResultsColumns(
+      widget.tab,
+      usePlaceholderContent: widget.usePlaceholderContent,
+    );
+    final rows = resolveResultsRows(
+      widget.tab,
+      usePlaceholderContent: widget.usePlaceholderContent,
+    );
+    final inferred = inferVisualizationColumns(
+      columns: columns,
+      rows: rows,
+      tab: widget.tab,
+    );
+    if (columns.isEmpty || rows.isEmpty || inferred.yColumns.isEmpty) {
+      return const _ExecutionPlanEmptyState(
+        icon: Icons.bar_chart_outlined,
+        label:
+            'Run a result query with at least one numeric column to visualize loaded rows.',
+      );
+    }
+    final xColumn = _xColumn != null && inferred.xColumns.contains(_xColumn)
+        ? _xColumn!
+        : inferred.xColumns.first;
+    final yColumn = _yColumn != null && inferred.yColumns.contains(_yColumn)
+        ? _yColumn!
+        : inferred.yColumns.first;
+    final model = buildResultVisualizationModel(
+      chartType: _chartType,
+      xColumn: xColumn,
+      yColumn: yColumn,
+      rows: rows,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.all(10),
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              SegmentedButton<ResultChartType>(
+                segments: const <ButtonSegment<ResultChartType>>[
+                  ButtonSegment(
+                    value: ResultChartType.bar,
+                    icon: Icon(Icons.bar_chart_outlined),
+                    label: Text('Bar'),
+                  ),
+                  ButtonSegment(
+                    value: ResultChartType.line,
+                    icon: Icon(Icons.show_chart_outlined),
+                    label: Text('Line'),
+                  ),
+                  ButtonSegment(
+                    value: ResultChartType.scatter,
+                    icon: Icon(Icons.scatter_plot_outlined),
+                    label: Text('Scatter'),
+                  ),
+                  ButtonSegment(
+                    value: ResultChartType.pie,
+                    icon: Icon(Icons.pie_chart_outline),
+                    label: Text('Pie'),
+                  ),
+                ],
+                selected: <ResultChartType>{_chartType},
+                onSelectionChanged: (value) {
+                  setState(() => _chartType = value.single);
+                },
+              ),
+              DropdownButton<String>(
+                value: xColumn,
+                items: <DropdownMenuItem<String>>[
+                  for (final column in inferred.xColumns)
+                    DropdownMenuItem(value: column, child: Text('X: $column')),
+                ],
+                onChanged: (value) => setState(() => _xColumn = value),
+              ),
+              DropdownButton<String>(
+                value: yColumn,
+                items: <DropdownMenuItem<String>>[
+                  for (final column in inferred.yColumns)
+                    DropdownMenuItem(value: column, child: Text('Y: $column')),
+                ],
+                onChanged: (value) => setState(() => _yColumn = value),
+              ),
+              Text(
+                model.truncated
+                    ? 'Showing first ${model.points.length} of ${model.loadedRows} loaded rows'
+                    : '${model.points.length} plotted points',
+              ),
+              TextButton.icon(
+                onPressed: model.hasData ? _exportChartPng : null,
+                icon: const Icon(Icons.image_outlined, size: 16),
+                label: const Text('Export PNG'),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: RepaintBoundary(
+            key: _chartKey,
+            child: _SimpleChart(model: model),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _exportChartPng() async {
+    final boundary =
+        _chartKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null) {
+      return;
+    }
+    final location = await getSaveLocation(
+      suggestedName: 'decent-bench-chart.png',
+      acceptedTypeGroups: const <XTypeGroup>[_pngTypeGroup],
+    );
+    if (location == null) {
+      return;
+    }
+    final image = await boundary.toImage(pixelRatio: 2);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (bytes == null) {
+      return;
+    }
+    await File(location.path).writeAsBytes(bytes.buffer.asUint8List());
+  }
+}
+
+class _SimpleChart extends StatelessWidget {
+  const _SimpleChart({required this.model});
+
+  final ResultVisualizationModel model;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!model.hasData) {
+      return const _ExecutionPlanEmptyState(
+        icon: Icons.bar_chart_outlined,
+        label: 'No plottable numeric values are loaded for this chart.',
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: CustomPaint(
+        painter: _SimpleChartPainter(
+          model: model,
+          tokens: context.decentBenchTheme,
+        ),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+class _SimpleChartPainter extends CustomPainter {
+  const _SimpleChartPainter({required this.model, required this.tokens});
+
+  final ResultVisualizationModel model;
+  final DecentBenchTheme tokens;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final points = model.points;
+    if (points.isEmpty || size.width <= 0 || size.height <= 0) {
+      return;
+    }
+    final axisPaint = Paint()
+      ..color = tokens.resultsGrid.gridLine
+      ..strokeWidth = 1;
+    final dataPaint = Paint()
+      ..color = tokens.colors.accent
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    final fillPaint = Paint()
+      ..color = tokens.colors.accent.withValues(alpha: 0.34)
+      ..style = PaintingStyle.fill;
+    const left = 42.0;
+    const top = 12.0;
+    const right = 12.0;
+    const bottom = 30.0;
+    final chart = Rect.fromLTRB(
+      left,
+      top,
+      size.width - right,
+      size.height - bottom,
+    );
+    canvas
+      ..drawLine(chart.bottomLeft, chart.bottomRight, axisPaint)
+      ..drawLine(chart.bottomLeft, chart.topLeft, axisPaint);
+
+    final yValues = points.map((point) => point.y).toList();
+    final minY = yValues.reduce(math.min);
+    final maxY = yValues.reduce(math.max);
+    final ySpan = maxY == minY ? 1.0 : maxY - minY;
+    Offset pointOffset(int index, ResultChartPoint point) {
+      final x = points.length == 1
+          ? chart.left + chart.width / 2
+          : chart.left + (chart.width * index / (points.length - 1));
+      final y = chart.bottom - ((point.y - minY) / ySpan * chart.height);
+      return Offset(x, y);
+    }
+
+    switch (model.chartType) {
+      case ResultChartType.bar:
+        final barWidth = math.max(3.0, chart.width / points.length * 0.62);
+        for (var i = 0; i < points.length; i++) {
+          final offset = pointOffset(i, points[i]);
+          canvas.drawRect(
+            Rect.fromLTWH(
+              offset.dx - barWidth / 2,
+              offset.dy,
+              barWidth,
+              chart.bottom - offset.dy,
+            ),
+            fillPaint,
+          );
+        }
+        break;
+      case ResultChartType.pie:
+        final center = chart.center;
+        final radius = math.min(chart.width, chart.height) / 2.4;
+        final total = yValues.fold<double>(
+          0,
+          (sum, value) => sum + value.abs(),
+        );
+        var start = -math.pi / 2;
+        for (var i = 0; i < points.length; i++) {
+          final sweep = total == 0
+              ? 0.0
+              : points[i].y.abs() / total * math.pi * 2;
+          final slicePaint = Paint()
+            ..color = Color.lerp(
+              tokens.colors.accent,
+              tokens.colors.success,
+              points.length == 1 ? 0 : i / (points.length - 1),
+            )!
+            ..style = PaintingStyle.fill;
+          canvas.drawArc(
+            Rect.fromCircle(center: center, radius: radius),
+            start,
+            sweep,
+            true,
+            slicePaint,
+          );
+          start += sweep;
+        }
+        break;
+      case ResultChartType.line:
+      case ResultChartType.scatter:
+        final path = Path();
+        for (var i = 0; i < points.length; i++) {
+          final offset = pointOffset(i, points[i]);
+          if (i == 0) {
+            path.moveTo(offset.dx, offset.dy);
+          } else if (model.chartType == ResultChartType.line) {
+            path.lineTo(offset.dx, offset.dy);
+          }
+          canvas.drawCircle(offset, 3.5, fillPaint);
+        }
+        if (model.chartType == ResultChartType.line) {
+          canvas.drawPath(path, dataPaint);
+        }
+        break;
+    }
+
+    final textPainter = TextPainter(textDirection: TextDirection.ltr);
+    textPainter.text = TextSpan(
+      text:
+          '${model.yColumn}: ${minY.toStringAsFixed(2)} - ${maxY.toStringAsFixed(2)}',
+      style: TextStyle(color: tokens.colors.textMuted, fontSize: 11),
+    );
+    textPainter.layout(maxWidth: chart.width);
+    textPainter.paint(canvas, Offset(chart.left, chart.bottom + 8));
+  }
+
+  @override
+  bool shouldRepaint(covariant _SimpleChartPainter oldDelegate) {
+    return oldDelegate.model != model || oldDelegate.tokens != tokens;
+  }
+}
+
+class _ExecutionPlanToolbar extends StatelessWidget {
+  const _ExecutionPlanToolbar({required this.visualization});
+
+  final ExplainPlanVisualization visualization;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.decentBenchTheme;
+    final operationCount = <String, int>{};
+    for (final node in visualization.nodes) {
+      operationCount[node.operation] =
+          (operationCount[node.operation] ?? 0) + 1;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: tokens.resultsGrid.headerBackground,
+        border: Border(bottom: BorderSide(color: tokens.resultsGrid.gridLine)),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          _InfoBadge(
+            icon: Icons.account_tree_outlined,
+            label: '${visualization.nodes.length} plan steps',
+          ),
+          for (final entry in operationCount.entries)
+            _InfoBadge(
+              icon: Icons.bolt_outlined,
+              label: '${entry.key} ${entry.value}',
+            ),
+          TextButton.icon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: visualization.rawText));
+            },
+            icon: const Icon(Icons.copy_outlined, size: 16),
+            label: const Text('Copy Raw Plan'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExplainPlanTree extends StatelessWidget {
+  const _ExplainPlanTree({required this.visualization});
+
+  final ExplainPlanVisualization visualization;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.decentBenchTheme;
+    final theme = Theme.of(context);
+    return ListView.separated(
+      padding: const EdgeInsets.all(12),
+      itemCount: visualization.nodes.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final node = visualization.nodes[index];
+        return Container(
+          padding: EdgeInsets.fromLTRB(10 + (node.depth * 18), 10, 10, 10),
+          decoration: BoxDecoration(
+            color: tokens.colors.panelAltBg,
+            border: Border.all(color: tokens.resultsGrid.gridLine),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              SizedBox(
+                width: 34,
+                child: Text(
+                  '${node.lineNumber}',
+                  textAlign: TextAlign.right,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontFamily: tokens.fonts.editorFamily,
+                    color: tokens.colors.textMuted,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              _PlanOperationBadge(operation: node.operation),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      node.detail,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: tokens.fonts.editorFamily,
+                        color: tokens.resultsGrid.cellText,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: <Widget>[
+                        if (node.tableName != null)
+                          _PlanMetadataChip(label: 'table ${node.tableName}'),
+                        if (node.indexName != null)
+                          _PlanMetadataChip(label: 'index ${node.indexName}'),
+                        if (node.estimatedRows != null)
+                          _PlanMetadataChip(label: 'est ${node.estimatedRows}'),
+                        if (node.actualRows != null)
+                          _PlanMetadataChip(label: 'actual ${node.actualRows}'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PlanOperationBadge extends StatelessWidget {
+  const _PlanOperationBadge({required this.operation});
+
+  final String operation;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.decentBenchTheme;
+    return Container(
+      width: 76,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: tokens.colors.accent.withValues(alpha: 0.12),
+        border: Border.all(color: tokens.colors.accent),
+      ),
+      child: Text(
+        operation,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: tokens.colors.accent,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanMetadataChip extends StatelessWidget {
+  const _PlanMetadataChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.decentBenchTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: tokens.resultsGrid.headerBackground,
+        border: Border.all(color: tokens.resultsGrid.gridLine),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontFamily: tokens.fonts.editorFamily,
+          color: tokens.colors.textMuted,
+        ),
+      ),
     );
   }
 }

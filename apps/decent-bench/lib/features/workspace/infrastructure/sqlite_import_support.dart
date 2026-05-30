@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:collection';
 import 'dart:io';
 import 'dart:isolate';
@@ -121,38 +122,66 @@ Future<void> sqliteImportWorkerMain(List<Object?> bootstrap) async {
   });
 
   try {
-    final summary = await _runSqliteImport(
-      request: request,
-      libraryPath: libraryPath,
-      sendUpdate: (update) => mainPort.send(update.toMap()),
-      isCancelled: () => cancelled,
-    );
-    mainPort.send(
-      SqliteImportUpdate(
-        kind: cancelled
-            ? SqliteImportUpdateKind.cancelled
-            : SqliteImportUpdateKind.completed,
-        jobId: request.jobId,
-        summary: summary,
-      ).toMap(),
-    );
-  } on _SqliteImportCancelled catch (error) {
-    mainPort.send(
-      SqliteImportUpdate(
-        kind: SqliteImportUpdateKind.cancelled,
-        jobId: request.jobId,
-        summary: error.summary,
-        message: error.summary.statusMessage,
-      ).toMap(),
-    );
-  } catch (error) {
-    mainPort.send(
-      SqliteImportUpdate(
-        kind: SqliteImportUpdateKind.failed,
-        jobId: request.jobId,
-        message: error.toString(),
-      ).toMap(),
-    );
+    final clefLogPath = '${request.targetPath}.import.log';
+    final logger = _ClefLogger(clefLogPath);
+    logger.info('SQLite import started.',
+        properties: <String, Object?>{
+          'source_path': request.sourcePath,
+          'target_path': request.targetPath,
+          'table_count': request.selectedTables.length,
+          'import_into_existing': request.importIntoExistingTarget,
+        });
+    try {
+      final summary = await _runSqliteImport(
+        request: request,
+        libraryPath: libraryPath,
+        sendUpdate: (update) => mainPort.send(update.toMap()),
+        isCancelled: () => cancelled,
+        logger: logger,
+      );
+      logger.info('SQLite import completed successfully.',
+          properties: <String, Object?>{
+            'total_rows': summary.rowsCopiedByTable.values
+                .fold<int>(0, (sum, v) => sum + v),
+            'tables_imported': summary.importedTables.length,
+            'indexes_created': summary.indexesCreated.length,
+          });
+      mainPort.send(
+        SqliteImportUpdate(
+          kind: cancelled
+              ? SqliteImportUpdateKind.cancelled
+              : SqliteImportUpdateKind.completed,
+          jobId: request.jobId,
+          summary: summary,
+        ).toMap(),
+      );
+    } on _SqliteImportCancelled catch (error) {
+      logger.warn('SQLite import cancelled.',
+          properties: <String, Object?>{
+            'tables_imported': error.summary.importedTables,
+          });
+      mainPort.send(
+        SqliteImportUpdate(
+          kind: SqliteImportUpdateKind.cancelled,
+          jobId: request.jobId,
+          summary: error.summary,
+          message: error.summary.statusMessage,
+        ).toMap(),
+      );
+    } catch (error) {
+      logger.error('SQLite import failed.',
+          properties: <String, Object?>{'error_type': error.runtimeType.toString()},
+          errorText: error.toString());
+      mainPort.send(
+        SqliteImportUpdate(
+          kind: SqliteImportUpdateKind.failed,
+          jobId: request.jobId,
+          message: error.toString(),
+        ).toMap(),
+      );
+    } finally {
+      await logger.dispose();
+    }
   } finally {
     await commandSubscription.cancel();
     commandPort.close();
@@ -164,6 +193,7 @@ Future<SqliteImportSummary> _runSqliteImport({
   required String libraryPath,
   required void Function(SqliteImportUpdate update) sendUpdate,
   required bool Function() isCancelled,
+  required _ClefLogger logger,
 }) async {
   if (request.selectedTables.isEmpty) {
     throw const BridgeFailure('Select at least one SQLite table to import.');
@@ -243,6 +273,12 @@ Future<SqliteImportSummary> _runSqliteImport({
     target.begin();
     transactionOpen = true;
 
+    logger.info('Schema DDL phase: creating ${orderedTables.length} tables.',
+        properties: <String, Object?>{
+          'table_count': orderedTables.length,
+          'total_rows': rowsCopied.values.fold<int>(0, (sum, v) => sum + v),
+        });
+
     for (var i = 0; i < orderedTables.length; i++) {
       final table = orderedTables[i];
       _throwIfCancelled(isCancelled);
@@ -271,8 +307,14 @@ Future<SqliteImportSummary> _runSqliteImport({
       await Future<void>.delayed(Duration.zero);
     }
 
+    target.commit();
+    transactionOpen = false;
+
     for (var i = 0; i < orderedTables.length; i++) {
       final table = orderedTables[i];
+      _throwIfCancelled(isCancelled);
+      target.begin();
+      transactionOpen = true;
       final copied = await _copyTableData(
         source: source,
         target: target,
@@ -287,12 +329,51 @@ Future<SqliteImportSummary> _runSqliteImport({
         sendUpdate: sendUpdate,
         isCancelled: isCancelled,
       );
+      target.commit();
+      transactionOpen = false;
       rowsCopied[table.targetName] = copied;
+      sendUpdate(
+        SqliteImportUpdate(
+          kind: SqliteImportUpdateKind.progress,
+          jobId: request.jobId,
+          progress: SqliteImportProgress(
+            jobId: request.jobId,
+            currentTable: table.targetName,
+            completedTables: i + 1,
+            totalTables: orderedTables.length,
+            currentTableRowsCopied: copied,
+            currentTableRowCount: table.rowCount,
+            totalRowsCopied: rowsCopied.values.fold<int>(
+              0,
+              (sum, value) => sum + value,
+            ),
+            message: 'Completed ${table.targetName} ($copied rows).',
+          ),
+        ),
+      );
+      logger.info('Table copy committed.',
+          properties: <String, Object?>{
+            'table': table.targetName,
+            'rows_copied': copied,
+            'completed_tables': i + 1,
+            'total_tables': orderedTables.length,
+          });
+      await Future<void>.delayed(Duration.zero);
     }
+
+    final totalIndexCount = orderedTables.fold<int>(
+      0,
+      (sum, table) => sum + table.indexes.length,
+    );
+    var createdIndexCount = 0;
+
+    logger.info('Index creation phase started.',
+        properties: <String, Object?>{'index_count': totalIndexCount});
 
     for (final table in orderedTables) {
       _throwIfCancelled(isCancelled);
       for (final index in table.indexes) {
+        _throwIfCancelled(isCancelled);
         final indexName = _allocateImportedIndexName(
           index.name,
           usedIndexNames,
@@ -302,6 +383,27 @@ Future<SqliteImportSummary> _runSqliteImport({
           index,
           indexName: indexName,
         );
+        sendUpdate(
+          SqliteImportUpdate(
+            kind: SqliteImportUpdateKind.progress,
+            jobId: request.jobId,
+            progress: SqliteImportProgress(
+              jobId: request.jobId,
+              currentTable: table.targetName,
+              completedTables: orderedTables.length,
+              totalTables: orderedTables.length,
+              currentTableRowsCopied: 0,
+              currentTableRowCount: 0,
+              totalRowsCopied: rowsCopied.values.fold<int>(
+                0,
+                (sum, value) => sum + value,
+              ),
+              message: 'Creating index ${index.name} '
+                  '(${createdIndexCount + 1}/$totalIndexCount)...',
+            ),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
         try {
           target.execute(createIndexSql);
           indexesCreated.add(indexName);
@@ -319,12 +421,35 @@ Future<SqliteImportSummary> _runSqliteImport({
             'Skipping index ${table.sourceName}.${index.name} because DecentDB rejected the translated definition: ${_compactErrorMessage(error)}',
           );
         }
+        createdIndexCount++;
       }
-      await Future<void>.delayed(Duration.zero);
     }
 
-    target.commit();
-    transactionOpen = false;
+    logger.info('Index creation phase complete. Running checkpoint.',
+        properties: <String, Object?>{
+          'indexes_created': indexesCreated.length,
+          'indexes_skipped': skippedItems.length,
+        });
+    sendUpdate(
+      SqliteImportUpdate(
+        kind: SqliteImportUpdateKind.progress,
+        jobId: request.jobId,
+        progress: SqliteImportProgress(
+          jobId: request.jobId,
+          currentTable: '',
+          completedTables: orderedTables.length,
+          totalTables: orderedTables.length,
+          currentTableRowsCopied: 0,
+          currentTableRowCount: 0,
+          totalRowsCopied: rowsCopied.values.fold<int>(
+            0,
+            (sum, value) => sum + value,
+          ),
+          message: 'Finalizing database (checkpoint and cleanup)...',
+        ),
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
     target.checkpoint();
     final schema = target.schema;
     final storage = target.inspectStorageState();
@@ -344,6 +469,16 @@ Future<SqliteImportSummary> _runSqliteImport({
         ? targetFile.lengthSync()
         : 0;
     final walFileBytes = walFile.existsSync() ? walFile.lengthSync() : 0;
+
+    logger.info('Import finalized.',
+        properties: <String, Object?>{
+          'database_file_bytes': databaseFileBytes,
+          'wal_file_bytes': walFileBytes,
+          'target_tables': targetTableCount,
+          'target_indexes': targetIndexCount,
+          'target_views': targetViewCount,
+          'target_triggers': targetTriggerCount,
+        });
 
     return SqliteImportSummary(
       jobId: request.jobId,
@@ -372,6 +507,11 @@ Future<SqliteImportSummary> _runSqliteImport({
         // Best-effort rollback for cancellation.
       }
     }
+    target?.close();
+    target = null;
+    if (!request.importIntoExistingTarget) {
+      _deleteTargetFiles(request.targetPath);
+    }
     final summary = SqliteImportSummary(
       jobId: request.jobId,
       sourcePath: request.sourcePath,
@@ -398,6 +538,11 @@ Future<SqliteImportSummary> _runSqliteImport({
       } catch (_) {
         // Best-effort rollback on failure.
       }
+    }
+    target?.close();
+    target = null;
+    if (!request.importIntoExistingTarget) {
+      _deleteTargetFiles(request.targetPath);
     }
     rethrow;
   } finally {
@@ -483,6 +628,81 @@ Future<int> _copyTableData({
     sourceStatement.close();
   }
   return copied;
+}
+
+class _ClefLogger {
+  _ClefLogger(this._logPath) {
+    _sink = File(_logPath).openWrite(mode: FileMode.append);
+  }
+
+  final String _logPath;
+  IOSink? _sink;
+
+  void info(String message, {Map<String, Object?>? properties}) {
+    _write('Information', message, properties);
+  }
+
+  void warn(String message, {Map<String, Object?>? properties}) {
+    _write('Warning', message, properties);
+  }
+
+  void error(String message,
+      {Map<String, Object?>? properties, String? errorText}) {
+    _write('Error', message, properties, errorText: errorText);
+  }
+
+  void _write(String level, String message,
+      Map<String, Object?>? properties,
+      {String? errorText}) {
+    final sink = _sink;
+    if (sink == null) return;
+    final event = <String, Object?>{
+      '@t': DateTime.now().toUtc().toIso8601String(),
+      '@l': level,
+      '@mt': message,
+    };
+    if (properties != null) {
+      for (final entry in properties.entries) {
+        event[entry.key] = entry.value;
+      }
+    }
+    if (errorText != null) {
+      event['@x'] = errorText;
+    }
+    try {
+      sink.writeln(jsonEncode(event));
+    } catch (_) {
+      // Best-effort logging.
+    }
+  }
+
+  Future<void> dispose() async {
+    final sink = _sink;
+    _sink = null;
+    await sink?.flush();
+    await sink?.close();
+  }
+}
+
+void _deleteTargetFiles(String targetPath) {
+  final candidates = [
+    targetPath,
+    '$targetPath-wal',
+    '$targetPath-shm',
+    '$targetPath-journal',
+    '$targetPath.coord',
+    '$targetPath.lock',
+  ];
+  for (final path in candidates) {
+    final file = File(path);
+    if (file.existsSync()) {
+      try {
+        file.deleteSync();
+      } catch (_) {
+        // Best-effort cleanup.
+      }
+    }
+  }
 }
 
 void _validateRequestNames(SqliteImportRequest request) {
@@ -1812,7 +2032,10 @@ Object? _adaptImportValue(Object? value, String targetType) {
     return Uint8List.fromList(value.codeUnits);
   }
   if (targetType == 'TIMESTAMP') {
-    return tryParseSqliteTimestampValue(value) ?? value;
+    return tryParseSqliteTimestampValue(value) ??
+        (value is String && value.trim().isEmpty
+            ? DateTime.fromMicrosecondsSinceEpoch(0, isUtc: true)
+            : null);
   }
   if (_isDecimalType(targetType) && value is num) {
     return value.toString();
@@ -2046,6 +2269,12 @@ DateTime? tryParseSqliteTimestampValue(Object? value, {String? columnName}) {
 
   final trimmed = value.trim();
   if (trimmed.isEmpty) {
+    return null;
+  }
+
+  final normalized = trimmed.replaceAll('-', '0').replaceAll(':', '0')
+      .replaceAll('T', '0').replaceAll(' ', '0').replaceAll('.', '0');
+  if (RegExp(r'^0+$').hasMatch(normalized)) {
     return null;
   }
 

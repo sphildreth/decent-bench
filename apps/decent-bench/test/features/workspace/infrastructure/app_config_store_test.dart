@@ -12,9 +12,17 @@ void main() {
         activeTheme: 'classic-light',
         themesDir: '/tmp/themes',
       ),
-      logging: const LoggingSettings(verbosity: LogVerbosity.debug),
+      logging: const LoggingSettings(verbosity: LogVerbosity.debug, logDirectory: 'logs'),
+      writeQueue: const WriteQueueSettings(
+        enabled: true,
+        capacity: 32,
+        defaultTimeoutMs: 250,
+        maxBatch: 8,
+        maxGroupDelayUs: 1000,
+      ),
       recentFiles: const <String>['/tmp/a.ddb', '/tmp/b.ddb'],
       defaultPageSize: 250,
+      queryHistoryLimit: 12,
       csvDelimiter: ';',
       csvIncludeHeaders: false,
       editorSettings: const EditorSettings(
@@ -23,6 +31,18 @@ void main() {
         formatUppercaseKeywords: false,
         indentSpaces: 4,
         showLineNumbers: false,
+      ),
+      windowPlacement: const WindowPlacement(
+        x: -1800,
+        y: 120,
+        width: 1440,
+        height: 900,
+        state: WindowPlacementState.maximized,
+        displayId: r'\\.\DISPLAY2',
+        displayX: -1920,
+        displayY: 0,
+        displayWidth: 1920,
+        displayHeight: 1080,
       ),
       shellPreferences: const WorkspaceShellPreferences(
         leftColumnFraction: 0.33,
@@ -58,6 +78,11 @@ void main() {
     expect(toml, contains('active_theme = "classic-light"'));
     expect(toml, contains('[logging]'));
     expect(toml, contains('verbosity = "debug"'));
+    expect(toml, contains('[write_queue]'));
+    expect(toml, contains('enabled = true'));
+    expect(toml, contains('[window]'));
+    expect(toml, contains('state = "maximized"'));
+    expect(toml, contains(r'display_id = "\\\\.\\DISPLAY2"'));
     expect(toml, contains('[layout]'));
     expect(toml, contains('[shortcuts]'));
     expect(toml, contains('[[editor_snippets]]'));
@@ -65,8 +90,20 @@ void main() {
     expect(parsed.appearance.activeTheme, 'classic-light');
     expect(parsed.appearance.themesDir, '/tmp/themes');
     expect(parsed.logging.verbosity, LogVerbosity.debug);
+    expect(parsed.writeQueue.enabled, isTrue);
+    expect(parsed.writeQueue.capacity, 32);
+    expect(parsed.writeQueue.defaultTimeoutMs, 250);
+    expect(parsed.writeQueue.maxBatch, 8);
+    expect(parsed.writeQueue.maxGroupDelayUs, 1000);
+    expect(
+      parsed.writeQueue.toDecentDbOpenOptions(),
+      'write_queue_enabled=true;write_queue_capacity=32;'
+      'write_queue_default_timeout_ms=250;write_queue_max_batch=8;'
+      'write_queue_max_group_delay_us=1000',
+    );
     expect(parsed.recentFiles, config.recentFiles);
     expect(parsed.defaultPageSize, 250);
+    expect(parsed.queryHistoryLimit, 12);
     expect(parsed.csvDelimiter, ';');
     expect(parsed.csvIncludeHeaders, isFalse);
     expect(parsed.editorSettings.autocompleteEnabled, isFalse);
@@ -74,6 +111,7 @@ void main() {
     expect(parsed.editorSettings.formatUppercaseKeywords, isFalse);
     expect(parsed.editorSettings.indentSpaces, 4);
     expect(parsed.editorSettings.showLineNumbers, isFalse);
+    expect(parsed.windowPlacement, config.windowPlacement);
     expect(parsed.shellPreferences.leftColumnFraction, closeTo(0.33, 0.001));
     expect(parsed.shellPreferences.showPropertiesPane, isFalse);
     expect(parsed.shellPreferences.showStatusBar, isFalse);
@@ -108,6 +146,9 @@ recent_files = ["/tmp/example.ddb"]
       AppearanceSettings.defaultActiveTheme,
     );
     expect(parsed.defaultPageSize, 500);
+    expect(parsed.writeQueue, WriteQueueSettings.defaults());
+    expect(parsed.windowPlacement, isNull);
+    expect(parsed.queryHistoryLimit, AppConfig.defaultQueryHistoryLimitValue);
     expect(parsed.editorSettings.autocompleteEnabled, isTrue);
     expect(parsed.shellPreferences, isNotNull);
     expect(
@@ -126,6 +167,21 @@ editor_snippets = [{"id":"custom","name":"Custom","trigger":"custom","descriptio
 
     expect(parsed.snippets.single.id, 'custom');
     expect(parsed.snippets.single.description, 'Legacy');
+  });
+
+  test('invalid persisted window bounds are ignored', () {
+    const toml = '''
+[window]
+state = "maximized"
+x = 100
+y = 100
+width = 120
+height = 80
+''';
+
+    final parsed = AppConfig.fromToml(toml);
+
+    expect(parsed.windowPlacement, isNull);
   });
 
   test('AppConfigStore reads and writes the TOML file on disk', () async {

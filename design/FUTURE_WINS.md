@@ -1,0 +1,1940 @@
+# Decent Bench Future Wins
+
+**Status:** Agent feedback consolidation refresh
+**Last reviewed:** 2026-05-29
+**Purpose:** Product and engineering priority index for future-facing work that
+is not actively being implemented right now.
+
+This document consolidates the Future Win suggestions produced by multiple
+coding agents, removes duplicates, groups closely related ideas into coherent
+enhancements, and ranks the result by estimated user impact.
+
+Decent Bench is a local-first, DecentDB-first workbench. The strongest future
+work is therefore work that improves the core loop:
+
+1. bring messy or external data into a local DecentDB file,
+2. prove what happened during import,
+3. inspect, query, and shape the data safely,
+4. export or rerun the shaped result repeatably.
+
+This file is a roadmap index. It is not, by itself, an implementation spec.
+Any feature below that changes persistent formats, security posture, execution
+contracts, import/export behavior, branch semantics, dependency strategy, or
+user-visible product scope still needs an ADR and SPEC/PRD alignment before
+implementation.
+
+## Review Basis
+
+This refresh considered:
+
+- `design/PRD.md`
+- `design/SPEC.md`
+- `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`
+- the previous `design/FUTURE_WINS.md`
+- recent ADRs, especially:
+  - `design/adr/0022-headless-cli-import-mode-and-plan-file.md`
+  - `design/adr/0029-workspace-project-file-and-query-library.md`
+  - `design/adr/0031-parquet-excel-export-dependency-strategy.md`
+  - `design/adr/0032-database-snapshot-and-safe-run.md`
+  - `design/adr/0034-schema-first-sdk-generation-prototype.md`
+  - `design/adr/0042-lua-extension-management-trust-model.md`
+  - `design/adr/0044-live-connections-and-menu-deferrals.md`
+- agent suggestions covering ingestion, validation, query workflow, results
+  grid UX, automation, reporting, extensibility, collaboration, AI, and
+  external integrations.
+
+## Consolidation Rules
+
+The agent feedback used different names for overlapping ideas. This refresh
+uses these consolidation rules:
+
+- If two ideas solve the same user job, they are grouped as one enhancement.
+  For example, "statistical profiler", "data quality dashboard", "anomaly
+  detection", and "validation report" are one data quality suite.
+- If one idea is a user workflow and another is an implementation mechanism,
+  the workflow owns the backlog item. For example, branch-backed import is
+  grouped under safe import preview rather than tracked as a separate abstract
+  branch API item.
+- If an idea is already covered by current foundations, it is not ranked as a
+  new Future Win unless there is a clear next pass.
+- If an idea conflicts with current PRD/SPEC non-goals, it is either pushed to
+  strategic/ADR-gated status or deferred.
+- Broad platform expansions such as collaboration, cloud publish, mobile, AI,
+  and marketplaces rank below local import/query/export improvements unless
+  future product strategy changes.
+
+## Priority Scale
+
+| Priority | Meaning |
+|---|---|
+| `P0` | Highest 80/20 user value. Strongly reinforces the DecentDB-first import, trust, query, and export loop. Good candidate for near-roadmap planning. |
+| `P1` | Strong next wave. Broadly useful and aligned with the workbench mission, but usually larger or less urgent than `P0`. |
+| `P2` | Valuable targeted enhancement. Worth doing when the relevant feature area is active or user demand is clear. |
+| `P3` | Strategic or architecture-heavy. Needs an ADR before implementation and may require PRD/SPEC scope expansion. |
+| `P4` | Defer unless product direction changes. Often conflicts with local-first/single-user scope or has lower core workflow impact. |
+
+## Status Values
+
+| Status | Meaning |
+|---|---|
+| `TODO` | Prioritized roadmap work that can be specified when capacity exists. |
+| `BACKLOG` | Valuable, but blocked on larger product scope, dependency evaluation, public APIs, or clear user demand. |
+| `INVESTIGATE` | Worth evaluating, but value, technical fit, dependency fit, or product boundary is not yet clear. |
+| `DEFER` | Do not pursue unless product strategy changes or strong demand appears. |
+
+## ADR Gate Values
+
+| Gate | Meaning |
+|---|---|
+| `None for backlog` | Adding the item to this roadmap does not require another ADR. Implementation still follows normal ADR policy. |
+| `Existing ADR` | The broad decision is already covered by an ADR, but implementation may still need updates. |
+| `ADR before implementation` | Do not implement without a new or updated ADR. |
+| `Likely PRD/SPEC update` | The idea changes product boundaries enough that PRD/SPEC alignment is expected before implementation. |
+
+## Product Guardrails
+
+Future work should preserve these constraints:
+
+- Keep DecentDB as the primary workspace and destination.
+- Keep import/export/query work off the UI thread.
+- Preserve paging and streaming by default. Do not materialize large result
+  sets just to power a convenience feature.
+- Keep data local by default.
+- Prefer Apache 2.0-compatible dependencies. Validate licenses before adding
+  any package and update third-party notices as required.
+- Avoid turning Decent Bench into a general database administration client.
+- Avoid collaboration, cloud, or live external database management as near-term
+  scope unless explicitly accepted through PRD/SPEC and ADR updates.
+- Treat branch/snapshot functionality as DecentDB-native where possible and do
+  not call private binding internals.
+
+## Current Foundations
+
+The following shipped or present foundations should not be treated as new Future
+Wins unless the item below names a clear next pass:
+
+- DecentDB-first desktop workspace with drag-and-drop open/import entry point.
+- Import registry covering common delimited, spreadsheet, structured document,
+  web/markup, embedded database, dump, and archive families.
+- Recognized-but-unavailable connector states for fixed-width, ODS, DuckDB,
+  Parquet import, PostgreSQL plain dump expansion, DBF/Access, XZ, clipboard
+  tables, PDF tables, and related roadmap formats.
+- Generic import row-local transform model for filters, default values,
+  computed columns, column ordering, and deduplication.
+- Headless CLI import mode with versioned plan/profile validation.
+- Schema browser expansion for triggers, constraints, generated columns, temp
+  objects, native type details, enum labels, spatial metadata, search/filter,
+  and branch context.
+- DecentDB tooling metadata bridge with schema fingerprints and query
+  contracts.
+- Query-parameterized SQL execution with typed fields driven by contracts.
+- Multi-tab SQL editor with schema-aware autocomplete, snippets, formatter,
+  per-tab results, and best-effort cancellation.
+- Paged/virtualized results grid.
+- Per-tab query history and global query history dialog.
+- Safe-run prompts for mutating/destructive SQL.
+- App-owned branch/snapshot domain boundary, currently limited by public Dart
+  binding availability.
+- Type-aware inline table editor for editable single-table result sets.
+- Saved query library and workspace project manifests.
+- TypeScript SDK-generation prototype.
+- Column statistics panel and database statistics dashboard.
+- Lightweight EXPLAIN visualization.
+- Basic data visualization from loaded query results.
+- Read-only ERD viewing and image export.
+- CSV, JSON, NDJSON, and Excel exports.
+- Import/export profile persistence shared by GUI and headless workflows.
+- TOML configuration, desktop preferences, command registry, native menu
+  bridge, command palette, in-app help, and ADR-governed design process.
+
+## Existing Future Commitments Still Active
+
+These items remain important from the earlier roadmap and are folded into the
+ranked index below:
+
+### Public Branch/Snapshot API Integration
+
+Decent Bench already has the branch/snapshot workbench surface, branch-aware
+safe-run prompts, guarded restore/merge UI concepts, and branch-local gateway
+contracts. Production wiring is blocked until public DecentDB Dart APIs expose
+the required native branch/snapshot operations.
+
+Relevant future work:
+
+- native branch execution,
+- native snapshot creation/deletion,
+- branch-local import and edit sessions,
+- large-import "run on branch",
+- project branch preference activation.
+
+### Parquet Export Writer
+
+Excel export ships through the approved `archive` dependency path. Parquet
+export remains future work until a maintained Apache-compatible Dart or FFI
+writer is selected, validated for Linux/macOS/Windows packaging, and tested for
+incremental writes.
+
+Parquet import is tracked separately in connector expansion because reader and
+writer dependency constraints may resolve independently.
+
+### SDK Generation CLI And UI
+
+The schema-first SDK-generation prototype has an internal IR and TypeScript
+declaration output. A user-facing workflow should expose the same IR through a
+stable CLI/UI after project-file workflows are stable.
+
+Example future command shape:
+
+```text
+dbench generate-sdk --project <workspace.dbench-project.toml> \
+  --language typescript --out <directory>
+```
+
+### Connector Expansion
+
+The built-in module catalog is now the code source of truth for import module
+metadata. `apps/decent-bench/assets/help/importing-data.md` documents formats
+users can import today, and `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md` tracks
+future import formats that are not available yet. Future connector work should
+add or promote modules first, then implement reviewed adapters with broad
+value, streaming behavior, and Apache-compatible distribution.
+
+### Query-Plan And Performance Diagnostics
+
+The implemented EXPLAIN visualization is intentionally lightweight. A full
+diagnostics suite should cover plan comparison, index recommendations, runtime
+profiling, historical plan tracking, and query performance advisories.
+
+## Consolidated Priority Index
+
+| Rank | Priority | Status | Enhancement | Consolidated Scope | Why This Rank | ADR Gate |
+|---:|---|---|---|---|---|---|
+| 1 | `P0` | `TODO` | Import/export recipe rerun and profile reuse | Re-run last import/export, saved recipe/profile library, shareable TOML recipes, GUI and CLI reruns | Directly supports repeatable local workflows and completes existing deferred menu commands | Existing ADR; update ADR before implementation if recipe contract changes |
+| 2 | `P0` | `TODO` | Multi-file batch import | Drop/import multiple files, folder/archive selection, shared or per-file wizard settings, dependency ordering | Extends the front-door workflow and removes repeated wizard friction | ADR before implementation |
+| 3 | `P0` | `BACKLOG` | Clipboard table import | Paste TSV/CSV/HTML table/JSON table data into import wizard with preview and type inference | High-frequency convenience feature for spreadsheet, browser, and portal workflows | ADR before implementation if clipboard formats or persistent profile contract changes |
+| 4 | `P0` | `BACKLOG` | Safe import preview and branch-backed sandbox | Dry-run import preview, schema/data diff before commit, import on branch, merge/discard, rejected-row repair loop | Strong DecentDB-specific safety story for messy imports and table edits | Existing ADR for branch model; update ADR before implementation |
+| 5 | `P1` | `TODO` | Schema, data, database, branch, and query diff tools | Compare tables, query results, databases, branches, snapshots; show row, schema, type, and count deltas; optional migration SQL | Broad validation and debugging value after imports, edits, and query refactors | ADR before implementation |
+| 6 | `P1` | `TODO` | Headless query/export automation | `dbench query`, headless export, streaming export, scheduled import/export/query jobs, watch folders | Strong for power users and scripting; reuses CLI posture | ADR before implementation |
+| 7 | `P1` | `TODO` | Results grid power tools | Cell context menu, filter/exclude by value, copy as WHERE/INSERT/JSON/Markdown, local page filter/sort, find, column widths, conditional formatting | High daily-touch value with limited product-scope risk if kept page-aware | ADR only if persistence or mutation semantics change |
+| 8 | `P1` | `TODO` | Query parameter sets and dashboard forms | Saved parameter sets, defaults, validation, query form/dashboard panel, quick switching for saved reports | Makes existing typed query contracts much more reusable | ADR before implementation if project-file contract changes |
+| 9 | `P1` | `TODO` | Smarter import inference and reusable type profiles | ISO dates, currency, UUID, enum, geo inference, column-name patterns, reusable type-coercion profiles, import recommendations | Reduces manual override work in common imports | ADR before implementation if inference/profile formats persist |
+| 10 | `P1` | `TODO` | Provenance, lineage, and audit metadata | Source path/hash, import profile, transform plan, warnings, row counts, timestamps, query/table impact analysis, mutation/import audit trail | Helps users reproduce, trust, and debug data shaping workflows | ADR before implementation |
+| 11 | `P1` | `TODO` | Global database search | Search values across selected tables/views with paged results and quick navigation | Common discovery workflow for unfamiliar imported data | ADR only if index/persistence strategy is added |
+| 12 | `P1` | `TODO` | Schema evolution and migration assistant | Generate migration DDL between schema versions, suggest backward-compatible changes, track schema versions, help users evolve schemas safely | Completes the schema lifecycle; different from diff tools because it generates actionable migration scripts | ADR before implementation |
+| 13 | `P1` | `TODO` | Query replay and workflow recording | Record sequences of queries and replay them as workflows, macro recording, batch query execution, workflow sharing | Different from saved queries because it records a workflow sequence, not just individual queries | ADR before implementation |
+| 14 | `P1` | `TODO` | Data masking during import | Apply masking rules during import (not just export), mask emails/names/phone numbers at point of ingestion, privacy-first import workflow | Privacy-first; integrates with existing transform pipeline for production-to-development data flows | ADR before implementation |
+| 15 | `P1` | `BACKLOG` | Query performance diagnostics suite | EXPLAIN ANALYZE, runtime profiling, slow-query history, plan comparison, index/advisor hints, regression tracking | Fits the "Bench" identity and helps developers optimize local datasets | ADR before implementation |
+| 16 | `P1` | `BACKLOG` | Parquet, DuckDB, ODS, fixed-width, and other connector expansion | Prioritized import formats from `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`; Parquet import tracked separately from Parquet export | Expands the "front door into DecentDB" with high-value source families; should build on the module catalog | ADR/dependency review before each major connector |
+| 17 | `P1` | `BACKLOG` | Database file comparison (two .ddb files) | Compare two independent .ddb files side-by-side with schema diff, data diff, metadata diff; validate imports and exports | Different from branch diff because it compares independent files; useful for validating imports and comparing environments | ADR before implementation |
+| 18 | `P2` | `TODO` | Incremental sync and merge/upsert import modes | Append, replace, ignore, upsert/merge by key, conflict handling, recurring refresh support | Valuable for recurring imports but changes import semantics materially | ADR before implementation |
+| 19 | `P2` | `TODO` | Advanced transform library | Regex extraction, split/merge columns, lookup joins, value mapping, date parsing presets, reusable transform presets | Useful once base import workflows and profiles are stable | ADR before implementation |
+| 20 | `P2` | `TODO` | Query contract tests and regression harness | Saved queries as assertions for columns, types, row counts, sample values, performance baselines; CLI test runner | Strong developer/CI value and builds on query contracts | ADR before implementation |
+| 21 | `P2` | `TODO` | Workspace organization and portability | Tab sessions, bookmarks, annotations, query collections, workspace templates, portable workspace snapshots | Improves daily organization without changing the database engine model | ADR before implementation if project-file format changes |
+| 22 | `P2` | `TODO` | Data masking and anonymized export | Redact, hash, pseudonymize, shuffle, or partially mask columns during export | Strong privacy fit for safe sharing and test datasets | ADR before implementation |
+| 23 | `P2` | `TODO` | Accessibility and high-contrast audit | Screen reader results grid support, keyboard-only coverage, focus indicators, high-contrast mode, WCAG audit | Important product quality and broad usability work | ADR only if theme/config contract changes |
+| 24 | `P2` | `TODO` | Database maintenance and workspace health panel | VACUUM, ANALYZE, integrity check, database size, native library/config/CLI doctor, stale sidecar checks | Practical support surface for local files and packaging issues | ADR before implementation if destructive operations or new diagnostics contracts are added |
+| 25 | `P2` | `TODO` | SQL linting and static analysis | Warnings for missing WHERE on mutations, SELECT star, implicit coercion, wide scans, unindexed joins | Useful guardrail before execution and complements safe-run | ADR only if lint rules become persistent/project-enforced |
+| 26 | `P2` | `TODO` | Documentation and onboarding in-app | Offline DecentDB SQL reference, sample datasets, guided tutorials, query explanation mode, shortcut trainer | Helps users complete the first import/query/export loop faster | None for backlog |
+| 27 | `P2` | `TODO` | Query workload analyzer | Analyze query history patterns: most frequent queries, slow queries, unused tables, index recommendations, query cost trends | Actionable insights from existing query history and operational metrics data | ADR only if workload analysis persistence or recommendation contracts change |
+| 28 | `P2` | `TODO` | Import data lineage visualization | Visual flow diagram showing data provenance and transformations during import: source -> parser -> transforms -> target tables | Provenance you can see; builds on existing import reconciliation records | ADR only if visualization contract changes |
+| 29 | `P2` | `TODO` | Schema documentation generator | Auto-generate markdown/HTML documentation from schema metadata: table descriptions, column types, relationships, constraints, sample data | Helps users share database documentation with their team | None for backlog |
+| 30 | `P2` | `TODO` | Query performance baseline and regression testing | Save query performance baselines and automatically detect regressions; compare against known-good performance | Different from diagnostics suite because it compares against baselines, not just profiling | ADR before implementation |
+| 31 | `P2` | `TODO` | Data profiling history and trend tracking | Track data quality trends over time: null percentage changes, duplicate count changes, schema drift detection | Different from quality suite because it tracks longitudinal trends | ADR before implementation |
+| 32 | `P2` | `BACKLOG` | Notebooks, dashboards, and structured reports | Markdown plus SQL notebooks, pinned query/chart dashboards, report packs, HTML/PDF export | High analyst/reporting value but larger product surface | ADR before implementation |
+| 33 | `P2` | `BACKLOG` | Pivot tables and richer visualization | Pivot/crosstab builder, histograms, box plots, heatmaps, area charts, chart templates | Useful for exploration and reporting after query results exist | ADR only if new dependency or persistent chart contract changes |
+| 34 | `P2` | `BACKLOG` | Database file health dashboard | Holistic view of file health: size trends, fragmentation, missing indexes, unused tables, table bloat, optimization recommendations | Advisory surface; different from maintenance panel because it recommends actions | ADR before implementation |
+| 35 | `P2` | `BACKLOG` | Database snapshot management | Dedicated UI for browsing, comparing, and restoring snapshots with visual diff | Power user surface; builds on existing branch/snapshot models | ADR before implementation |
+| 36 | `P2` | `BACKLOG` | Database file export to other formats | Export entire .ddb files to SQLite, PostgreSQL dump, CSV archive, JSON bundle; inverse of import | Useful for sharing data with non-DecentDB users | ADR before implementation |
+| 37 | `P3` | `BACKLOG` | Cross-DB and multi-workspace querying | Attach multiple `.ddb` files, cross-workspace execution, multi-file workspace panels | Useful, but conflicts with previous multi-workspace non-goal and needs scope decision | Likely PRD/SPEC update and ADR before implementation |
+| 38 | `P3` | `BACKLOG` | Extension, plugin, and scripting system | Custom importers/exporters/visualizers, Lua lifecycle UI, extension marketplace, trusted script execution | Strategic extensibility with high security and compatibility cost | Likely PRD/SPEC update and ADR before implementation |
+| 39 | `P3` | `BACKLOG` | Local REST/API/mock server and polyglot SDKs | Local HTTP/IPC server, mock backend bundle, Python/Rust/Dart SDK generation | Useful developer expansion, but not core import/query/export UX | ADR before implementation |
+| 40 | `P3` | `BACKLOG` | Live read-only source imports with secure credentials | PostgreSQL/MySQL/SQL Server imports, URL/S3 pulls, SSH tunnels, OS credential storage | Valuable source expansion but high security/support burden | Existing ADR notes deferral; new ADR before implementation |
+| 41 | `P3` | `BACKLOG` | Database file compaction advisor | Recommend and execute file compaction after large imports; proactive optimization for embedded database files | Unique to DecentDB as an embedded database; different from maintenance panel | ADR before implementation |
+| 42 | `P3` | `BACKLOG` | Schema versioning and migration scripts | Track schema versions with semantic versioning, generate versioned migration scripts, manage schema evolution over time | Enterprise schema management; different from evolution assistant because it's versioned, repeatable migrations | Likely PRD/SPEC update and ADR before implementation |
+| 43 | `P3` | `BACKLOG` | Database file git integration | Smart diffing, conflict resolution, and version control for .ddb files; git-aware workspace integration | Developer workflow; unique to DecentDB as a local-first file format | Likely PRD/SPEC update and ADR before implementation |
+| 44 | `P3` | `INVESTIGATE` | Geospatial result view | Map/table dual view, WKT/WKB/GeoJSON copy/export, offline-capable rendering defaults | Strong value for spatial users, narrower audience and dependency-sensitive | ADR/dependency review before implementation |
+| 45 | `P3` | `INVESTIGATE` | SQL editor power-user layer | SQL refactoring assists, Vim/modal mode, keyboard macros, advanced snippets | Valuable for some power users, lower broad impact than import/data trust | ADR only if editor architecture or persistence changes |
+| 46 | `P4` | `DEFER` | AI and natural-language query assistant | Natural language to SQL, explain results, query error repair, optimization suggestions | Potentially useful, but privacy, dependency, cost, and product-positioning risks are high | Likely PRD/SPEC update and ADR before implementation |
+| 47 | `P4` | `DEFER` | Collaboration and approval workflows | Real-time collaboration, query review, RBAC, shared workspaces, presence, permissions | Explicitly outside local-first single-user center today | PRD/SPEC update required |
+| 48 | `P4` | `DEFER` | External integration hub and companion apps | BI connectors, webhooks, Zapier/Make, mobile companion, cloud publish, IDE plugins | Expansionary and lower fit for near-term local workbench roadmap | PRD/SPEC update required |
+| 49 | `P4` | `DEFER` | UI customization marketplace and theme extensions | Toolbar customization, theme marketplace, UI extension packs | Nice-to-have but low core workflow impact | ADR only if extension/config contracts change |
+
+## P0 Detailed Candidates
+
+The `P0` group should be considered the highest-value backlog set. These items
+reinforce Decent Bench's strongest identity: import into DecentDB, verify what
+happened, query safely, and rerun or export the result.
+
+### 1. Import/Export Recipe Rerun And Profile Reuse
+
+**Consolidates suggestions named:**
+
+- import/export recipe runner,
+- re-run last import,
+- re-run last export,
+- import/export profile sharing,
+- team import profile sharing,
+- import template library,
+- scheduled profile reuse,
+- headless CLI profile extension,
+- recipe persistence.
+
+**User job:**
+
+Users often receive the same source file shape repeatedly. They should not have
+to reconfigure the wizard every time, and scripting users should be able to run
+the same recipe without the GUI.
+
+**Core scope:**
+
+- Persist complete import recipes:
+  - source kind,
+  - selected sheets/tables/files,
+  - target table naming,
+  - type overrides,
+  - transforms,
+  - deduplication rules,
+  - validation rules once available,
+  - import mode,
+  - profile version.
+- Persist export recipes:
+  - source query/table,
+  - format,
+  - destination,
+  - column/type handling,
+  - masking options once available,
+  - profile version.
+- Enable `Import > Re-run Last Import` and `Export > Re-run Last Export` only
+  when the persisted recipe can be validated.
+- Support recipe library actions:
+  - save,
+  - rename,
+  - duplicate,
+  - export to TOML/JSON if accepted,
+  - import from shared file,
+  - validate against current workspace.
+- Reuse the same contract in GUI and headless CLI.
+
+**First useful slice:**
+
+Enable re-running the most recent import recipe for a local source file when
+the source still exists, the target workspace is open, and the target schema
+validation passes.
+
+**Design constraints:**
+
+- Must fail clearly when source files are missing.
+- Must detect stale schema fingerprints.
+- Must handle changed source shape without silently applying old mappings.
+- Must not store credentials in plaintext when live imports arrive.
+- Should remain compatible with existing headless import plan/profile work.
+
+**ADR need:**
+
+ADR-0044 already identifies recipe persistence as the gate for rerun commands.
+Update or create a focused ADR before implementation to define the durable
+recipe format and validation behavior.
+
+### 2. Clipboard Table Import
+
+**Consolidates suggestions named:**
+
+- clipboard table paste import,
+- clipboard table preview,
+- clipboard table capture,
+- clipboard-to-table fast intake,
+- HTML table fragment paste,
+- TSV/CSV clipboard import.
+
+**User job:**
+
+Users frequently copy data from Excel, Google Sheets, internal web portals,
+reports, browser tables, terminals, and JSON responses. Requiring a temporary
+file creates unnecessary friction.
+
+**Core scope:**
+
+- Detect structured clipboard content:
+  - TSV,
+  - CSV-like text,
+  - HTML table fragments,
+  - Markdown table text if supported later,
+  - JSON arrays of objects when clear.
+- Launch the existing import wizard with a clipboard-backed source.
+- Show preview before commit.
+- Allow column naming, type override, and target table selection.
+- Record clipboard import metadata without storing sensitive clipboard payloads
+  beyond the import session unless explicitly saved as part of a recipe.
+
+**First useful slice:**
+
+Support TSV clipboard data from spreadsheet copy operations and route it
+through the generic delimited import preview/type inference flow.
+
+**Design constraints:**
+
+- Clipboard inspection must be quick and cancellable.
+- Large clipboard payloads must not freeze the UI.
+- The app should not monitor clipboard contents continuously.
+- The user should explicitly initiate paste/import.
+- Sanitization is required for HTML fragments.
+
+**ADR need:**
+
+Create an ADR before implementation if clipboard source metadata becomes a
+persistent recipe source or if HTML sanitization rules are accepted.
+
+### 3. Safe Import Preview And Branch-Backed Sandbox
+
+**Consolidates suggestions named:**
+
+- import dry-run,
+- preview diff,
+- branch-backed import sandbox,
+- schema diff on re-import,
+- data reconciliation before commit,
+- rejected row repair loop,
+- branch comparison,
+- import-on-branch,
+- merge/discard after review.
+
+**User job:**
+
+Before committing a messy import or table edit, users need to see what will
+change and have a safe way to discard bad results.
+
+**Core scope:**
+
+- Import dry-run summary:
+  - new tables,
+  - changed tables,
+  - added/removed/changed columns,
+  - type coercion warnings,
+  - estimated row counts,
+  - skipped/rejected row counts,
+  - storage estimate where feasible.
+- Re-import diff:
+  - target schema drift,
+  - source-to-target mapping changes,
+  - row-count deltas.
+- Branch-backed execution:
+  - run import or risky edit on a DecentDB branch,
+  - inspect branch diff,
+  - merge or discard.
+- Rejected row repair:
+  - quarantine failed rows into a side table or job-owned staging area,
+  - allow mapping/value correction,
+  - retry only rejected rows.
+
+**First useful slice:**
+
+Add import dry-run summaries and schema diff previews without native branch
+execution. Once public branch APIs are available, wire the same preview model to
+branch-local import sessions.
+
+**Design constraints:**
+
+- Branch support must use public DecentDB APIs.
+- Diff views must be paged/streamed.
+- Preview must be honest when estimates are approximate.
+- Repair loops must not mutate source files.
+- Staging/quarantine tables must have clear lifecycle rules.
+
+**ADR need:**
+
+ADR-0032 covers the native branch/snapshot safety model. Update it or create a
+focused import-sandbox ADR before implementation, especially for staging table
+lifecycle and merge/discard semantics.
+
+### 4. Multi-File Batch Import
+
+**Consolidates suggestions named:**
+
+- multi-file batch import,
+- folder import,
+- multi-file archive import,
+- per-file wizard configuration,
+- shared profile application,
+- dependency ordering.
+
+**User job:**
+
+Users often receive a folder of CSVs, several related spreadsheets, a collection
+of JSON files, or an archive containing many supported sources. Running the
+wizard repeatedly is slow and error-prone.
+
+**Core scope:**
+
+- Allow selecting or dropping multiple importable sources.
+- Show a batch queue with per-source detected type and status.
+- Support shared defaults across the batch:
+  - target database,
+  - naming convention,
+  - import mode,
+  - default type profile,
+  - validation profile once available.
+- Allow per-source overrides.
+- Detect dependency/order hints where possible:
+  - table names,
+  - foreign-key-like columns,
+  - archive ordering,
+  - explicit user ordering.
+- Summarize batch success, warnings, failures, and skipped sources.
+
+**First useful slice:**
+
+Support multiple delimited/text files with a shared import profile and per-file
+target table names.
+
+**Design constraints:**
+
+- Must preserve responsive progress and cancellation.
+- Must continue importing independent files when one file fails only if the
+  chosen batch policy allows it.
+- Must not hide partial failure.
+- Must support retrying failed files.
+
+**ADR need:**
+
+Create an ADR before implementation because this changes the PRD/SPEC
+single-file import boundary and introduces batch job semantics.
+
+## P1 Detailed Candidates
+
+### 5. Schema, Data, Database, Branch, And Query Diff Tools
+
+**Consolidates:**
+
+- SQL diff tool,
+- database comparison tool,
+- data diff/compare tool,
+- query result diffing,
+- schema diff/migration generator,
+- branch comparison,
+- schema drift detection.
+
+**Value:**
+
+Diff answers one of the most common questions after import, edit, migration, or
+query refactor: "What changed?"
+
+**Recommended progression:**
+
+1. Query result diff for two loaded result sets with matching columns.
+2. Schema diff for two schema snapshots.
+3. Table diff using primary key or selected key columns.
+4. Branch/database diff once native APIs and performance constraints are clear.
+5. Optional migration script generation after schema diff behavior stabilizes.
+
+**Constraints:**
+
+- Use keys/checksums/page cursors rather than full materialization.
+- Make approximate or sampled comparisons explicit.
+- Keep migration generation separate from read-only diff until the UX is safe.
+
+### 6. Headless Query/Export Automation
+
+**Consolidates:**
+
+- CLI query execution mode,
+- headless export mode,
+- scheduled query execution,
+- scheduled import/export jobs,
+- watch folder auto-import,
+- cron-style scheduler,
+- incremental/streaming export,
+- export to remote destinations.
+
+**Value:**
+
+Power users and developers need Decent Bench workflows to run in scripts and
+automation environments without opening the desktop UI.
+
+**Recommended progression:**
+
+1. `dbench query --sql ... --out json/csv`.
+2. Headless export from saved query or table using existing export formats.
+3. Streaming export while query pages are produced.
+4. Recipe-driven scheduled jobs.
+5. Watch folders and remote destinations only after source/destination security
+   contracts are accepted.
+
+**Constraints:**
+
+- The same paging/export contracts used by the UI should power CLI export.
+- Scheduling should not imply background daemon behavior until that operating
+  model is accepted.
+- Remote destinations require credential and retry policies.
+
+### 7. Results Grid Power Tools
+
+**Consolidates:**
+
+- cell context menus,
+- filter by this value,
+- exclude this value,
+- copy as INSERT,
+- copy as WHERE clause,
+- copy JSON/Markdown/SQL,
+- client-side page filtering/sorting,
+- find and replace in grid,
+- column width persistence,
+- auto-fit,
+- conditional formatting,
+- bulk row operations.
+
+**Value:**
+
+The results grid is one of the most frequently touched surfaces. Small
+improvements here reduce friction every day.
+
+**Recommended progression:**
+
+1. Context menu actions for single cell/row copy and filter SQL generation.
+2. Column width persistence and auto-fit.
+3. Loaded-page find/filter/sort clearly labeled as page-local.
+4. Conditional formatting rules for nulls, thresholds, and type patterns.
+5. Bulk row operations only after table-editing safety and branch behavior are
+   mature.
+
+**Constraints:**
+
+- Do not imply page-local filtering is a full query filter.
+- Mutating grid operations must honor existing safe-run and table-editor
+  contracts.
+- Persistence should use workspace/project state intentionally, not ad hoc
+  local storage.
+
+### 8. Query Parameter Sets And Dashboard Forms
+
+**Consolidates:**
+
+- query parameter preset manager,
+- query parameter sets UI,
+- parameterized query builder UI,
+- interactive SQL parameter binding UX,
+- parameterized query dashboard,
+- advanced query variable system.
+
+**Value:**
+
+Saved parameterized queries become more useful when users can save named
+parameter values and run them without editing SQL.
+
+**Recommended progression:**
+
+1. Named parameter sets per saved query.
+2. Defaults and validation messages from query contracts.
+3. Quick switch between parameter sets in the SQL editor.
+4. Form-style dashboard panels for saved report queries.
+5. Environment profiles only if project scope requires them.
+
+**Constraints:**
+
+- Keep SQL as the source of truth.
+- Do not create a separate non-SQL query language.
+- Persist parameter sets through the project manifest only after the format is
+  accepted.
+
+### 9. Smarter Import Inference And Reusable Type Profiles
+
+**Consolidates:**
+
+- smart data type inference v2,
+- type coercion profile library,
+- import template system,
+- smart import recommendations,
+- log schema synthesis where template-based.
+
+**Value:**
+
+Better inference means less wizard correction and cleaner imported tables.
+
+**Recommended progression:**
+
+1. Improve string sample detection for ISO dates, timestamps, booleans, UUIDs,
+   currency, percentages, enums, and latitude/longitude pairs.
+2. Save column-name pattern rules such as `*_date -> DATE`.
+3. Add confidence and explanation messages to inference decisions.
+4. Add recommendations for common source families.
+
+**Constraints:**
+
+- Users must be able to override all guesses.
+- Inference should be deterministic for the same source sample.
+- Expensive inference should run off-thread and be sample-bounded.
+
+### 15. Query Performance Diagnostics Suite
+
+**Consolidates:**
+
+- query-plan full suite,
+- EXPLAIN ANALYZE visualizer,
+- execution profiler,
+- historical performance baseline,
+- slow-query log,
+- query performance advisor,
+- index recommendations,
+- query cost prediction.
+
+**Value:**
+
+This is a strong fit for "Bench" and for developer users optimizing queries
+over imported data.
+
+**Recommended progression:**
+
+1. Persist query duration, row count, status, and timestamp for saved queries.
+2. Add slow-query filters and trends.
+3. Add plan comparison for saved query revisions.
+4. Add EXPLAIN ANALYZE visualization if the engine exposes stable runtime
+   metrics.
+5. Add advisories only after the app can explain why a recommendation is safe.
+
+**Constraints:**
+
+- Avoid noisy or speculative recommendations.
+- Keep plan collection opt-in or bounded to avoid overhead.
+- Any persisted telemetry must stay local.
+
+### 10. Provenance, Lineage, And Audit Metadata
+
+**Consolidates:**
+
+- import provenance ledger,
+- column-level data provenance,
+- schema change audit log,
+- audit trail for mutations,
+- data lineage/impact analysis,
+- table dependency graph,
+- Git-aware workspace diff summaries.
+
+**Value:**
+
+Users need to know where a table came from, which transform shaped it, and what
+queries or exports depend on it.
+
+**Recommended progression:**
+
+1. Import provenance ledger with source path/hash, profile id, transform plan,
+   warnings, row counts, and timestamp.
+2. Query dependency index for saved queries and export profiles.
+3. Schema change log for app-mediated DDL and imports.
+4. Mutation audit for table edits and DML if safe-run/table-editor workflows
+   need it.
+
+**Constraints:**
+
+- Do not log sensitive data values by default.
+- Be explicit about what Decent Bench can audit: app-mediated operations, not
+  arbitrary external file mutations.
+- Use stable ids and schema fingerprints where possible.
+
+### 11. Global Database Search
+
+**Consolidates:**
+
+- full-text search across database,
+- global database search,
+- search values across selected tables/views.
+
+**Value:**
+
+When a user opens an unfamiliar `.ddb` file or imports a large dump, they often
+start by searching for a known customer id, email, SKU, or term.
+
+**Recommended progression:**
+
+1. Search selected tables/columns with paged results.
+2. Add type-aware search modes for text, exact value, and pattern.
+3. Add recent searches and quick navigation.
+4. Consider search indexes only after measuring demand and cost.
+
+**Constraints:**
+
+- Default search must be cancellable and bounded.
+- Do not build persistent indexes without an ADR.
+- Show which tables/columns are included.
+
+### 16. Connector Expansion
+
+**Detailed plan:** `design/WIN_IMPORT_FORMAT_EXPANSION_PLAN.md`
+
+**Consolidates:**
+
+- Parquet import reader,
+- DuckDB import,
+- ODS import,
+- fixed-width text,
+- markdown table import/export,
+- log templates,
+- Access/DBF,
+- PostgreSQL dump expansion,
+- SQL Server import,
+- cloud storage import where source-only.
+
+**Value:**
+
+Connector expansion directly supports the "front door into DecentDB" product
+direction. This item should now build on the modular import architecture rather
+than adding more hardcoded registry entries.
+
+**Recommended priority within this group:**
+
+1. Create or promote the module manifest for the target format.
+2. Add module docs, fixture plan, type-fidelity notes, and dependency notes.
+3. Implement the adapter only after the module contract is in place.
+4. Parquet import, because it is high-value for analytics users and separate
+   from Parquet export writer constraints.
+5. DuckDB import, because it overlaps with local analytics workflows.
+6. ODS and fixed-width text, because they cover common spreadsheet/legacy data.
+7. PostgreSQL plain dump expansion, because plain SQL dumps are common.
+8. Markdown tables and log templates, because they are useful but narrower.
+9. Access/DBF and SQL Server live import after dependency/driver risk is clear.
+
+**Constraints:**
+
+- Each major connector needs licensing review.
+- Each connector must preserve streaming behavior where possible.
+- Live sources need credential and cancellation contracts.
+- New connectors should not bypass the module manifest, fixture, and docs
+  validation workflow.
+
+### 12. Schema Evolution And Migration Assistant
+
+**Consolidates:**
+
+- schema evolution assistant,
+- migration DDL generator,
+- backward-compatible change suggestions,
+- schema version tracker,
+- safe schema migration workflow.
+
+**User job:**
+
+Users who maintain databases over time need to evolve their schema safely.
+They need to understand what changed between schema versions, get suggestions
+for backward-compatible changes, and generate migration scripts they can review
+before applying.
+
+**Core scope:**
+
+- Generate migration DDL between two schema snapshots:
+  - `ALTER TABLE` for column additions, removals, renames, and type changes.
+  - `CREATE TABLE` / `DROP TABLE` for new and removed tables.
+  - Index and constraint changes.
+- Suggest backward-compatible changes when possible:
+  - nullable additions instead of required columns,
+  - additive index changes instead of destructive ones.
+- Track schema versions with semantic versioning.
+- Show a migration preview before applying.
+- Validate that generated migration DDL is safe to apply.
+- Export migration scripts as SQL files.
+
+**Recommended progression:**
+
+1. Schema diff with generated migration DDL preview (read-only, no apply).
+2. Safe migration apply through a branch-backed sandbox.
+3. Schema version tracking in the workspace project file.
+4. Backward-compatibility warnings for breaking changes.
+
+**Constraints:**
+
+- Migration generation must be read-only by default; applying requires
+  explicit user confirmation.
+- Generated DDL must use only DecentDB-supported SQL syntax.
+- Migration scripts must be paged/streamed for large schemas.
+- Must not call private binding internals for schema introspection.
+
+**ADR need:**
+
+ADR before implementation because this changes schema management contracts
+and may require PRD/SPEC alignment.
+
+### 13. Query Replay And Workflow Recording
+
+**Consolidates:**
+
+- query replay,
+- workflow recording,
+- macro recording,
+- batch query execution,
+- workflow sharing,
+- query sequence runner.
+
+**User job:**
+
+Power users often run the same sequence of queries repeatedly: import,
+validate, transform, export. They need to record these sequences and replay
+them as workflows without manually re-executing each query.
+
+**Core scope:**
+
+- Record sequences of queries executed in a session.
+- Save recorded sequences as named workflows.
+- Replay workflows step by step with progress reporting.
+- Allow editing workflows between replay steps.
+- Export workflows as shareable TOML/JSON files.
+- Support conditional logic in workflows (optional, future).
+- Integrate with existing recipe rerun infrastructure.
+
+**Recommended progression:**
+
+1. Record query sequences from session history.
+2. Save and replay simple linear workflows.
+3. Add workflow editor for reordering and editing steps.
+4. Add conditional branching and error handling.
+
+**Constraints:**
+
+- Replay must use the same paging and cancellation contracts as normal
+  query execution.
+- Workflows must not execute destructive operations without explicit
+  confirmation at each step.
+- Recorded workflows must include query text, parameters, and target
+  database context.
+- Must not imply a general-purpose scripting engine.
+
+**ADR need:**
+
+ADR before implementation because this introduces workflow persistence
+contracts and batch execution semantics.
+
+### 14. Data Masking During Import
+
+**Consolidates:**
+
+- import-time masking,
+- privacy-preserving import,
+- production-to-development data flow,
+- column-level masking rules at ingestion,
+- sensitive data redaction during import.
+
+**User job:**
+
+Users importing production data for development or testing need to mask
+sensitive fields (emails, names, phone numbers, addresses) at the point
+of ingestion, not just at export time. This is different from export
+masking because it applies rules during the import transform pipeline.
+
+**Core scope:**
+
+- Apply masking rules during import transforms:
+  - redact,
+  - partial redact,
+  - hash,
+  - pseudonymize,
+  - shuffle,
+  - deterministic replacement.
+- Reuse existing masking rule infrastructure from export masking.
+- Persist masking rules in import recipes and profiles.
+- Show masking preview in the import wizard before commit.
+- Support column-specific masking rules.
+- Support pattern-based masking (e.g., all email columns).
+
+**Recommended progression:**
+
+1. Apply export masking rules during import transforms.
+2. Add masking preview in the import wizard.
+3. Add pattern-based masking for common sensitive column names.
+4. Persist masking rules in import recipes.
+
+**Constraints:**
+
+- Masking must run off the UI thread.
+- Masked values must be clearly indicated in import preview.
+- Masking rules must be explicit; no silent masking.
+- Must not store unmasked sensitive data in provenance or quality reports.
+
+**ADR need:**
+
+ADR before implementation because this extends the import transform
+contract and interacts with provenance/privacy defaults.
+
+### 17. Database File Comparison (Two .ddb Files)
+
+**Consolidates:**
+
+- database file comparison,
+- two-database diff,
+- import validation comparison,
+- cross-environment comparison,
+- database file side-by-side comparison.
+
+**User job:**
+
+Users need to compare two independent .ddb files to validate that an
+import produced the expected result, compare data across environments,
+or check data freshness. This is different from branch diff because it
+compares independent files, not branches within the same file.
+
+**Core scope:**
+
+- Open two .ddb files side by side.
+- Compare schema: tables, columns, types, indexes, constraints.
+- Compare data: row counts, sample row comparison, key-based diff.
+- Compare metadata: file size, object counts, timestamps.
+- Show a diff summary with actionable navigation.
+- Export diff results as a report.
+
+**Recommended progression:**
+
+1. Schema diff between two files.
+2. Row count and sample data comparison.
+3. Key-based data diff for selected tables.
+4. Full metadata comparison.
+
+**Constraints:**
+
+- Must load both files without excessive memory usage.
+- Must page/stream comparison results.
+- Must not modify either file during comparison.
+- Comparison must be cancellable.
+
+**ADR need:**
+
+ADR before implementation because this introduces a new multi-file
+workspace pattern.
+
+## P2 Detailed Candidates
+
+### 18. Incremental Sync And Merge/Upsert Import Modes
+
+This would let users choose append, replace, ignore, or upsert/merge behavior
+when refreshing a table from a recurring source. It is valuable for repeatable
+local ETL, but it changes import semantics and error handling enough to require
+careful design.
+
+First useful slice: upsert into a single table using explicit user-selected key
+columns and a transaction-bound import job.
+
+### 19. Advanced Transform Library
+
+This extends import transforms beyond the current row-local basics:
+
+- split columns,
+- merge columns,
+- regex extraction,
+- date parsing presets,
+- lookup joins,
+- value mapping,
+- reusable transform presets.
+
+This should follow recipe/profile stabilization so advanced transforms can be
+saved, shared, and rerun consistently.
+
+### 20. Query Contract Tests And Regression Harness
+
+Saved queries can become testable contracts:
+
+- expected columns,
+- expected types,
+- row-count ranges,
+- sample values,
+- runtime thresholds,
+- plan stability checks where supported.
+
+A future CLI such as `dbench test --project <project>` would make Decent Bench
+useful in CI for local DecentDB artifacts.
+
+### 21. Workspace Organization And Portability
+
+This group includes:
+
+- tab sessions,
+- workspace presets,
+- favorites,
+- bookmarks,
+- query annotations,
+- saved query collections,
+- workspace templates,
+- portable workspace snapshots.
+
+These features improve organization for power users, but they should be added
+only through the project/workspace manifest rather than scattered local state.
+
+### 32. Notebooks, Dashboards, And Structured Reports
+
+This group includes:
+
+- markdown plus SQL notebooks,
+- query result notebooks,
+- dashboard-mode query panels,
+- saved chart templates,
+- structured HTML/PDF reports,
+- report packs.
+
+This is valuable for analysis and communication, but it is a larger product
+surface than the current workbench loop. A first slice should reuse saved
+queries and existing chart/result components rather than create a separate
+runtime.
+
+### 33. Pivot Tables And Richer Visualization
+
+This group includes:
+
+- pivot/crosstab builder,
+- histograms,
+- box plots,
+- area charts,
+- heatmaps,
+- saved visualizations.
+
+The first useful slice is a pivot builder over a loaded, bounded result set
+with clear row/column/value controls and export back to CSV/Excel.
+
+### 22. Data Masking And Anonymized Export
+
+This feature applies export-time masking rules:
+
+- redact,
+- partial redact,
+- hash,
+- pseudonymize,
+- shuffle,
+- deterministic replacement.
+
+It fits the privacy-first product stance and is useful for test/dev datasets.
+It needs careful rule persistence and preview behavior before implementation.
+
+### 23. Accessibility And High-Contrast Audit
+
+This group includes:
+
+- screen reader support for the results grid,
+- keyboard-only navigation coverage,
+- high-contrast theme,
+- focus indicators,
+- WCAG audit,
+- theme toggle polish where not already complete.
+
+This should be treated as product quality work rather than optional polish.
+
+### 24. Database Maintenance And Workspace Health Panel
+
+This group includes:
+
+- VACUUM,
+- ANALYZE,
+- integrity check,
+- database size/file stats,
+- native library version checks,
+- DecentDB CLI availability,
+- migration tool availability,
+- profile compatibility checks,
+- stale sidecar detection.
+
+Destructive or long-running actions need confirmation, progress, cancellation,
+and clear status reporting.
+
+### 25. SQL Linting And Static Analysis
+
+This would add warnings before execution:
+
+- `DELETE` or `UPDATE` without `WHERE`,
+- `SELECT *` on wide tables,
+- implicit type coercion,
+- suspicious joins,
+- missing indexes for common join/filter patterns,
+- non-deterministic query patterns where relevant.
+
+Linting should be actionable and suppressible. It should not block execution by
+default unless the existing safe-run policy says otherwise.
+
+### 26. Documentation And Onboarding In-App
+
+This group includes:
+
+- offline DecentDB SQL reference,
+- searchable function/operator examples,
+- guided import/query/export tutorials,
+- sample datasets,
+- query explanation mode,
+- shortcut trainer.
+
+The goal is to reduce time-to-first-success without turning the app into a
+training product.
+
+### 27. Query Workload Analyzer
+
+**Consolidates:**
+
+- query workload analysis,
+- query pattern discovery,
+- slow query identification,
+- unused table detection,
+- index recommendation engine,
+- query cost trend analysis.
+
+**User job:**
+
+Developers and data engineers need to understand how their database is
+being used: which queries are most frequent, which are slowest, which
+tables are unused, and where indexes would help. This is different from
+the diagnostics suite because it analyzes workload patterns, not just
+individual query performance.
+
+**Core scope:**
+
+- Analyze query history for patterns:
+  - most frequent queries,
+  - slowest queries,
+  - queries with highest total execution time.
+- Detect unused tables and columns.
+- Recommend indexes based on query patterns.
+- Show query cost trends over time.
+- Export workload analysis as a report.
+
+**Recommended progression:**
+
+1. Basic workload statistics from query history.
+2. Slow query identification with trend tracking.
+3. Unused table detection.
+4. Index recommendations based on query patterns.
+
+**Constraints:**
+
+- Analysis must run off the UI thread.
+- Must not store query text with sensitive data by default.
+- Recommendations must be advisory, not auto-applied.
+- Must respect existing paging and streaming contracts.
+
+**ADR need:**
+
+ADR only if workload analysis persistence or recommendation contracts
+change.
+
+### 28. Import Data Lineage Visualization
+
+**Consolidates:**
+
+- import lineage visualization,
+- data flow diagram,
+- transformation flow view,
+- source-to-target provenance map,
+- import pipeline visualizer.
+
+**User job:**
+
+After importing data, users want to see where the data came from and how
+it was transformed. A visual flow diagram showing source -> parser ->
+transforms -> target tables makes provenance tangible and debuggable.
+This is different from provenance metadata because it visualizes the
+flow, not just records it.
+
+**Core scope:**
+
+- Show a visual flow diagram for import operations:
+  - source file(s),
+  - detected format/parser,
+  - applied transforms,
+  - target table(s).
+- Color-code nodes by status (success, warning, error).
+- Show row counts and timing at each step.
+- Click a node to see details.
+- Export the diagram as an image or SVG.
+
+**Recommended progression:**
+
+1. Static lineage diagram from import reconciliation records.
+2. Interactive diagram with drill-down to details.
+3. Multi-import lineage aggregation.
+
+**Constraints:**
+
+- Diagram generation must run off the UI thread.
+- Must not store source data values in the diagram.
+- Diagram must be paged/streamed for large import pipelines.
+- Must not introduce a heavy diagramming dependency.
+
+**ADR need:**
+
+ADR only if visualization contract changes or a diagramming dependency
+is added.
+
+### 29. Schema Documentation Generator
+
+**Consolidates:**
+
+- schema documentation generator,
+- auto-doc for database,
+- schema reference export,
+- table/column documentation export,
+- database catalog documentation.
+
+**User job:**
+
+Users need to share database documentation with their team. Auto-generating
+markdown or HTML documentation from schema metadata saves time and ensures
+documentation stays current with the actual schema.
+
+**Core scope:**
+
+- Generate markdown documentation from schema metadata:
+  - table descriptions,
+  - column names, types, and constraints,
+  - relationships (foreign keys),
+  - indexes,
+  - sample data (optional).
+- Generate HTML documentation with navigation.
+- Update documentation when schema changes.
+- Export documentation as a file or bundle.
+
+**Recommended progression:**
+
+1. Markdown export of schema metadata.
+2. HTML export with table of contents and navigation.
+3. Sample data inclusion (opt-in).
+4. Documentation diff when schema changes.
+
+**Constraints:**
+
+- Documentation generation must run off the UI thread.
+- Must not include sensitive data values by default.
+- Must use existing schema snapshot metadata.
+- HTML output must be self-contained.
+
+**ADR need:**
+
+None for backlog. Implementation follows normal ADR policy.
+
+### 34. Database File Health Dashboard
+
+**Consolidates:**
+
+- database health dashboard,
+- file health advisor,
+- optimization recommendations,
+- file size trend tracking,
+- fragmentation advisor,
+- unused index detection.
+
+**User job:**
+
+Users managing .ddb files over time need a holistic view of file health
+including size trends, fragmentation, missing indexes, unused tables,
+and optimization recommendations. This is different from the maintenance
+panel because it is advisory: it recommends actions rather than just
+exposing VACUUM/ANALYZE.
+
+**Core scope:**
+
+- Show file health metrics:
+  - file size and growth trend,
+  - table count and row counts,
+  - index usage statistics,
+  - unused tables and columns.
+- Provide optimization recommendations:
+  - VACUUM when fragmentation is high,
+  - ANALYZE when statistics are stale,
+  - drop unused indexes.
+- Track file health over time.
+- Export health report.
+
+**Recommended progression:**
+
+1. Basic file health metrics display.
+2. Optimization recommendations.
+3. Historical health tracking.
+
+**Constraints:**
+
+- Health checks must run off the UI thread.
+- Must not modify the database without explicit user action.
+- Recommendations must be advisory, not auto-applied.
+- Must not scan every row of very large tables synchronously.
+
+**ADR need:**
+
+ADR before implementation if destructive operations or new diagnostics
+contracts are added.
+
+### 30. Query Performance Baseline And Regression Testing
+
+**Consolidates:**
+
+- query performance baseline,
+- regression detection,
+- performance comparison,
+- baseline save and restore,
+- automated regression alerts.
+
+**User job:**
+
+Developers need to save query performance baselines and automatically detect
+regressions. This is different from the diagnostics suite because it
+compares against a known-good baseline, not just profiling current behavior.
+
+**Core scope:**
+
+- Save performance baselines for saved queries:
+  - execution time,
+  - row count,
+  - plan hash.
+- Compare current execution against saved baselines.
+- Flag regressions with clear before/after comparison.
+- Track baseline history over time.
+- Export regression reports.
+
+**Recommended progression:**
+
+1. Save and load performance baselines.
+2. Compare current execution against baselines.
+3. Flag and track regressions.
+4. Export regression reports.
+
+**Constraints:**
+
+- Baseline collection must be opt-in.
+- Must not store query results, only performance metrics.
+- Comparison must be deterministic for the same query and data.
+- Must respect paging and streaming contracts.
+
+**ADR need:**
+
+ADR before implementation because this introduces baseline persistence
+contracts.
+
+### 31. Data Profiling History And Trend Tracking
+
+**Consolidates:**
+
+- data quality trend tracking,
+- profiling history,
+- longitudinal quality analysis,
+- quality regression detection,
+- historical quality comparison.
+
+**User job:**
+
+Data quality teams need to track how data quality changes over time:
+null percentage increasing, duplicate count changes, schema drift
+detection. This is different from the quality suite because it tracks
+longitudinal trends, not just point-in-time snapshots.
+
+**Core scope:**
+
+- Store historical quality run results.
+- Show trend charts for key metrics:
+  - null percentage over time,
+  - duplicate count over time,
+  - row count changes.
+- Detect quality regressions.
+- Compare quality across time periods.
+- Export trend reports.
+
+**Recommended progression:**
+
+1. Store and display historical quality results.
+2. Show trend charts for key metrics.
+3. Detect and alert on quality regressions.
+
+**Constraints:**
+
+- Historical storage must be bounded.
+- Must not re-run quality checks automatically without user consent.
+- Trend charts must be paged/streamed for long histories.
+- Must respect existing quality suite privacy defaults.
+
+**ADR need:**
+
+ADR before implementation because this extends quality result persistence.
+
+### 35. Database Snapshot Management
+
+**Consolidates:**
+
+- snapshot management UI,
+- snapshot browser,
+- snapshot comparison,
+- snapshot restore interface,
+- snapshot lifecycle management.
+
+**User job:**
+
+Power users using DecentDB branches and snapshots need a dedicated UI for
+browsing, comparing, and restoring snapshots with visual diff. The existing
+branch/snapshot dialog is basic; this provides a full management surface.
+
+**Core scope:**
+
+- List all snapshots for the current database.
+- Show snapshot metadata: creation time, size, description.
+- Compare two snapshots with schema and data diff.
+- Restore a snapshot with preview and confirmation.
+- Delete snapshots with confirmation.
+- Export snapshot metadata.
+
+**Recommended progression:**
+
+1. Snapshot browser with metadata display.
+2. Snapshot comparison with schema diff.
+3. Snapshot restore with preview.
+4. Snapshot lifecycle management (delete, export).
+
+**Constraints:**
+
+- Snapshot operations must use public DecentDB APIs.
+- Must not modify the database without explicit user action.
+- Comparison must be paged/streamed for large schemas.
+- Restore must create a safety backup before overwriting.
+
+**ADR need:**
+
+ADR before implementation because this extends the branch/snapshot
+domain boundary.
+
+### 36. Database File Export To Other Formats
+
+**Consolidates:**
+
+- database export to SQLite,
+- database export to PostgreSQL dump,
+- database export to CSV archive,
+- database export to JSON bundle,
+- database file format conversion.
+
+**User job:**
+
+Users need to share data with people who don't have DecentDB. Exporting
+an entire .ddb file to SQLite, PostgreSQL dump, CSV archive, or JSON
+bundle makes the data accessible to other tools and users. This is the
+inverse of import.
+
+**Core scope:**
+
+- Export entire .ddb file to:
+  - SQLite database,
+  - PostgreSQL plain dump,
+  - CSV archive (one file per table),
+  - JSON bundle (one file per table).
+- Show export preview with table list and row counts.
+- Support selective export (choose tables).
+- Show export progress and summary.
+
+**Recommended progression:**
+
+1. CSV archive export (one file per table).
+2. JSON bundle export.
+3. SQLite export.
+4. PostgreSQL dump export.
+
+**Constraints:**
+
+- Export must run off the UI thread.
+- Must preserve table structure and types where possible.
+- Must page/stream large exports.
+- Must not modify the source database.
+
+**ADR need:**
+
+ADR before implementation because this introduces new export contracts.
+
+## P3 Strategic Or ADR-Gated Candidates
+
+### 37. Cross-DB And Multi-Workspace Querying
+
+This group includes:
+
+- opening multiple `.ddb` files simultaneously,
+- attaching multiple DecentDB files,
+- cross-database joins/unions,
+- cross-workspace query execution.
+
+This is useful, but it conflicts with prior non-goals around multi-workspace
+support. It needs PRD/SPEC alignment and an ADR before implementation.
+
+### 44. Geospatial Result View
+
+This would render spatial result data as a map/table dual view:
+
+- WKT,
+- WKB,
+- GeoJSON,
+- native spatial types,
+- latitude/longitude pairs.
+
+It is compelling for spatial users and aligns with DecentDB native type support,
+but dependency choice, offline map behavior, and large geometry rendering need
+an ADR.
+
+### 38. Extension, Plugin, And Scripting System
+
+This group includes:
+
+- app-level plugin API,
+- extension marketplace,
+- custom importers/exporters/visualizers,
+- custom SQL function libraries,
+- Lua extension lifecycle UI,
+- trusted transformation scripts.
+
+This can future-proof niche needs, but it is security-sensitive and
+architecture-heavy. It must not be implemented as an ad hoc script runner.
+
+### 39. Local REST/API/Mock Server And Polyglot SDKs
+
+This group includes:
+
+- local REST or IPC server mode,
+- saved queries exposed as endpoints,
+- mock backend generator,
+- Python/Rust/Dart SDK generation,
+- bundled local prototype server.
+
+This is a developer-facing expansion beyond the current workbench. It should
+reuse the SDK IR and query contracts rather than invent a separate model.
+
+### 40. Live Read-Only Source Imports With Secure Credentials
+
+This group includes:
+
+- PostgreSQL live import,
+- MySQL/MariaDB live import,
+- SQL Server live import,
+- SSH tunnels,
+- URL or S3-style source pulls,
+- connection testing,
+- OS credential storage.
+
+ADR-0044 already defers live connection commands until the product contracts
+exist. Future work must remain import-only unless PRD/SPEC explicitly expand
+Decent Bench into live database browsing/querying.
+
+### 45. SQL Editor Power-User Layer
+
+This group includes:
+
+- Vim/modal editing,
+- keyboard macro recording,
+- SQL refactoring assists,
+- extract selection as CTE,
+- inline subquery,
+- rename column across saved queries.
+
+These are useful for keyboard-heavy users, but they should not displace broader
+import/data-trust work. Refactoring features need schema and saved-query impact
+analysis to be safe.
+
+### 41. Database File Compaction Advisor
+
+**Consolidates:**
+
+- file compaction advisor,
+- automatic optimization,
+- storage reclamation,
+- post-import optimization,
+- file size reduction recommendations.
+
+**User job:**
+
+After large imports, deletions, or schema changes, .ddb files can become
+fragmented or bloated. A compaction advisor recommends and optionally executes
+file optimization. This is unique to DecentDB as an embedded database and
+different from the maintenance panel because it is proactive and advisory.
+
+**Core scope:**
+
+- Detect file fragmentation and bloat.
+- Recommend compaction after large imports.
+- Show estimated space savings before compaction.
+- Execute VACUUM, ANALYZE, and integrity checks as a batch.
+- Track file size before and after optimization.
+
+**Recommended progression:**
+
+1. Basic file size and fragmentation detection.
+2. Compaction recommendations with estimated savings.
+3. One-click compaction execution.
+
+**Constraints:**
+
+- Compaction must run off the UI thread.
+- Must create a safety backup before compaction.
+- Must show progress and allow cancellation.
+- Must not modify the database without explicit user action.
+
+**ADR need:**
+
+ADR before implementation if destructive operations or new diagnostics
+contracts are added.
+
+### 42. Schema Versioning And Migration Scripts
+
+**Consolidates:**
+
+- schema versioning,
+- semantic version tracking for schemas,
+- versioned migration scripts,
+- migration history,
+- rollback support.
+
+**User job:**
+
+Enterprise users and teams need to track schema versions with semantic
+versioning and generate versioned migration scripts. This is different
+from the evolution assistant because it is about versioned, repeatable
+migrations that can be shared and applied consistently.
+
+**Core scope:**
+
+- Track schema versions with semantic versioning.
+- Generate versioned migration scripts between versions.
+- Store migration history.
+- Support rollback to previous versions.
+- Export migration scripts as SQL files.
+
+**Recommended progression:**
+
+1. Schema version tracking in workspace project file.
+2. Migration script generation between versions.
+3. Migration history and rollback support.
+
+**Constraints:**
+
+- Schema versions must be stored in the workspace project file.
+- Migration scripts must use only DecentDB-supported SQL syntax.
+- Must not apply migrations without explicit user confirmation.
+- Must validate migration scripts before application.
+
+**ADR need:**
+
+Likely PRD/SPEC update and ADR before implementation because this changes
+the workspace project file contract.
+
+### 43. Database File Git Integration
+
+**Consolidates:**
+
+- git integration for .ddb files,
+- smart diffing for database files,
+- conflict resolution for database files,
+- version control for databases,
+- git-aware workspace features.
+
+**User job:**
+
+Developers using git want to track .ddb files in version control. This
+requires smart diffing that understands database structure, conflict
+resolution for concurrent edits, and merge strategies specific to database
+files. This is unique to DecentDB as a local-first file format.
+
+**Core scope:**
+
+- Smart diffing for .ddb files in git:
+  - schema changes,
+  - row count changes,
+  - metadata changes.
+- Conflict resolution for concurrent database edits.
+- Merge strategies for database files.
+- Git-aware workspace status display.
+
+**Recommended progression:**
+
+1. Basic .ddb file diffing for git commits.
+2. Schema-aware diff display.
+3. Conflict resolution guidance.
+
+**Constraints:**
+
+- Must not modify .ddb files during diff operations.
+- Must not require git to be installed for normal app operation.
+- Diffing must run off the UI thread for large files.
+- Must respect existing branch/snapshot contracts.
+
+**ADR need:**
+
+Likely PRD/SPEC update and ADR before implementation because this changes
+the workspace integration model.
+
+## P4 Deferred Candidates
+
+### 46. AI And Natural-Language Query Assistant
+
+This group includes:
+
+- natural language to SQL,
+- explain results,
+- query error diagnosis,
+- optimization suggestions.
+
+This should be deferred because it introduces privacy, model dependency, cost,
+offline behavior, and product-positioning questions. It can be reconsidered if
+a local-first model strategy becomes part of product direction.
+
+### 47. Collaboration And Approval Workflows
+
+This group includes:
+
+- real-time collaborative workspaces,
+- presence indicators,
+- shared query libraries with permissions,
+- RBAC,
+- query review/approval for destructive queries,
+- mobile approval flows.
+
+These conflict with the current local-first, single-user product center and
+should not be near-roadmap work.
+
+### 48. External Integration Hub And Companion Apps
+
+This group includes:
+
+- BI tool connectors,
+- webhooks,
+- Zapier/Make templates,
+- mobile companion app,
+- one-click cloud publish,
+- VS Code/JetBrains plugins.
+
+These may be useful in a larger ecosystem strategy, but they are not central to
+the current import/query/export desktop workbench.
+
+### 49. UI Customization Marketplace And Theme Extensions
+
+This group includes:
+
+- toolbar customization,
+- theme marketplace,
+- UI extension packs.
+
+Small configuration improvements can happen locally, but a marketplace or
+extension economy is not a core backlog item.
+
+## Recommended Near-Term Backlog Additions
+
+The next backlog items to promote from this consolidation are:
+
+1. Import/export recipe rerun and profile reuse.
+2. Clipboard table import.
+3. Safe import preview and branch-backed sandbox.
+4. Multi-file batch import.
+5. Schema, data, database, branch, and query diff tools.
+6. Schema evolution and migration assistant.
+7. Query replay and workflow recording.
+8. Data masking during import.
+9. Database file comparison (two .ddb files).
+
+These are ranked highest because they deepen Decent Bench's core promise rather
+than expanding into a different product category.
+
+## ADR Notes
+
+Individual implementation ADRs are intentionally not created for every item in
+this file. Most entries are not yet accepted implementation designs. Creating
+one ADR per idea now would over-specify features before discovery.
+
+Before implementation, create or update ADRs for at least these areas:
+
+- built-in import module manifest contract if ADR-0049 changes,
+- import adapter and typed batch contract if ADR-0050 changes,
+- worker-backed import module protocol if ADR-0051 changes,
+- data quality rule/report persistence,
+- recipe/profile persistence and validation,
+- multi-file batch import job semantics,
+- import dry-run and branch-backed sandbox semantics,
+- schema/data/query diff algorithms and persistence,
+- headless query/export CLI contracts,
+- scheduled job execution model,
+- provenance/audit storage,
+- major connector dependencies,
+- live source credential storage,
+- app extension/scripting APIs,
+- REST/API server mode,
+- any AI integration,
+- schema evolution and migration assistant contracts,
+- query replay and workflow recording persistence,
+- data masking during import transforms,
+- database file comparison multi-file workspace model,
+- query workload analysis persistence and recommendation contracts,
+- import data lineage visualization dependency review,
+- schema documentation generator output contracts,
+- database file health dashboard advisory contracts,
+- query performance baseline persistence,
+- data profiling history trend tracking persistence,
+- database snapshot management UI contracts,
+- database file export format contracts,
+- database file compaction advisor execution contracts,
+- schema versioning and migration scripts persistence,
+- database file git integration model.
+
+## Deduplicated Idea Groups
+
+The following source ideas were intentionally merged:
+
+- **Import modules, module manifests, adapter catalog, typed import batches,
+  Python-backed importer foundation** -> Modular import architecture and module
+  catalog.
+- **Profiler, validation, duplicate detection, reconciliation, anomaly
+  detection** -> Data quality, profiling, and validation suite.
+- **Re-run last import/export, profile sharing, import templates, recipe
+  runner** -> Import/export recipe rerun and profile reuse.
+- **Clipboard preview, paste table, HTML fragment paste, clipboard capture** ->
+  Clipboard table import.
+- **Dry-run import, schema diff before commit, branch import sandbox, rejected
+  row repair** -> Safe import preview and branch-backed sandbox.
+- **Batch import, folder import, multi-file archive import** -> Multi-file
+  batch import.
+- **SQL diff, data compare, database compare, query result diff, migration
+  generator** -> Schema/data/database/branch/query diff tools.
+- **CLI query mode, headless export, scheduler, watch folders, streaming
+  export** -> Headless query/export automation.
+- **Cell menu, filter by value, copy as SQL/JSON/Markdown, grid find,
+  conditional formatting, column persistence** -> Results grid power tools.
+- **Parameter presets, variable system, query dashboard forms** -> Query
+  parameter sets and dashboard forms.
+- **Smart inference, type profile library, import recommendations, log schema
+  templates** -> Smarter import inference and reusable type profiles.
+- **Slow query log, performance history, EXPLAIN ANALYZE, advisor,
+  regression tracker** -> Query performance diagnostics suite.
+- **Provenance ledger, lineage, audit trail, schema change log, dependency
+  graph** -> Provenance, lineage, and audit metadata.
+- **Notebook, dashboard, chart templates, structured reports** -> Notebooks,
+  dashboards, and structured reports.
+- **Plugin system, extension marketplace, Lua lifecycle, custom importers** ->
+  Extension, plugin, and scripting system.
+- **REST server, IPC, mock server, SDK generation expansion** -> Local
+  REST/API/mock server and polyglot SDKs.
+- **AI query assistant, natural language SQL, auto-fix/explain** -> Deferred AI
+  and natural-language query assistant.
+- **Schema evolution assistant, migration DDL generator, backward-compatible
+  change suggestions, schema version tracker** -> Schema evolution and migration
+  assistant.
+- **Query replay, workflow recording, macro recording, batch query execution,
+  workflow sharing** -> Query replay and workflow recording.
+- **Import-time masking, privacy-preserving import, production-to-development
+  data flow, column-level masking rules at ingestion** -> Data masking during
+  import.
+- **Database file comparison, two-database diff, import validation comparison,
+  cross-environment comparison** -> Database file comparison (two .ddb files).
+- **Query workload analysis, query pattern discovery, slow query
+  identification, unused table detection, index recommendation** -> Query
+  workload analyzer.
+- **Import lineage visualization, data flow diagram, transformation flow
+  view, source-to-target provenance map** -> Import data lineage
+  visualization.
+- **Schema documentation generator, auto-doc for database, schema reference
+  export, table/column documentation export** -> Schema documentation
+  generator.
+- **Database health dashboard, file health advisor, optimization
+  recommendations, file size trend tracking** -> Database file health
+  dashboard.
+- **Query performance baseline, regression detection, performance comparison,
+  baseline save and restore** -> Query performance baseline and regression
+  testing.
+- **Data quality trend tracking, profiling history, longitudinal quality
+  analysis, quality regression detection** -> Data profiling history and
+  trend tracking.
+- **Snapshot management UI, snapshot browser, snapshot comparison, snapshot
+  restore interface** -> Database snapshot management.
+- **Database export to SQLite, database export to PostgreSQL dump, database
+  export to CSV archive, database export to JSON bundle** -> Database file
+  export to other formats.
+- **File compaction advisor, automatic optimization, storage reclamation,
+  post-import optimization** -> Database file compaction advisor.
+- **Schema versioning, semantic version tracking for schemas, versioned
+  migration scripts, migration history** -> Schema versioning and migration
+  scripts.
+- **Git integration for .ddb files, smart diffing for database files,
+  conflict resolution for database files** -> Database file git
+  integration.

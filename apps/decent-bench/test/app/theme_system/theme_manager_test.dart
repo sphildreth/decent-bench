@@ -131,9 +131,9 @@ class _FakeThemeDiscoveryService extends ThemeDiscoveryService {
       },
       resolvedThemesDirectory: '/tmp/themes',
       logs: const <String>[
-        'Skipping /tmp/themes/classic-dark.toml: Theme classic-dark is incompatible with Decent Bench 1.1.0.',
-        'Skipping /tmp/themes/classic-light.toml: Theme classic-light is incompatible with Decent Bench 1.1.0.',
-        'Skipping /tmp/themes/custom.toml: Theme custom is incompatible with Decent Bench 1.1.0.',
+        'Skipping /tmp/themes/classic-dark.toml: Theme classic-dark is incompatible with Decent Bench 2.0.0.',
+        'Skipping /tmp/themes/classic-light.toml: Theme classic-light is incompatible with Decent Bench 2.0.0.',
+        'Skipping /tmp/themes/custom.toml: Theme custom is incompatible with Decent Bench 2.0.0.',
       ],
     );
   }

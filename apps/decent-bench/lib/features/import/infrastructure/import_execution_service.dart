@@ -5,10 +5,17 @@ import 'dart:isolate';
 import 'package:decentdb/decentdb.dart';
 
 import '../../workspace/infrastructure/native_library_resolver.dart';
+import '../domain/import_transform_application.dart';
 import '../domain/import_models.dart';
 import 'delimited_import_support.dart';
+import 'fixed_width_import_support.dart';
+import 'har_import_support.dart';
 import 'html_import_support.dart';
 import 'import_format_registry.dart';
+import 'log_import_support.dart';
+import 'markdown_table_import_support.dart';
+import 'ods_import_support.dart';
+import 'spreadsheetml_import_support.dart';
 import 'structured_import_support.dart';
 import 'type_inference_service.dart';
 
@@ -94,6 +101,13 @@ class ImportExecutionService {
           options: request.options,
           typeInferenceService: _typeInferenceService,
         );
+      case ImportFormatKey.fixedWidth:
+        return materializeFixedWidthSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
       case ImportFormatKey.json:
       case ImportFormatKey.ndjson:
       case ImportFormatKey.xml:
@@ -103,8 +117,50 @@ class ImportExecutionService {
           options: request.options,
           typeInferenceService: _typeInferenceService,
         );
+      case ImportFormatKey.spreadsheetMl:
+        return materializeSpreadsheetMlSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
+      case ImportFormatKey.ods:
+        return materializeOdsSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
       case ImportFormatKey.htmlTable:
         return materializeHtmlTableSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
+      case ImportFormatKey.markdownTable:
+        return materializeMarkdownTableSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
+      case ImportFormatKey.jsonLogStream:
+        return materializeJsonLogStreamSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
+      case ImportFormatKey.delimitedLog:
+        return materializeDelimitedLogSourceSync(
+          sourcePath: request.sourcePath,
+          format: format,
+          options: request.options,
+          typeInferenceService: _typeInferenceService,
+        );
+      case ImportFormatKey.har:
+        return materializeHarSourceSync(
           sourcePath: request.sourcePath,
           format: format,
           options: request.options,
@@ -255,13 +311,19 @@ Future<GenericImportSummary> _runGenericImport({
         'Column names in `${draft.targetName}` must be distinct.',
       );
     }
+    final transformed = applyImportTransformPlan(source: source, draft: draft);
+    warnings.addAll(transformed.warnings);
     resolvedTables.add(
       _ResolvedImportTable(
         sourceId: draft.sourceId,
         sourceName: draft.sourceName,
         targetName: draft.targetName,
-        rows: source.rows,
-        columns: draft.columns,
+        rows: transformed.rows,
+        columns: transformed.columns,
+        sourceColumnTargetMap: <String, String>{
+          for (final column in draft.columns)
+            column.sourceName: column.targetName,
+        },
         primaryKeyTargetColumn: _resolveTargetColumnName(
           draft.columns,
           source.primaryKeySourceColumn,
@@ -562,10 +624,16 @@ _ResolvedImportTable _finalizeResolvedImportTable(
     );
     return table;
   }
-  final parentTargetColumn = _resolveTargetColumnName(
-    parent.columns,
-    pending.parentSourceColumn,
-  );
+  final parentTargetColumn = _resolveTargetColumnName(<ImportColumnDraft>[
+    for (final entry in parent.sourceColumnTargetMap.entries)
+      ImportColumnDraft(
+        sourceName: entry.key,
+        targetName: entry.value,
+        inferredTargetType: '',
+        targetType: '',
+        containsNulls: true,
+      ),
+  ], pending.parentSourceColumn);
   return table.copyWith(
     foreignKey: _ResolvedForeignKey(
       childTargetColumn: pending.childTargetColumn,
@@ -628,6 +696,7 @@ class _ResolvedImportTable {
     required this.targetName,
     required this.rows,
     required this.columns,
+    required this.sourceColumnTargetMap,
     this.primaryKeyTargetColumn,
     this.pendingParentRelation,
     this.foreignKey,
@@ -638,6 +707,7 @@ class _ResolvedImportTable {
   final String targetName;
   final List<Map<String, Object?>> rows;
   final List<ImportColumnDraft> columns;
+  final Map<String, String> sourceColumnTargetMap;
   final String? primaryKeyTargetColumn;
   final _PendingResolvedForeignKey? pendingParentRelation;
   final _ResolvedForeignKey? foreignKey;
@@ -649,6 +719,7 @@ class _ResolvedImportTable {
       targetName: targetName,
       rows: rows,
       columns: columns,
+      sourceColumnTargetMap: sourceColumnTargetMap,
       primaryKeyTargetColumn: primaryKeyTargetColumn,
       pendingParentRelation: pendingParentRelation,
       foreignKey: foreignKey ?? this.foreignKey,

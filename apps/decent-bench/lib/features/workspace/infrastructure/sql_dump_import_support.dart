@@ -104,6 +104,34 @@ SqlDumpMaterializedSource materializeSqlDumpSourceFile(
     final parsed = _tryParseInsertSafely(statements[ordinal], ordinal + 1);
     final insert = parsed?.insert;
     if (insert == null) {
+      final copy = _tryParseCopySafely(statements[ordinal], ordinal + 1);
+      final parsedCopy = copy?.copy;
+      if (parsedCopy == null) {
+        continue;
+      }
+      final tableDraft = selectedBySource[parsedCopy.tableName];
+      if (tableDraft == null) {
+        continue;
+      }
+      final sourceColumns =
+          parsedCopy.columnNames ??
+          <String>[for (final column in tableDraft.columns) column.sourceName];
+      final sourceIndexes = <String, int>{
+        for (var index = 0; index < sourceColumns.length; index++)
+          sourceColumns[index]: index,
+      };
+      for (final row in parsedCopy.rows) {
+        rowsBySource[tableDraft.sourceName]!.add(<String, Object?>{
+          for (final column in tableDraft.columns)
+            column.targetName: _adaptImportValue(
+              sourceIndexes.containsKey(column.sourceName) &&
+                      sourceIndexes[column.sourceName]! < row.length
+                  ? row[sourceIndexes[column.sourceName]!]
+                  : null,
+              column.targetType,
+            ),
+        });
+      }
       continue;
     }
 
@@ -407,6 +435,82 @@ Future<SqlDumpImportSummary> _runSqlDumpImport({
           continue;
         }
 
+        final copy = _tryParseCopySafely(statement, ordinal + 1);
+        if (copy != null) {
+          if (copy.skipped != null) {
+            skippedStatements.add(copy.skipped!);
+            warnings.add(copy.skipped!.reason);
+            continue;
+          }
+          final parsedCopy = copy.copy;
+          if (parsedCopy == null) {
+            continue;
+          }
+          final tableDraft = selectedBySource[parsedCopy.tableName];
+          if (tableDraft == null) {
+            continue;
+          }
+          final prepared = preparedStatements[parsedCopy.tableName];
+          if (prepared == null) {
+            throw BridgeFailure(
+              'Missing prepared import statement for ${parsedCopy.tableName}.',
+            );
+          }
+          final sourceColumns =
+              parsedCopy.columnNames ??
+              <String>[
+                for (final column in tableDraft.columns) column.sourceName,
+              ];
+          final sourceIndexes = <String, int>{
+            for (var i = 0; i < sourceColumns.length; i++) sourceColumns[i]: i,
+          };
+          for (final row in parsedCopy.rows) {
+            _throwIfCancelled(isCancelled);
+            final boundValues = <Object?>[
+              for (final column in tableDraft.columns)
+                _adaptImportValue(
+                  sourceIndexes.containsKey(column.sourceName) &&
+                          sourceIndexes[column.sourceName]! < row.length
+                      ? row[sourceIndexes[column.sourceName]!]
+                      : null,
+                  column.targetType,
+                ),
+            ];
+            prepared.reset();
+            prepared.clearBindings();
+            prepared.bindAll(boundValues);
+            prepared.execute();
+
+            final copied = (rowsCopied[tableDraft.targetName] ?? 0) + 1;
+            rowsCopied[tableDraft.targetName] = copied;
+            if (copied == 1 ||
+                copied % _sqlDumpProgressBatchSize == 0 ||
+                copied == tableDraft.rowCount) {
+              sendUpdate(
+                SqlDumpImportUpdate(
+                  kind: SqlDumpImportUpdateKind.progress,
+                  jobId: request.jobId,
+                  progress: SqlDumpImportProgress(
+                    jobId: request.jobId,
+                    currentTable: tableDraft.targetName,
+                    completedTables: request.selectedTables.indexOf(tableDraft),
+                    totalTables: request.selectedTables.length,
+                    currentTableRowsCopied: copied,
+                    currentTableRowCount: tableDraft.rowCount,
+                    totalRowsCopied: rowsCopied.values.fold<int>(
+                      0,
+                      (sum, value) => sum + value,
+                    ),
+                    message: 'Copying ${tableDraft.targetName}...',
+                  ),
+                ),
+              );
+              await Future<void>.delayed(Duration.zero);
+            }
+          }
+          continue;
+        }
+
         final skipped = _classifySkippedStatement(statement, ordinal + 1);
         if (skipped != null) {
           skippedStatements.add(skipped);
@@ -446,6 +550,8 @@ Future<SqlDumpImportSummary> _runSqlDumpImport({
         // Best-effort rollback for cancellation.
       }
     }
+    target.close();
+    _deleteTargetFiles(request.targetPath);
     final summary = SqlDumpImportSummary(
       jobId: request.jobId,
       sourcePath: request.sourcePath,
@@ -467,6 +573,8 @@ Future<SqlDumpImportSummary> _runSqlDumpImport({
         // Best-effort rollback on failure.
       }
     }
+    target.close();
+    _deleteTargetFiles(request.targetPath);
     rethrow;
   } finally {
     target.close();
@@ -575,6 +683,47 @@ _DumpParseResult _parseDumpText(String text) {
       continue;
     }
 
+    final copy = _tryParseCopySafely(statement, ordinal + 1);
+    if (copy != null) {
+      if (copy.skipped != null) {
+        skippedStatements.add(copy.skipped!);
+        warnings.add(copy.skipped!.reason);
+        continue;
+      }
+      final parsedCopy = copy.copy;
+      if (parsedCopy == null) {
+        continue;
+      }
+      final table = tables[parsedCopy.tableName];
+      if (table == null) {
+        final skipped = SqlDumpImportSkippedStatement(
+          ordinal: ordinal + 1,
+          kind: 'COPY',
+          reason:
+              'Skipping COPY for ${parsedCopy.tableName} because no supported CREATE TABLE was parsed first.',
+          snippet: _statementSnippet(statement),
+        );
+        skippedStatements.add(skipped);
+        warnings.add(skipped.reason);
+        continue;
+      }
+      if (parsedCopy.columnNames != null &&
+          parsedCopy.columnNames!.length != _copyRowWidth(parsedCopy)) {
+        final skipped = SqlDumpImportSkippedStatement(
+          ordinal: ordinal + 1,
+          kind: 'COPY',
+          reason:
+              'Skipping COPY for ${parsedCopy.tableName} because the explicit column list does not match row width.',
+          snippet: _statementSnippet(statement),
+        );
+        skippedStatements.add(skipped);
+        warnings.add(skipped.reason);
+        continue;
+      }
+      table.absorbCopy(parsedCopy);
+      continue;
+    }
+
     final skipped = _classifySkippedStatement(statement, ordinal + 1);
     if (skipped != null) {
       skippedStatements.add(skipped);
@@ -597,6 +746,13 @@ int _rowWidth(_ParsedInsertStatement insert) {
   return insert.rows.first.length;
 }
 
+int _copyRowWidth(_ParsedCopyStatement copy) {
+  if (copy.rows.isEmpty) {
+    return copy.columnNames?.length ?? 0;
+  }
+  return copy.rows.first.length;
+}
+
 _InsertParseResult? _tryParseInsertSafely(String statement, int ordinal) {
   final normalized = statement.trimLeft();
   if (!_startsWithKeyword(normalized, 'INSERT')) {
@@ -616,7 +772,61 @@ _InsertParseResult? _tryParseInsertSafely(String statement, int ordinal) {
   }
 }
 
+_CopyParseResult? _tryParseCopySafely(String statement, int ordinal) {
+  final normalized = statement.trimLeft();
+  if (!_startsWithKeyword(normalized, 'COPY')) {
+    return null;
+  }
+  try {
+    return _CopyParseResult.copy(_tryParseCopy(statement, ordinal)!);
+  } on BridgeFailure catch (error) {
+    return _CopyParseResult.skipped(
+      SqlDumpImportSkippedStatement(
+        ordinal: ordinal,
+        kind: 'COPY',
+        reason: error.message,
+        snippet: _statementSnippet(statement),
+      ),
+    );
+  }
+}
+
 List<String> _splitSqlStatements(String text) {
+  final statements = <String>[];
+  final normalBuffer = <String>[];
+  final lines = const LineSplitter().convert(text);
+  for (var index = 0; index < lines.length; index++) {
+    final line = lines[index];
+    if (_isCopyFromStdinStart(line)) {
+      statements.addAll(_splitNonCopySqlStatements(normalBuffer.join('\n')));
+      normalBuffer.clear();
+      final copyLines = <String>[line];
+      index++;
+      while (index < lines.length) {
+        copyLines.add(lines[index]);
+        if (lines[index].trim() == r'\.') {
+          break;
+        }
+        index++;
+      }
+      statements.add(copyLines.join('\n'));
+      continue;
+    }
+    normalBuffer.add(line);
+  }
+  statements.addAll(_splitNonCopySqlStatements(normalBuffer.join('\n')));
+  return statements;
+}
+
+bool _isCopyFromStdinStart(String line) {
+  final normalized = line.trimLeft();
+  return RegExp(
+    r'^COPY\s+.+\s+FROM\s+stdin\s*;',
+    caseSensitive: false,
+  ).hasMatch(normalized);
+}
+
+List<String> _splitNonCopySqlStatements(String text) {
   final statements = <String>[];
   final buffer = StringBuffer();
   var inSingle = false;
@@ -795,6 +1005,21 @@ _CreateTableParseResult? _tryParseCreateTable(String statement, int ordinal) {
       warnings.add(
         'Skipping index definition on ${tableNameToken.value}: ${_statementSnippet(trimmed)}',
       );
+      continue;
+    }
+    if (upper.startsWith('CONSTRAINT ') && upper.contains('PRIMARY KEY')) {
+      primaryKeyColumns.addAll(_parseKeyColumnNames(trimmed));
+      continue;
+    }
+    if (upper.startsWith('CONSTRAINT ') && upper.contains('UNIQUE')) {
+      final columns = _parseKeyColumnNames(trimmed);
+      if (columns.length == 1) {
+        singleColumnUnique.add(columns.single);
+      } else if (columns.isNotEmpty) {
+        warnings.add(
+          'Skipping multi-column UNIQUE definition on ${tableNameToken.value}: ${columns.join(", ")}.',
+        );
+      }
       continue;
     }
     if (upper.startsWith('CONSTRAINT ') ||
@@ -1003,6 +1228,140 @@ _ParsedInsertStatement? _tryParseInsert(String statement, int ordinal) {
   );
 }
 
+_ParsedCopyStatement? _tryParseCopy(String statement, int ordinal) {
+  final lines = const LineSplitter().convert(statement);
+  if (lines.isEmpty) {
+    return null;
+  }
+  final header = lines.first.trim();
+  if (!_startsWithKeyword(header, 'COPY')) {
+    return null;
+  }
+  if (!RegExp(r'\sFROM\s+stdin\s*;?$', caseSensitive: false).hasMatch(header)) {
+    throw BridgeFailure(
+      'Only PostgreSQL COPY ... FROM stdin statements are supported in SQL dump import.',
+    );
+  }
+
+  var index = 'COPY'.length;
+  while (index < header.length && _isWhitespace(header[index])) {
+    index++;
+  }
+  final tableNameToken = _readQualifiedIdentifier(header, index);
+  if (tableNameToken == null) {
+    throw BridgeFailure(
+      'Failed to parse table name for COPY statement #$ordinal.',
+    );
+  }
+  index = tableNameToken.nextIndex;
+  while (index < header.length && _isWhitespace(header[index])) {
+    index++;
+  }
+
+  List<String>? columnNames;
+  if (index < header.length && header[index] == '(') {
+    final closeIndex = _findMatchingParen(header, index);
+    if (closeIndex == null) {
+      throw BridgeFailure(
+        'Failed to parse explicit column list for COPY statement #$ordinal.',
+      );
+    }
+    final columnList = header.substring(index + 1, closeIndex);
+    columnNames = _splitTopLevel(columnList, delimiter: ',')
+        .map((item) => _unquoteIdentifier(item.trim()))
+        .where((item) => item.isNotEmpty)
+        .toList();
+    index = closeIndex + 1;
+  }
+
+  final suffix = header.substring(index);
+  if (!RegExp(
+    r'^\s+FROM\s+stdin\s*;?$',
+    caseSensitive: false,
+  ).hasMatch(suffix)) {
+    throw BridgeFailure(
+      'Unsupported COPY statement #$ordinal. Only plain COPY ... FROM stdin is supported.',
+    );
+  }
+
+  final rows = <List<Object?>>[];
+  for (var lineIndex = 1; lineIndex < lines.length; lineIndex++) {
+    final line = lines[lineIndex];
+    if (line.trim() == r'\.') {
+      return _ParsedCopyStatement(
+        tableName: tableNameToken.value,
+        columnNames: columnNames,
+        rows: rows,
+      );
+    }
+    rows.add(
+      line
+          .split('\t')
+          .map<Object?>(_decodePostgresCopyTextField)
+          .toList(growable: false),
+    );
+  }
+  throw BridgeFailure('COPY statement #$ordinal did not terminate with `\\.`.');
+}
+
+Object? _decodePostgresCopyTextField(String token) {
+  if (token == r'\N') {
+    return null;
+  }
+  final buffer = StringBuffer();
+  var index = 0;
+  while (index < token.length) {
+    final char = token[index];
+    if (char != r'\') {
+      buffer.write(char);
+      index++;
+      continue;
+    }
+    if (index + 1 >= token.length) {
+      buffer.write(char);
+      index++;
+      continue;
+    }
+    final next = token[index + 1];
+    switch (next) {
+      case 'b':
+        buffer.write('\b');
+        index += 2;
+        break;
+      case 'f':
+        buffer.write('\f');
+        index += 2;
+        break;
+      case 'n':
+        buffer.write('\n');
+        index += 2;
+        break;
+      case 'r':
+        buffer.write('\r');
+        index += 2;
+        break;
+      case 't':
+        buffer.write('\t');
+        index += 2;
+        break;
+      case 'v':
+        buffer.write(String.fromCharCode(0x0b));
+        index += 2;
+        break;
+      case r'\':
+        buffer.write(r'\');
+        index += 2;
+        break;
+      default:
+        buffer.write(next);
+        index += 2;
+        break;
+    }
+  }
+  final value = buffer.toString();
+  return value.isEmpty ? '' : _decodeSqlLiteral(value);
+}
+
 List<List<Object?>> _parseInsertRows(String valuesClause, int ordinal) {
   final rows = <List<Object?>>[];
   var index = 0;
@@ -1143,6 +1502,15 @@ SqlDumpImportSkippedStatement? _classifySkippedStatement(
     kind = 'CREATE VIEW';
   } else if (upper.startsWith('INSERT')) {
     kind = 'INSERT';
+  } else if (upper.startsWith('COPY')) {
+    kind = 'COPY';
+  } else if (upper.startsWith('CREATE SEQUENCE')) {
+    kind = 'CREATE SEQUENCE';
+  } else if (upper.startsWith('ALTER SEQUENCE')) {
+    kind = 'ALTER SEQUENCE';
+  } else if (upper.startsWith('SELECT PG_CATALOG.SETVAL') ||
+      upper.startsWith('SELECT SETVAL')) {
+    kind = 'SETVAL';
   } else {
     final firstSpace = upper.indexOf(' ');
     kind = firstSpace < 0 ? upper : upper.substring(0, firstSpace);
@@ -1187,7 +1555,32 @@ String mapMySqlDeclaredTypeToDecentDb(String declaredType) {
       normalized.contains('CHAR(36)')) {
     return 'UUID';
   }
-  if (normalized.contains('BIGINT') ||
+  if (normalized == 'BYTEA') {
+    return 'BLOB';
+  }
+  if (normalized == 'JSON' ||
+      normalized == 'JSONB' ||
+      normalized == 'XML' ||
+      normalized.endsWith('[]')) {
+    return 'TEXT';
+  }
+  if (normalized.startsWith('ENUM') ||
+      normalized == 'INET' ||
+      normalized == 'IPADDR' ||
+      normalized == 'CIDR' ||
+      normalized == 'TIME' ||
+      normalized.startsWith('TIME(') ||
+      normalized.startsWith('INTERVAL') ||
+      normalized == 'MACADDR' ||
+      normalized == 'MACADDR8' ||
+      normalized == 'GEOMETRY' ||
+      normalized == 'GEOGRAPHY') {
+    return 'TEXT';
+  }
+  if (normalized == 'SERIAL' ||
+      normalized == 'BIGSERIAL' ||
+      normalized == 'SMALLSERIAL' ||
+      normalized.contains('BIGINT') ||
       normalized.contains('SMALLINT') ||
       normalized.contains('TINYINT') ||
       normalized.contains('MEDIUMINT') ||
@@ -1358,6 +1751,27 @@ void _throwIfCancelled(bool Function() isCancelled) {
   }
 }
 
+void _deleteTargetFiles(String targetPath) {
+  final candidates = [
+    targetPath,
+    '$targetPath-wal',
+    '$targetPath-shm',
+    '$targetPath-journal',
+    '$targetPath.coord',
+    '$targetPath.lock',
+  ];
+  for (final path in candidates) {
+    final file = File(path);
+    if (file.existsSync()) {
+      try {
+        file.deleteSync();
+      } catch (_) {
+        // Best-effort cleanup.
+      }
+    }
+  }
+}
+
 bool _startsWithKeyword(String value, String keyword) {
   return value.toUpperCase().startsWith(keyword.toUpperCase());
 }
@@ -1521,6 +1935,25 @@ _IdentifierToken? _readIdentifier(String text, int start) {
     }
     return _IdentifierToken(text.substring(start + 1, end), end + 1);
   }
+  if (text[start] == '"') {
+    final buffer = StringBuffer();
+    var index = start + 1;
+    while (index < text.length) {
+      final char = text[index];
+      final next = index + 1 < text.length ? text[index + 1] : '';
+      if (char == '"' && next == '"') {
+        buffer.write('"');
+        index += 2;
+        continue;
+      }
+      if (char == '"') {
+        return _IdentifierToken(buffer.toString(), index + 1);
+      }
+      buffer.write(char);
+      index++;
+    }
+    return null;
+  }
 
   final match = RegExp(
     r'^[A-Za-z_][A-Za-z0-9_$]*',
@@ -1535,6 +1968,9 @@ String _unquoteIdentifier(String value) {
   final trimmed = value.trim();
   if (trimmed.startsWith('`') && trimmed.endsWith('`') && trimmed.length >= 2) {
     return trimmed.substring(1, trimmed.length - 1);
+  }
+  if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) {
+    return trimmed.substring(1, trimmed.length - 1).replaceAll('""', '"');
   }
   return trimmed;
 }
@@ -1613,6 +2049,21 @@ class _InsertParseResult {
   final SqlDumpImportSkippedStatement? skipped;
 }
 
+class _CopyParseResult {
+  const _CopyParseResult._({this.copy, this.skipped});
+
+  factory _CopyParseResult.copy(_ParsedCopyStatement copy) {
+    return _CopyParseResult._(copy: copy);
+  }
+
+  factory _CopyParseResult.skipped(SqlDumpImportSkippedStatement skipped) {
+    return _CopyParseResult._(skipped: skipped);
+  }
+
+  final _ParsedCopyStatement? copy;
+  final SqlDumpImportSkippedStatement? skipped;
+}
+
 class _ParsedDumpTable {
   _ParsedDumpTable({
     required this.name,
@@ -1628,13 +2079,24 @@ class _ParsedDumpTable {
   int rowCount = 0;
 
   void absorbInsert(_ParsedInsertStatement insert) {
+    absorbRows(columnNames: insert.columnNames, rows: insert.rows);
+  }
+
+  void absorbCopy(_ParsedCopyStatement copy) {
+    absorbRows(columnNames: copy.columnNames, rows: copy.rows);
+  }
+
+  void absorbRows({
+    required List<String>? columnNames,
+    required List<List<Object?>> rows,
+  }) {
     final sourceColumns =
-        insert.columnNames ??
+        columnNames ??
         <String>[for (final column in columns) column.sourceName];
     final sourceIndexes = <String, int>{
       for (var i = 0; i < sourceColumns.length; i++) sourceColumns[i]: i,
     };
-    for (final row in insert.rows) {
+    for (final row in rows) {
       rowCount++;
       if (previewRows.length < _sqlDumpPreviewRowLimit) {
         previewRows.add(<String, Object?>{
@@ -1712,6 +2174,18 @@ class _ParsedDumpColumn {
 
 class _ParsedInsertStatement {
   const _ParsedInsertStatement({
+    required this.tableName,
+    required this.columnNames,
+    required this.rows,
+  });
+
+  final String tableName;
+  final List<String>? columnNames;
+  final List<List<Object?>> rows;
+}
+
+class _ParsedCopyStatement {
+  const _ParsedCopyStatement({
     required this.tableName,
     required this.columnNames,
     required this.rows,

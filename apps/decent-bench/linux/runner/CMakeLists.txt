@@ -10,6 +10,7 @@ add_executable(${BINARY_NAME}
   "flutter_menu_plugin.cc"
   "main.cc"
   "my_application.cc"
+  "window_placement_plugin.cc"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
 )
 
