@@ -4,6 +4,18 @@ This file records notable project changes. It follows the
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format and uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-06-21 (Upcoming)
+
+### Added
+
+- **Parquet Export:** Streaming cursor-based export to Parquet format (.parquet) with schema fingerprint preservation and progress indicator
+- **Excel Export Enhancement:** Enhanced Office Open XML writer for .xlsx result export with native type metadata preservation
+- **Column Reordering:** Drag-and-drop column reordering in results grid with persistent per-tab state and reset-to-default functionality
+
+### Changed
+
+- Updated export feature set to include Parquet format (previously deferred to "Next" in v1.0.0 MVP)
+
 ## [2.0.0] - 2026-05-30
 
 ### Added
