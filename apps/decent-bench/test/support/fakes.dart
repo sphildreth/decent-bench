@@ -260,6 +260,9 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
       SchemaObjectSummary(
         name: 'tasks',
         kind: SchemaObjectKind.table,
+        rowCount: 42,
+        primaryKeyColumns: const <String>['id'],
+        foreignKeys: const <SchemaForeignKey>[],
         ddl:
             'CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, CHECK (length(title) > 0));',
         checks: const <SchemaCheckConstraint>[
@@ -272,6 +275,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
             notNull: true,
             unique: true,
             primaryKey: true,
+            autoIncrement: true,
             refTable: null,
             refColumn: null,
             refOnDelete: null,
@@ -293,6 +297,8 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
       SchemaObjectSummary(
         name: 'active_tasks',
         kind: SchemaObjectKind.view,
+        sqlText: 'SELECT id, title FROM tasks',
+        viewDependencies: const <String>['tasks'],
         ddl: 'CREATE VIEW active_tasks AS SELECT id, title FROM tasks;',
         columns: const <SchemaColumn>[
           SchemaColumn(
@@ -325,8 +331,10 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
         name: 'idx_tasks_title',
         table: 'tasks',
         columns: <String>['title'],
+        includeColumns: <String>[],
         unique: false,
         kind: 'btree',
+        fresh: true,
         ddl: 'CREATE INDEX idx_tasks_title ON tasks (title);',
       ),
     ],
@@ -349,7 +357,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   );
   ToolingMetadata toolingMetadata = const ToolingMetadata(
     metadataVersion: 1,
-    engineVersion: '2.8.0',
+    engineVersion: '2.14.0',
     databaseFormatVersion: 8,
     schemaCookie: 1,
     tempSchemaCookie: 0,
@@ -606,6 +614,23 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
     lastExportPath = path;
     lastExcelIncludeHeaders = includeHeaders;
     return ExcelExportResult(rowCount: 2, path: path);
+  }
+
+  @override
+  Future<ParquetExportResult> exportParquet({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    bool includeSchemaFingerprint = true,
+    Duration? timeout,
+  }) async {
+    lastExportPath = path;
+    return ParquetExportResult(
+      rowCount: 2,
+      path: path,
+      schemaFingerprint: includeSchemaFingerprint ? 'schema_fp_123' : null,
+    );
   }
 
   @override

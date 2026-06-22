@@ -816,6 +816,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           MapEntry('Indexes', '${indexes.length}'),
           MapEntry('Triggers', '${triggers.length}'),
           MapEntry('Temporary', object.temporary ? 'Yes' : 'No'),
+          if (object.isTable && object.rowCount != null)
+            MapEntry('Rows', '${object.rowCount}'),
+          if (object.isTable &&
+              object.primaryKeyColumns.isNotEmpty)
+            MapEntry('Primary key', object.primaryKeyColumns.join(', ')),
+          if (object.isTable && object.foreignKeys.isNotEmpty)
+            MapEntry('Foreign keys', '${object.foreignKeys.length}'),
+          if (object.isView && object.viewDependencies.isNotEmpty)
+            MapEntry('Depends on', object.viewDependencies.join(', ')),
           MapEntry(
             'Definition',
             object.ddl == null || object.ddl!.trim().isEmpty
@@ -827,6 +836,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           ...object.exposedConstraintSummaries,
           for (final trigger in triggers)
             'Trigger ${trigger.name}: ${trigger.timing.toUpperCase()} ${trigger.events.join(", ")}',
+          if (object.isView &&
+              object.sqlText != null &&
+              object.sqlText!.trim().isNotEmpty)
+            'SQL text: ${object.sqlText}',
           ...controller.schemaNotesForObject(object),
         ],
       );
@@ -849,10 +862,18 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               MapEntry('Unique', index.unique ? 'Yes' : 'No'),
               MapEntry('Temporary', index.temporary ? 'Yes' : 'No'),
               MapEntry('Columns', index.columns.join(', ')),
+              if (index.includeColumns.isNotEmpty)
+                MapEntry(
+                  'Includes',
+                  index.includeColumns.join(', '),
+                ),
+              MapEntry('Fresh', index.fresh ? 'Yes' : 'No'),
               if (index.predicateSql != null && index.predicateSql!.isNotEmpty)
                 MapEntry('Predicate', index.predicateSql!),
             ],
             notes: <String>[
+              if (!index.fresh)
+                'Index needs rebuild — call ALTER INDEX ... REBUILD.',
               if (index.ddl == null || index.ddl!.trim().isEmpty)
                 'Canonical index DDL is unavailable for this index.',
             ],

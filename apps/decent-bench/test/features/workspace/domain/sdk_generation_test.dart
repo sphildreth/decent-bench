@@ -85,7 +85,7 @@ void main() {
     ]);
     expect(ir.savedQueries.single.typescriptName, 'ActiveAccounts');
     expect(ir.savedQueries.single.warnings, isEmpty);
-    expect(source, contains("export const engineVersion = '2.8.0';"));
+    expect(source, contains("export const engineVersion = '2.14.0';"));
     expect(source, contains('export interface AccountsRow {'));
     expect(source, contains('id: number;'));
     expect(source, contains("status?: 'active' | 'paused' | null;"));
@@ -228,7 +228,7 @@ SchemaSnapshot _schema() {
 ToolingMetadata _metadata({required String fingerprint}) {
   return ToolingMetadata(
     metadataVersion: 1,
-    engineVersion: '2.8.0',
+    engineVersion: '2.14.0',
     databaseFormatVersion: 8,
     schemaCookie: 1,
     tempSchemaCookie: 0,

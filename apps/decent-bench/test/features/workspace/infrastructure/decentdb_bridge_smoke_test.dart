@@ -1342,7 +1342,7 @@ ORDER BY dept
     });
 
     test(
-      'exercises v2.8.0 default-fast prepared INSERT, COUNT(*), and integer PK '
+      'exercises v2.14.0 default-fast prepared INSERT, COUNT(*), and integer PK '
       'projection lookup',
       skip: skipReason,
       () async {
@@ -1373,7 +1373,7 @@ ORDER BY dept
     );
 
     test(
-      'exercises v2.8.0 covering-index INCLUDE projection reads',
+      'exercises v2.14.0 covering-index INCLUDE projection reads',
       skip: skipReason,
       () async {
         await exec(
@@ -1395,7 +1395,7 @@ ORDER BY dept
     );
 
     test(
-      'reports v2.8.0 storage split (database vs WAL) metadata',
+      'reports v2.14.0 storage split (database vs WAL) metadata',
       skip: skipReason,
       () async {
         final metrics = await bridge.loadOperationalMetrics();

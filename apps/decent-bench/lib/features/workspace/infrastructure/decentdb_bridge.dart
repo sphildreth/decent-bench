@@ -83,6 +83,14 @@ abstract class ExportGateway {
     required bool includeHeaders,
     Duration? timeout,
   });
+  Future<ParquetExportResult> exportParquet({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    bool includeSchemaFingerprint = true,
+    Duration? timeout,
+  });
 }
 
 abstract class ImportGateway {
@@ -391,6 +399,28 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       'includeHeaders': includeHeaders,
     }, timeout);
     return ExcelExportResult.fromMap(data);
+  }
+
+  @override
+  Future<ParquetExportResult> exportParquet({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    bool includeSchemaFingerprint = true,
+    Duration? timeout,
+  }) async {
+    // TODO: Implement Parquet export when apache-arrow or parquet dependency is available.
+    // 
+    // Implementation follows the same pattern as exportExcel:
+    // 1. Execute query and get cursor
+    // 2. Consume pages incrementally via cursor
+    // 3. Write to Parquet file using streaming API
+    // 4. Return result with statistics
+    
+    throw UnimplementedError(
+      'Parquet export is not yet implemented. See ADR-0031 for dependency strategy.',
+    );
   }
 
   @override
@@ -1002,6 +1032,9 @@ class _BridgeWorkerState {
           'kind': 'table',
           'temporary': table.temporary,
           'ddl': table.ddl,
+          'rowCount': table.rowCount,
+          'primaryKeyColumns': table.primaryKeyColumns,
+          'foreignKeys': _serializeForeignKeys(table.foreignKeys),
           'columns': _serializeTableColumns(table),
           'checks': _serializeChecks(_allTableChecks(table)),
         },
@@ -1011,6 +1044,8 @@ class _BridgeWorkerState {
           'kind': 'view',
           'temporary': view.temporary,
           'ddl': view.ddl,
+          'sqlText': view.sqlText,
+          'viewDependencies': view.dependencies,
           'columns': _serializeViewColumns(view.columnNames),
         },
     ];
@@ -1032,10 +1067,12 @@ class _BridgeWorkerState {
             'name': index.name,
             'table': index.tableName,
             'columns': index.columns,
+            'includeColumns': index.includeColumns,
             'unique': index.unique,
             'kind': index.kind,
             'temporary': index.temporary,
             'predicateSql': index.predicateSql,
+            'fresh': index.fresh,
             'ddl': index.ddl,
           },
       ],
@@ -1835,7 +1872,21 @@ BridgeFailure _bridgeFailureFromError(Object error) {
     return error;
   }
   if (error is DecentDbException) {
-    return BridgeFailure(error.message, code: _decentDbErrorCodeName(error));
+    return _bridgeFailureFromDecentDbException(error);
+  }
+  if (error is DecentDbAbiMismatchException) {
+    return BridgeFailure(
+      error.toString(),
+      code: 'DDB_ERR_ABI_MISMATCH',
+      permanent: true,
+    );
+  }
+  if (error is DecentDbNativeLoadException) {
+    return BridgeFailure(
+      error.toString(),
+      code: 'DDB_ERR_NATIVE_LOAD',
+      permanent: true,
+    );
   }
   final message = error.toString();
   final unknownCodeMatch = RegExp(
@@ -1852,6 +1903,18 @@ BridgeFailure _bridgeFailureFromError(Object error) {
     return parsed;
   }
   return BridgeFailure(message);
+}
+
+BridgeFailure _bridgeFailureFromDecentDbException(DecentDbException error) {
+  final diagnostic = error.diagnostic;
+  return BridgeFailure(
+    error.message,
+    code: _decentDbErrorCodeName(error),
+    subcode: diagnostic?.subcode ?? error.subcode,
+    retryable: diagnostic?.retryable ?? error.retryable ?? false,
+    permanent: diagnostic?.permanent ?? error.permanent ?? false,
+    sqlstate: diagnostic?.sqlstate ?? error.sqlstate,
+  );
 }
 
 BridgeFailure? _tryParseDiagnosticJson(String raw) {
@@ -2572,6 +2635,7 @@ List<Map<String, Object?>> _serializeTableColumns(SchemaTableInfo table) {
       'notNull': !column.nullable,
       'unique': column.unique,
       'primaryKey': column.primaryKey,
+      'autoIncrement': column.autoIncrement,
       'defaultExpr': column.defaultSql,
       'generatedExpr': column.generatedSql,
       'generatedStored': column.generatedStored,
@@ -2582,6 +2646,20 @@ List<Map<String, Object?>> _serializeTableColumns(SchemaTableInfo table) {
     });
   }
   return serialized;
+}
+
+List<Map<String, Object?>> _serializeForeignKeys(List<ForeignKeyInfo> foreignKeys) {
+  return <Map<String, Object?>>[
+    for (final foreignKey in foreignKeys)
+      <String, Object?>{
+        'name': foreignKey.name,
+        'columns': foreignKey.columns,
+        'referencedTable': foreignKey.referencedTable,
+        'referencedColumns': foreignKey.referencedColumns,
+        'onDelete': foreignKey.onDelete,
+        'onUpdate': foreignKey.onUpdate,
+      },
+  ];
 }
 
 ForeignKeyInfo? _foreignKeyForColumn(

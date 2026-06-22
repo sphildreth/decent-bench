@@ -4,17 +4,35 @@ This file records notable project changes. It follows the
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format and uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.1.0] - 2026-06-21 (Upcoming)
+## [2.1.0] - 2026-06-22 (Upcoming)
 
 ### Added
 
 - **Parquet Export:** Streaming cursor-based export to Parquet format (.parquet) with schema fingerprint preservation and progress indicator
 - **Excel Export Enhancement:** Enhanced Office Open XML writer for .xlsx result export with native type metadata preservation
 - **Column Reordering:** Drag-and-drop column reordering in results grid with persistent per-tab state and reset-to-default functionality
+- **Schema browser metadata parity with DecentDB v2.14.0:** Schema browser now surfaces
+  fields that the binding has always exposed but the bridge was previously dropping:
+  table row counts, primary-key column lists, full foreign-key definitions (including
+  composite multi-column FKs), view `sqlText` and view dependency lists, covering
+  index `INCLUDE (...)` columns, index freshness flags, and per-column `autoIncrement`.
+  See ADR-0058.
+- **Structured DecentDB error diagnostics:** `BridgeFailure` now extracts
+  `subcode`, `retryable`, `permanent`, `sqlstate`, and `docAnchor` directly from
+  `DecentDbException.diagnostic`, and translates `DecentDbAbiMismatchException`
+  to `DDB_ERR_ABI_MISMATCH` and `DecentDbNativeLoadException` to
+  `DDB_ERR_NATIVE_LOAD`. See ADR-0059.
 
 ### Changed
 
 - Updated export feature set to include Parquet format (previously deferred to "Next" in v1.0.0 MVP)
+- **Bumped pinned DecentDB Dart binding/runtime dependency from v2.8.0 to v2.14.0**
+  (commit `e12a9df7`). The DecentDB Dart binding's public surface is unchanged
+  across v2.8.0 → v2.14.0, so this is a drop-in ref bump; the v2.9–v2.14
+  engine changes are performance and executor improvements that flow through
+  automatically. v2.14.0 staging assets for Linux, macOS, and Windows are
+  published on the upstream GitHub releases and consumed by
+  `DecentDbNativeReleaseAsset`.
 
 ## [2.0.0] - 2026-05-30
 
@@ -320,7 +338,8 @@ are documented here for traceability:
   metadata, bundled theme compatibility ranges, and project documentation with
   that release line.
 
-[unreleased]: https://github.com/sphildreth/decent-bench/compare/v2.0.0...HEAD
+[unreleased]: https://github.com/sphildreth/decent-bench/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/sphildreth/decent-bench/releases/tag/v2.1.0
 [2.0.0]: https://github.com/sphildreth/decent-bench/releases/tag/v2.0.0
 [1.1.0]: https://github.com/sphildreth/decent-bench/releases/tag/v1.1.0
 [1.0.0]: https://github.com/sphildreth/decent-bench/releases/tag/v1.0.0

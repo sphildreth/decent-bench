@@ -44,7 +44,7 @@ void main() {
         databasePath: '/tmp/test.ddb',
         rowCount: 100,
         details: <String, Object?>{
-          'engine_version': '2.8.0',
+          'engine_version': '2.14.0',
           'schema_tables': 5,
         },
       );
@@ -55,7 +55,7 @@ void main() {
       expect(content, contains('"@mt":"Opened database successfully."'));
       expect(content, contains('"databasePath":"/tmp/test.ddb"'));
       expect(content, contains('"rowCount":100'));
-      expect(content, contains('"engine_version":"2.8.0"'));
+      expect(content, contains('"engine_version":"2.14.0"'));
       expect(content, contains('"schema_tables":5'));
       expect(content, contains('"@l":"Information"'));
     });

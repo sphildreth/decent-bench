@@ -791,6 +791,9 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
     if (column.primaryKey) {
       parts.add('PK');
     }
+    if (column.autoIncrement) {
+      parts.add('AUTOINCREMENT');
+    }
     if (column.notNull) {
       parts.add('NOT NULL');
     }

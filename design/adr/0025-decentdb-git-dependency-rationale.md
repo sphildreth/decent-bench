@@ -12,8 +12,13 @@ decentdb:
   git:
     url: https://github.com/sphildreth/decentdb
     path: bindings/dart/dart
-    ref: v2.6.0
+    ref: v2.14.0
 ```
+
+This ADR documents the dependency strategy, not the pinned version. The
+current pinned ref lives in `apps/decent-bench/pubspec.yaml` and is locked in
+`apps/decent-bench/pubspec.lock`. Bumping the ref within the `v2.x`
+compatibility line does not require an ADR update; cross-line upgrades do.
 
 ### Rationale
 

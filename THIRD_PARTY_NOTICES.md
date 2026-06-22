@@ -7,7 +7,7 @@ Apache 2.0 distribution. This file tracks attributions and license details.
 
 - `decentdb`
   - Version/source: Git dependency from `https://github.com/sphildreth/decentdb`,
-    path `bindings/dart/dart`, ref `v2.8.0`
+    path `bindings/dart/dart`, ref `v2.14.0`
   - License: Apache License 2.0
   - Upstream project: `https://github.com/sphildreth/decentdb`
 
@@ -21,7 +21,7 @@ Apache 2.0 distribution. This file tracks attributions and license details.
   - Copyright: Brendan Duncan
   - Source: `https://pub.dev/packages/archive`
 
-- `crypto` `3.0.6`
+- `crypto` `3.0.7`
   - License: MIT
   - Copyright: Dart project authors
   - Source: `https://pub.dev/packages/crypto`
@@ -51,7 +51,7 @@ Apache 2.0 distribution. This file tracks attributions and license details.
   - Copyright: Brendan Duncan
   - Source: `https://pub.dev/packages/image`
 
-- `sqlite3` `3.1.7`
+- `sqlite3` `3.3.3`
   - License: MIT
   - Copyright: Simon Binder
   - Source: `https://pub.dev/packages/sqlite3`

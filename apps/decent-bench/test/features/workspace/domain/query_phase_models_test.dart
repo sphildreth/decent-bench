@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('BridgeFailure', () {
-    test('carries structured diagnostic fields from v2.8.0', () {
+    test('carries structured diagnostic fields from v2.14.0', () {
       const failure = BridgeFailure(
         'syntax error near "SELCT"',
         code: 'DDB_ERR_SQL',
