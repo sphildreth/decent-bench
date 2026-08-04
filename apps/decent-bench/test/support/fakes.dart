@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'decentdb_test_constants.dart';
+
 import 'package:decent_bench/app/logging/app_logger.dart';
 import 'package:decent_bench/features/workspace/domain/app_config.dart';
 import 'package:decent_bench/features/workspace/domain/excel_import_models.dart';
@@ -220,6 +222,10 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   String? lastBranchQueryBranchName;
   String? lastBranchDiffLeftRef;
   String? lastBranchDiffRightRef;
+  String? lastSaveAsDestPath;
+  String? lastEvictSharedWalPath;
+  int saveAsCount = 0;
+  int evictSharedWalCount = 0;
   String? lastRestoreBranchName;
   String? lastRestoreTargetRef;
   bool? lastRestoreDryRun;
@@ -357,7 +363,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   );
   ToolingMetadata toolingMetadata = const ToolingMetadata(
     metadataVersion: 1,
-    engineVersion: '2.14.0',
+    engineVersion: expectedDecentDbVersion,
     databaseFormatVersion: 8,
     schemaCookie: 1,
     tempSchemaCookie: 0,
@@ -966,6 +972,7 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   Future<DatabaseSession> openDatabase(
     String path, {
     WriteQueueSettings? writeQueue,
+    DatabaseOpenSettings? databaseOpen,
   }) async {
     lastWriteQueueSettings = writeQueue;
     final error = openDatabaseError;
@@ -985,6 +992,18 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
     int maxRows = 20,
   }) async {
     return OperationalMetricsSnapshot.empty();
+  }
+
+  @override
+  Future<void> saveAs(String destPath) async {
+    lastSaveAsDestPath = destPath;
+    saveAsCount++;
+  }
+
+  @override
+  Future<void> evictSharedWal(String path) async {
+    lastEvictSharedWalPath = path;
+    evictSharedWalCount++;
   }
 
   @override

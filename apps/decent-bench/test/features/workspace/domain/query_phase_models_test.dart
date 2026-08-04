@@ -1,9 +1,11 @@
 import 'package:decent_bench/features/workspace/domain/query_phase_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../../support/decentdb_test_constants.dart';
+
 void main() {
   group('BridgeFailure', () {
-    test('carries structured diagnostic fields from v2.14.0', () {
+    test('carries structured diagnostic fields from $expectedDecentDbVersion', () {
       const failure = BridgeFailure(
         'syntax error near "SELCT"',
         code: 'DDB_ERR_SQL',

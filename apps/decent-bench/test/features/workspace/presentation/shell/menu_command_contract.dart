@@ -584,6 +584,15 @@ const List<MenuContractEntry> kMenuCommandContract = <MenuContractEntry>[
     icon: Icons.monitor_heart_outlined,
   ),
   MenuContractEntry(
+    commandId: 'tools_database_doctor',
+    label: 'Database Doctor',
+    topLevelMenu: 'Tools',
+    behavior: MenuContractBehavior.implemented,
+    enabledWithOpenDatabase: true,
+    enabledWithoutOpenDatabase: false,
+    icon: Icons.medical_services_outlined,
+  ),
+  MenuContractEntry(
     commandId: 'tools_open_web_console',
     label: 'Open Web Console',
     topLevelMenu: 'Tools',

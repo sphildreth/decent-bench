@@ -23,6 +23,7 @@ import '../infrastructure/app_config_store.dart';
 import '../infrastructure/data_quality_repository.dart';
 import '../infrastructure/data_quality_runner.dart';
 import '../infrastructure/decentdb_bridge.dart';
+import '../infrastructure/decentdb_doctor_service.dart';
 import '../infrastructure/layout_persistence_service.dart';
 import '../infrastructure/saved_query_library_store.dart';
 import '../infrastructure/workspace_state_store.dart';
@@ -302,6 +303,7 @@ class WorkspaceController extends ChangeNotifier {
       final session = await _gateway.openDatabase(
         normalized,
         writeQueue: config.writeQueue,
+        databaseOpen: config.databaseOpen,
       );
       databasePath = session.path;
       engineVersion = session.engineVersion;
@@ -4910,6 +4912,14 @@ class WorkspaceController extends ChangeNotifier {
     if (next.writeQueue.maxGroupDelayUs < 0) {
       return 'Write queue group delay cannot be negative.';
     }
+    if (!kDatabaseProfiles.contains(next.databaseOpen.profile)) {
+      return 'Database profile must be one of: ${kDatabaseProfiles.join(', ')}.';
+    }
+    if (next.databaseOpen.planCacheMaxBytes != null &&
+        next.databaseOpen.planCacheMaxBytes! <= 0) {
+      return 'Plan cache size must be a positive integer.';
+    }
+
 
     final snippetIds = <String>{};
     final snippetTriggers = <String>{};
@@ -4935,6 +4945,150 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     return null;
+  }
+
+  /// Flushes the engine plan cache by issuing `PRAGMA flush_plan_cache` on the
+  /// open database. Returns `false` if no database is open.
+  Future<bool> flushPlanCache() async {
+    if (databasePath == null || databasePath!.isEmpty) {
+      workspaceMessage = 'No database is open; plan cache not flushed.';
+      _safeNotify();
+      return false;
+    }
+    try {
+      await _gateway.runQuery(
+        sql: 'PRAGMA flush_plan_cache',
+        params: const <Object?>[],
+        pageSize: 1,
+      );
+      workspaceMessage = 'Plan cache flushed.';
+      workspaceError = null;
+      _safeNotify();
+      return true;
+    } catch (error) {
+      _setWorkspaceError('Failed to flush plan cache: $error');
+      return false;
+    }
+  }
+
+  /// Issues `ANALYZE` on the open database to refresh persisted statistics
+  /// the planner uses for cost estimates. Pass an explicit [tableName] to
+  /// collect stats for a single table; omit it to analyze every table.
+  Future<bool> runAnalyze({String? tableName}) async {
+    if (databasePath == null || databasePath!.isEmpty) {
+      workspaceMessage = 'No database is open; nothing to analyze.';
+      _safeNotify();
+      return false;
+    }
+    final trimmed = tableName?.trim() ?? '';
+    final sql = trimmed.isEmpty ? 'ANALYZE' : 'ANALYZE "$trimmed"';
+    try {
+      await _gateway.runQuery(
+        sql: sql,
+        params: const <Object?>[],
+        pageSize: 1,
+      );
+      workspaceMessage = trimmed.isEmpty
+          ? 'Analyzed all tables. Statistics refreshed.'
+          : 'Analyzed $trimmed. Statistics refreshed.';
+      workspaceError = null;
+      _safeNotify();
+      return true;
+    } catch (error) {
+      _setWorkspaceError('Failed to run ANALYZE: $error');
+      return false;
+    }
+  }
+
+  /// Compact-copy the open database to [destPath] via the engine's
+  /// `saveAs` ABI. The current handle stays open. The destination file
+  /// will be a clean v2.17-format copy suitable for archival or transfer.
+  Future<bool> saveAs(String destPath) async {
+    final trimmed = destPath.trim();
+    if (trimmed.isEmpty) {
+      _setWorkspaceError('Choose a destination path for the compact copy.');
+      return false;
+    }
+    if (databasePath == null || databasePath!.isEmpty) {
+      _setWorkspaceError('No database is open.');
+      return false;
+    }
+    try {
+      await _gateway.saveAs(trimmed);
+      workspaceMessage = 'Wrote compact copy to ${p.basename(trimmed)}.';
+      workspaceError = null;
+      _safeNotify();
+      return true;
+    } catch (error) {
+      _setWorkspaceError('saveAs failed: $error');
+      return false;
+    }
+  }
+
+  /// Evict the shared WAL cache entry for [path]. The caller must
+  /// guarantee that all handles for that path are closed before this
+  /// runs — the engine documents that this call is unsafe with open
+  /// handles. Returns false if invoked while the workspace is open.
+  Future<bool> evictSharedWal(String path) async {
+    if (databasePath != null &&
+        databasePath!.isNotEmpty &&
+        path == databasePath) {
+      _setWorkspaceError(
+          'Cannot evict shared WAL while the workspace is open. Close the '
+          'workspace first.');
+      return false;
+    }
+    try {
+      await _gateway.evictSharedWal(path);
+      workspaceMessage =
+          'Evicted shared WAL entry for ${p.basename(path)}.';
+      workspaceError = null;
+      _safeNotify();
+      return true;
+    } catch (error) {
+      _setWorkspaceError('evictSharedWal failed: $error');
+      return false;
+    }
+  }
+
+  /// Runs the DecentDB doctor over the open database. Returns a report
+  /// via the supplied service. The controller does not own the service
+  /// itself — callers (UI / tests) inject it. This keeps the controller
+  /// testable without spinning up a CLI process.
+  Future<DecentDbDoctorReport> runDatabaseDoctor({
+    required DecentDbDoctorService service,
+    List<String> checks = const <String>[],
+    bool verifyAllIndexes = false,
+    List<String> verifyIndexes = const <String>[],
+    int? maxIndexVerify,
+  }) async {
+    final path = databasePath;
+    if (path == null || path.isEmpty) {
+      throw const DecentDbDoctorFailure(
+        message: 'No database is open.',
+        cliPath: '',
+        arguments: <String>[],
+        exitCode: -1,
+        stdoutText: '',
+        stderrText: '',
+      );
+    }
+    return service.runDoctor(
+      databasePath: path,
+      checks: checks,
+      verifyAllIndexes: verifyAllIndexes,
+      verifyIndexes: verifyIndexes,
+      maxIndexVerify: maxIndexVerify,
+    );
+  }
+
+  Future<List<Map<String, Object?>>> querySysView(String sql) async {
+    final page = await _gateway.runQuery(
+      sql: sql,
+      params: const <Object?>[],
+      pageSize: 200,
+    );
+    return page.rows;
   }
 
   Future<void> _persistConfig([String? statusMessage]) async {

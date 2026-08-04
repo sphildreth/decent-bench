@@ -6,6 +6,7 @@ export 'logging_settings_model.dart';
 export 'write_queue_settings_model.dart';
 export 'appearance_settings_model.dart';
 export 'window_placement_model.dart';
+export 'database_open_settings_model.dart';
 
 import 'sql_snippet_model.dart';
 import 'editor_settings_model.dart';
@@ -13,6 +14,7 @@ import 'logging_settings_model.dart';
 import 'write_queue_settings_model.dart';
 import 'appearance_settings_model.dart';
 import 'window_placement_model.dart';
+import 'database_open_settings_model.dart';
 import 'workspace_shell_preferences.dart';
 
 class AppConfig {
@@ -30,6 +32,7 @@ class AppConfig {
     required this.appearance,
     required this.logging,
     required this.writeQueue,
+    required this.databaseOpen,
     required this.recentFiles,
     required this.defaultPageSize,
     required this.queryHistoryLimit,
@@ -47,6 +50,7 @@ class AppConfig {
   final AppearanceSettings appearance;
   final LoggingSettings logging;
   final WriteQueueSettings writeQueue;
+  final DatabaseOpenSettings databaseOpen;
   final List<String> recentFiles;
   final int defaultPageSize;
   final int queryHistoryLimit;
@@ -65,6 +69,7 @@ class AppConfig {
       appearance: AppearanceSettings.defaults(),
       logging: LoggingSettings.defaults(),
       writeQueue: WriteQueueSettings.defaults(),
+      databaseOpen: DatabaseOpenSettings.defaults(),
       recentFiles: const <String>[],
       defaultPageSize: defaultPageSizeValue,
       queryHistoryLimit: defaultQueryHistoryLimitValue,
@@ -84,6 +89,7 @@ class AppConfig {
     AppearanceSettings? appearance,
     LoggingSettings? logging,
     WriteQueueSettings? writeQueue,
+    DatabaseOpenSettings? databaseOpen,
     List<String>? recentFiles,
     int? defaultPageSize,
     int? queryHistoryLimit,
@@ -101,6 +107,7 @@ class AppConfig {
       appearance: appearance ?? this.appearance,
       logging: logging ?? this.logging,
       writeQueue: writeQueue ?? this.writeQueue,
+      databaseOpen: databaseOpen ?? this.databaseOpen,
       recentFiles: recentFiles ?? this.recentFiles,
       defaultPageSize: defaultPageSize ?? this.defaultPageSize,
       queryHistoryLimit: queryHistoryLimit ?? this.queryHistoryLimit,
@@ -186,7 +193,14 @@ class AppConfig {
       ..writeln('capacity = ${writeQueue.capacity}')
       ..writeln('default_timeout_ms = ${writeQueue.defaultTimeoutMs}')
       ..writeln('max_batch = ${writeQueue.maxBatch}')
-      ..writeln('max_group_delay_us = ${writeQueue.maxGroupDelayUs}');
+      ..writeln('max_group_delay_us = ${writeQueue.maxGroupDelayUs}')
+      ..writeln()
+      ..writeln('[database_open]')
+      ..writeln('profile = ${jsonEncode(databaseOpen.profile)}')
+      ..writeln('plan_cache_enabled = ${databaseOpen.planCacheEnabled}');
+    if (databaseOpen.planCacheMaxBytes != null) {
+      buffer.writeln('plan_cache_max_bytes = ${databaseOpen.planCacheMaxBytes}');
+    }
 
     final window = windowPlacement?.normalized();
     if (window != null) {
@@ -409,6 +423,37 @@ class AppConfig {
           if (parsed != null && parsed >= 0) {
             config = config.copyWith(
               writeQueue: config.writeQueue.copyWith(maxGroupDelayUs: parsed),
+            );
+          }
+          break;
+        case 'database_open.profile':
+          final parsed = _decodeJsonString(value);
+          if (parsed != null &&
+              kDatabaseProfiles.contains(parsed.trim().toLowerCase())) {
+            config = config.copyWith(
+              databaseOpen: config.databaseOpen.copyWith(
+                profile: parsed.trim().toLowerCase(),
+              ),
+            );
+          }
+          break;
+        case 'database_open.plan_cache_enabled':
+          final parsed = _parseBool(value);
+          if (parsed != null) {
+            config = config.copyWith(
+              databaseOpen: config.databaseOpen.copyWith(
+                planCacheEnabled: parsed,
+              ),
+            );
+          }
+          break;
+        case 'database_open.plan_cache_max_bytes':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed > 0) {
+            config = config.copyWith(
+              databaseOpen: config.databaseOpen.copyWith(
+                planCacheMaxBytes: parsed,
+              ),
             );
           }
           break;

@@ -4,6 +4,8 @@ import 'package:decent_bench/app/logging/app_logger.dart';
 import 'package:decent_bench/features/workspace/domain/app_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../support/decentdb_test_constants.dart';
+
 void main() {
   group('ClefAppLogger', () {
     late Directory tempDir;
@@ -44,7 +46,7 @@ void main() {
         databasePath: '/tmp/test.ddb',
         rowCount: 100,
         details: <String, Object?>{
-          'engine_version': '2.14.0',
+          'engine_version': expectedDecentDbVersion,
           'schema_tables': 5,
         },
       );
@@ -55,7 +57,7 @@ void main() {
       expect(content, contains('"@mt":"Opened database successfully."'));
       expect(content, contains('"databasePath":"/tmp/test.ddb"'));
       expect(content, contains('"rowCount":100'));
-      expect(content, contains('"engine_version":"2.14.0"'));
+      expect(content, contains('"engine_version":"$expectedDecentDbVersion"'));
       expect(content, contains('"schema_tables":5'));
       expect(content, contains('"@l":"Information"'));
     });

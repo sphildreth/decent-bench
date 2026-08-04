@@ -26,6 +26,28 @@ class DecentDbMigrationResult {
   final Duration elapsed;
 }
 
+class DecentDbInPlaceMigrationResult {
+  const DecentDbInPlaceMigrationResult({
+    required this.originalPath,
+    required this.backupPath,
+    required this.finalPath,
+    required this.carryForwardSidecars,
+    required this.toolPath,
+    required this.stdoutText,
+    required this.stderrText,
+    required this.elapsed,
+  });
+
+  final String originalPath;
+  final String backupPath;
+  final String finalPath;
+  final List<String> carryForwardSidecars;
+  final String toolPath;
+  final String stdoutText;
+  final String stderrText;
+  final Duration elapsed;
+}
+
 class DecentDbMigrationFailure implements Exception {
   const DecentDbMigrationFailure({
     required this.message,
@@ -182,6 +204,247 @@ class DecentDbMigrationService {
       stderrText: stderrText,
       elapsed: stopwatch.elapsed,
     );
+  }
+
+  static const String _inPlaceBackupSuffix = '.v13.bak';
+
+  static const List<String> _carryForwardSidecarSuffixes = <String>[
+    '.wal',
+    '.sync-journal',
+  ];
+
+  static const List<String> _rebuildableSidecarSuffixes = <String>[
+    '.coord',
+  ];
+
+  static String backupPathFor(String sourcePath) {
+    final normalized = p.normalize(sourcePath.trim());
+    return '$normalized$_inPlaceBackupSuffix';
+  }
+
+  static Iterable<String> candidateCarryForwardSidecarPaths(String sourcePath) {
+    return _carryForwardSidecarSuffixes.map((suffix) => '$sourcePath$suffix');
+  }
+
+  static Iterable<String> candidateRebuildableSidecarPaths(String sourcePath) {
+    return _rebuildableSidecarSuffixes.map((suffix) => '$sourcePath$suffix');
+  }
+
+  Future<String> suggestInPlaceTempPath(String sourcePath) async {
+    final directory = p.dirname(sourcePath);
+    final baseName = p.basenameWithoutExtension(sourcePath).trim().isEmpty
+        ? 'database'
+        : p.basenameWithoutExtension(sourcePath).trim();
+    final extension = p.extension(sourcePath).isEmpty
+        ? '.ddb'
+        : p.extension(sourcePath);
+    final stamp =
+        '${DateTime.now().millisecondsSinceEpoch}_${_randomToken()}';
+    return p.join(directory, '$baseName.migrate.$stamp$extension');
+  }
+
+  static String _randomToken() {
+    final mix = DateTime.now().microsecondsSinceEpoch ^
+        DateTime.now().microsecondsSinceEpoch;
+    final hex = mix.toRadixString(16);
+    if (hex.length >= 10) {
+      return hex.substring(0, 10);
+    }
+    return hex.padLeft(10, '0');
+  }
+
+  Future<DecentDbInPlaceMigrationResult> migrateInPlace({
+    required String sourcePath,
+  }) async {
+    final normalizedSource = p.normalize(sourcePath.trim());
+    if (normalizedSource.isEmpty) {
+      throw const DecentDbMigrationFailure(
+        message: 'Choose a legacy DecentDB source file to migrate in place.',
+      );
+    }
+    final sourceFile = File(normalizedSource);
+    if (!await sourceFile.exists()) {
+      throw DecentDbMigrationFailure(
+        message:
+            'Legacy DecentDB source file does not exist: $normalizedSource',
+      );
+    }
+
+    final backupPath = backupPathFor(normalizedSource);
+    final backupFile = File(backupPath);
+    if (await backupFile.exists()) {
+      throw DecentDbMigrationFailure(
+        message:
+            'A backup already exists at the expected in-place location. '
+            'Move or rename $backupPath so the migration can preserve the '
+            'previous original.',
+      );
+    }
+    final originalSidecarPaths = <String>[];
+    for (final candidate in candidateCarryForwardSidecarPaths(normalizedSource)) {
+      if (await File(candidate).exists()) {
+        originalSidecarPaths.add(candidate);
+      }
+    }
+
+    final tempDestination = await suggestInPlaceTempPath(normalizedSource);
+    final tempDestinationFile = File(tempDestination);
+    final tempWal = File('$tempDestination.wal');
+    if (await tempDestinationFile.exists() || await tempWal.exists()) {
+      throw DecentDbMigrationFailure(
+        message:
+            'Temporary migration destination is not clean. Remove $tempDestination '
+            '(and any .wal sidecar) and retry.',
+      );
+    }
+
+    final stopwatch = Stopwatch()..start();
+    String toolPath = '';
+    String stdoutText = '';
+    String stderrText = '';
+    try {
+      final migrationResult = await migrate(
+        sourcePath: normalizedSource,
+        destinationPath: tempDestination,
+      );
+      toolPath = migrationResult.toolPath;
+      stdoutText = migrationResult.stdoutText;
+      stderrText = migrationResult.stderrText;
+    } catch (error) {
+      await _safeDelete(tempDestinationFile);
+      await _safeDelete(tempWal);
+      rethrow;
+    }
+
+    if (!await tempDestinationFile.exists()) {
+      await _safeDelete(tempWal);
+      throw DecentDbMigrationFailure(
+        message:
+            'DecentDB migration completed but did not create the expected '
+            'temporary destination file. The original file is untouched.',
+        exitCode: 0,
+        stdoutText: stdoutText,
+        stderrText: stderrText,
+        toolPath: toolPath,
+      );
+    }
+
+    try {
+      await sourceFile.rename(backupPath);
+    } catch (error) {
+      await _safeDelete(tempDestinationFile);
+      await _safeDelete(tempWal);
+      throw DecentDbMigrationFailure(
+        message:
+            'Migration succeeded but moving the original file aside failed. '
+            'The original database at $normalizedSource is unchanged.',
+        stdoutText: stdoutText,
+        stderrText: stderrText,
+        toolPath: toolPath,
+      );
+    }
+
+    final sidecarBackupPaths = <String>[];
+    for (final originalSidecarPath in originalSidecarPaths) {
+      final sidecarFile = File(originalSidecarPath);
+      if (!await sidecarFile.exists()) {
+        continue;
+      }
+      final carriedDestination = '$originalSidecarPath$_inPlaceBackupSuffix';
+      try {
+        await sidecarFile.rename(carriedDestination);
+        sidecarBackupPaths.add(carriedDestination);
+      } catch (error) {
+        await _restoreInPlaceArtifacts(
+          sourceFile: sourceFile,
+          backupPath: backupPath,
+          originalSidecarPaths: originalSidecarPaths,
+          sidecarBackupPaths: sidecarBackupPaths,
+        );
+        await _safeDelete(tempDestinationFile);
+        await _safeDelete(tempWal);
+        throw DecentDbMigrationFailure(
+          message:
+              'Migration succeeded but preserving a sidecar next to the backup '
+              'failed. The original database at $normalizedSource has been '
+              'restored from $backupPath.',
+          stdoutText: stdoutText,
+          stderrText: stderrText,
+          toolPath: toolPath,
+        );
+      }
+    }
+
+    try {
+      await tempDestinationFile.rename(normalizedSource);
+    } catch (error) {
+      await _restoreInPlaceArtifacts(
+        sourceFile: sourceFile,
+        backupPath: backupPath,
+        originalSidecarPaths: originalSidecarPaths,
+        sidecarBackupPaths: sidecarBackupPaths,
+      );
+      throw DecentDbMigrationFailure(
+        message:
+            'Migration succeeded but installing the upgraded file into place '
+            'failed. The original database at $normalizedSource has been '
+            'restored from $backupPath.',
+        stdoutText: stdoutText,
+        stderrText: stderrText,
+        toolPath: toolPath,
+      );
+    }
+
+    await _safeDelete(tempWal);
+    stopwatch.stop();
+    return DecentDbInPlaceMigrationResult(
+      originalPath: normalizedSource,
+      backupPath: backupPath,
+      finalPath: normalizedSource,
+      carryForwardSidecars: sidecarBackupPaths,
+      toolPath: toolPath,
+      stdoutText: stdoutText,
+      stderrText: stderrText,
+      elapsed: stopwatch.elapsed,
+    );
+  }
+
+  Future<void> _safeDelete(File file) async {
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _restoreInPlaceArtifacts({
+    required File sourceFile,
+    required String backupPath,
+    required List<String> originalSidecarPaths,
+    required List<String> sidecarBackupPaths,
+  }) async {
+    if (await sourceFile.exists()) {
+      try {
+        await sourceFile.delete();
+      } catch (_) {}
+    }
+    if (await File(backupPath).exists()) {
+      try {
+        await File(backupPath).rename(sourceFile.path);
+      } catch (_) {}
+    }
+    final reversed = sidecarBackupPaths.reversed.toList();
+    for (var i = 0; i < reversed.length; i++) {
+      final backupForSidecar = reversed[i];
+      final originalSidecarPath = originalSidecarPaths[
+          originalSidecarPaths.length - 1 - i];
+      if (!await File(originalSidecarPath).exists() &&
+          await File(backupForSidecar).exists()) {
+        try {
+          await File(backupForSidecar).rename(originalSidecarPath);
+        } catch (_) {}
+      }
+    }
   }
 
   Future<String> resolveToolPath() async {

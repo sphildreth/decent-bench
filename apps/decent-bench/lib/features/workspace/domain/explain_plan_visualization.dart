@@ -7,6 +7,7 @@ class ExplainPlanNode {
     this.tableName,
     this.indexName,
     this.estimatedRows,
+    this.estimatedCost,
     this.actualRows,
   });
 
@@ -17,6 +18,7 @@ class ExplainPlanNode {
   final String? tableName;
   final String? indexName;
   final int? estimatedRows;
+  final double? estimatedCost;
   final int? actualRows;
 }
 
@@ -28,6 +30,29 @@ class ExplainPlanVisualization {
 
   bool get hasNodes => nodes.isNotEmpty;
 }
+
+/// Recognized plan operator kinds. Multi-word operators (e.g. `HASH JOIN`,
+/// `STREAMING AGGREGATE`) are normalized to a single token here so that
+/// downstream rendering can badge them deterministically.
+const List<String> kKnownPlanOperators = <String>[
+  'SCAN',
+  'SEARCH',
+  'FILTER',
+  'SORT',
+  'JOIN',
+  'HASH JOIN',
+  'INDEXED JOIN',
+  'NESTED LOOP',
+  'AGGREGATE',
+  'STREAMING AGGREGATE',
+  'PROJECTION',
+  'LIMIT',
+  'INSERT',
+  'UPDATE',
+  'DELETE',
+  'VIEW SCAN',
+  'EXPANDED VIEW',
+];
 
 ExplainPlanVisualization buildExplainPlanVisualization(
   List<Map<String, Object?>> rows,
@@ -70,15 +95,7 @@ ExplainPlanNode _parsePlanLine(int lineNumber, String line) {
     depth: depth,
     operation: operation,
     detail: normalized.isEmpty ? line.trim() : normalized,
-    tableName:
-        _firstMatch(
-          normalized,
-          RegExp(r'\b(?:TABLE|FROM|ON)\s+("?[\w.]+"?)', caseSensitive: false),
-        ) ??
-        _firstMatch(
-          normalized,
-          RegExp(r'^(?:SCAN|SEARCH)\s+("?[\w.]+"?)', caseSensitive: false),
-        ),
+    tableName: _extractTableName(normalized),
     indexName: _firstMatch(
       normalized,
       RegExp(
@@ -93,11 +110,36 @@ ExplainPlanNode _parsePlanLine(int lineNumber, String line) {
         caseSensitive: false,
       ),
     ),
+    estimatedCost: _doubleAfter(
+      normalized,
+      RegExp(
+        r'\b(?:est(?:imated)? cost|cost)\s*[=:]\s*(\d+(?:\.\d+)?)',
+        caseSensitive: false,
+      ),
+    ),
     actualRows: _numberAfter(
       normalized,
       RegExp(r'\bactual rows?\s*[=:]\s*(\d+)', caseSensitive: false),
     ),
   );
+}
+
+String? _extractTableName(String normalized) {
+  return _firstMatch(
+        normalized,
+        RegExp(
+          r'\b(?:TABLE|FROM|ON)\s+("?[\w.]+"?)',
+          caseSensitive: false,
+        ),
+      ) ??
+      _firstMatch(
+        normalized,
+        RegExp(
+          r'(?:^|\s)(?:SCAN|SEARCH|VIEW\s+SCAN|EXPANDED\s+VIEW)\s+'
+          r'("?[\w.]+"?)',
+          caseSensitive: false,
+        ),
+      );
 }
 
 int _lineDepth(String line) {
@@ -123,20 +165,19 @@ int _lineDepth(String line) {
 
 String _operationFor(String detail) {
   final upper = detail.toUpperCase();
-  for (final operation in const <String>[
-    'SCAN',
-    'SEARCH',
-    'FILTER',
-    'SORT',
-    'JOIN',
-    'AGGREGATE',
-    'PROJECTION',
-    'LIMIT',
-    'INSERT',
-    'UPDATE',
-    'DELETE',
-  ]) {
-    if (upper.startsWith(operation) || upper.contains(' $operation ')) {
+  // Iterate longest operators first so multi-word kinds like
+  // `STREAMING AGGREGATE` and `HASH JOIN` match before their shorter
+  // single-word prefixes (`AGGREGATE`, `JOIN`).
+  final operatorsByLength = <String>[
+    for (final operation in kKnownPlanOperators)
+      if (operation.contains(' ')) operation,
+    for (final operation in kKnownPlanOperators)
+      if (!operation.contains(' ')) operation,
+  ];
+  for (final operation in operatorsByLength) {
+    if (upper.startsWith(operation) ||
+        upper.contains(' $operation ') ||
+        upper.contains(' $operation\t')) {
       return operation;
     }
   }
@@ -154,4 +195,12 @@ int? _numberAfter(String text, RegExp pattern) {
     return null;
   }
   return int.tryParse(match.group(1) ?? '');
+}
+
+double? _doubleAfter(String text, RegExp pattern) {
+  final match = pattern.firstMatch(text);
+  if (match == null) {
+    return null;
+  }
+  return double.tryParse(match.group(1) ?? '');
 }

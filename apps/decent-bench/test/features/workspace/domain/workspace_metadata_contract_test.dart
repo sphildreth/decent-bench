@@ -1,12 +1,14 @@
 import 'package:decent_bench/features/workspace/domain/workspace_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../../support/decentdb_test_constants.dart';
+
 void main() {
   group('ToolingMetadata', () {
     test('decodes deterministic column metadata and spatial type details', () {
       final metadata = ToolingMetadata.fromMap(<String, Object?>{
         'metadata_version': 1,
-        'engine_version': '2.14.0',
+        'engine_version': expectedDecentDbVersion,
         'database_format_version': 8,
         'schema_cookie': 4,
         'temp_schema_cookie': 0,

@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:decentdb/decentdb.dart';
 import 'package:path/path.dart' as p;
 
+import '../features/workspace/infrastructure/decentdb_migration_service.dart';
+
 import '../features/import/application/import_manager.dart';
 import '../features/import/domain/import_models.dart';
 import '../features/import/infrastructure/import_execution_service.dart';
@@ -688,7 +690,23 @@ Future<HeadlessImportCliReport> _buildImportReport({
   required NativeLibraryResolver libraryResolver,
 }) async {
   final libraryPath = await libraryResolver.resolve();
-  final database = Database.open(targetPath, libraryPath: libraryPath);
+  final Database database;
+  try {
+    database = Database.open(targetPath, libraryPath: libraryPath);
+  } catch (error) {
+    if (DecentDbMigrationService.isUnsupportedFormatVersionMessage(
+      error.toString(),
+    )) {
+      throw StateError(
+        'Could not open $targetPath: this file uses a legacy DecentDB '
+        'on-disk format. Run the official decentdb-migrate tool to upgrade '
+        'it to the current format, then re-run the import. Example:\n'
+        '  decentdb-migrate --source "$targetPath" --dest '
+        '"$targetPath.upgraded.ddb"',
+      );
+    }
+    rethrow;
+  }
   try {
     final tables = database.schema.listTablesInfo()
       ..sort((left, right) => left.name.compareTo(right.name));

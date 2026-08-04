@@ -24,7 +24,17 @@ abstract class DatabaseLifecycleGateway {
   Future<DatabaseSession> openDatabase(
     String path, {
     WriteQueueSettings? writeQueue,
+    DatabaseOpenSettings? databaseOpen,
   });
+
+  /// Compact-copy the open database to [destPath] using the engine's
+  /// `db_save_as`. The current handle stays open.
+  Future<void> saveAs(String destPath);
+
+  /// Evict the shared WAL cache entry for [path]. Must only be invoked
+  /// after all handles for that path have been closed.
+  Future<void> evictSharedWal(String path);
+
   Future<void> dispose();
 }
 
@@ -253,12 +263,25 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   Future<DatabaseSession> openDatabase(
     String path, {
     WriteQueueSettings? writeQueue,
+    DatabaseOpenSettings? databaseOpen,
   }) async {
     final data = await _request('openDatabase', <String, Object?>{
       'path': path,
       if (writeQueue != null) 'writeQueue': _serializeWriteQueue(writeQueue),
+      if (databaseOpen != null)
+        'databaseOpen': _serializeDatabaseOpen(databaseOpen),
     });
     return DatabaseSession.fromMap(data);
+  }
+
+  @override
+  Future<void> saveAs(String destPath) async {
+    await _request('saveAs', <String, Object?>{'destPath': destPath});
+  }
+
+  @override
+  Future<void> evictSharedWal(String path) async {
+    await _request('evictSharedWal', <String, Object?>{'path': path});
   }
 
   @override
@@ -907,6 +930,10 @@ class _BridgeWorkerState {
     switch (action) {
       case 'openDatabase':
         return _handleOpenDatabase(payload);
+      case 'saveAs':
+        return _handleSaveAs(payload);
+      case 'evictSharedWal':
+        return _handleEvictSharedWal(payload);
       case 'loadSchema':
         return _handleLoadSchema();
       case 'loadOperationalMetrics':
@@ -1004,7 +1031,12 @@ class _BridgeWorkerState {
     final writeQueue = (payload['writeQueue'] as Map<Object?, Object?>?)?.map(
       (key, value) => MapEntry(key as String, value),
     );
-    final openOptions = _writeQueueOpenOptionsFromPayload(writeQueue);
+    final databaseOpen = (payload['databaseOpen'] as Map<Object?, Object?>?)
+        ?.map((key, value) => MapEntry(key as String, value));
+    final openOptions = _buildOpenOptionsFromPayload(
+      writeQueue: writeQueue,
+      databaseOpen: databaseOpen,
+    );
     _database = Database.open(
       path,
       libraryPath: _libraryPath,
@@ -1014,6 +1046,26 @@ class _BridgeWorkerState {
       'path': path,
       'engineVersion': _database!.engineVersion,
     };
+  }
+
+  Future<Map<String, Object?>> _handleSaveAs(
+    Map<String, Object?> payload,
+  ) async {
+    final db = _requireDatabase();
+    final destPath = payload['destPath']! as String;
+    db.saveAs(destPath);
+    return <String, Object?>{'destPath': destPath};
+  }
+
+  Future<Map<String, Object?>> _handleEvictSharedWal(
+    Map<String, Object?> payload,
+  ) async {
+    // The current database handle must be closed first; evictSharedWal
+    // is documented to be unsafe with open handles.
+    await _closeAll();
+    final path = payload['path']! as String;
+    Database.evictSharedWal(path, libraryPath: _libraryPath);
+    return <String, Object?>{'path': path};
   }
 
   Future<Map<String, Object?>> _handleLoadSchema() async {
@@ -1089,13 +1141,7 @@ class _BridgeWorkerState {
     final maxRows = (payload['maxRows'] as int? ?? 20).clamp(1, 200);
     final views = <Map<String, Object?>>[_nativeWriteQueueMetricsView(db)];
     for (final spec in _operationalMetricQueries) {
-      final view = _queryOperationalMetricView(db, spec, maxRows: maxRows);
-      if (!((view['available'] as bool?) ?? false) &&
-          _isSysSchemaBoundaryError(view['error'] as String?)) {
-        views.add(_sysInspectionPreparedBoundaryView());
-        break;
-      }
-      views.add(view);
+      views.add(_queryOperationalMetricView(db, spec, maxRows: maxRows));
     }
     return <String, Object?>{'views': views};
   }
@@ -1834,6 +1880,46 @@ const List<_OperationalMetricQuery> _operationalMetricQueries =
         label: 'Process lock metrics',
         query: 'SELECT * FROM sys.process_lock_metrics',
       ),
+      _OperationalMetricQuery(
+        name: 'sys.plan_cache',
+        label: 'Plan cache',
+        query: 'SELECT * FROM sys.plan_cache',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.plan_cache_summary',
+        label: 'Plan cache summary',
+        query: 'SELECT * FROM sys.plan_cache_summary',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.doctor_findings',
+        label: 'Doctor findings',
+        query: 'SELECT * FROM sys.doctor_findings',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.fix_plan',
+        label: 'Doctor fix plan',
+        query: 'SELECT * FROM sys.fix_plan',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.sync_shapes',
+        label: 'Sync shapes',
+        query: 'SELECT * FROM sys.sync_shapes',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.sync_shape_clients',
+        label: 'Sync shape clients',
+        query: 'SELECT * FROM sys.sync_shape_clients',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.sync_changeset_history',
+        label: 'Sync changeset history',
+        query: 'SELECT * FROM sys.sync_changeset_history',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.sync_relay_sessions',
+        label: 'Sync relay sessions',
+        query: 'SELECT * FROM sys.sync_relay_sessions',
+      ),
     ];
 
 Map<String, Object?> _serializeWriteQueue(WriteQueueSettings settings) {
@@ -1846,7 +1932,40 @@ Map<String, Object?> _serializeWriteQueue(WriteQueueSettings settings) {
   };
 }
 
+Map<String, Object?> _serializeDatabaseOpen(DatabaseOpenSettings settings) {
+  return <String, Object?>{
+    'profile': settings.profile,
+    'planCacheEnabled': settings.planCacheEnabled,
+    if (settings.planCacheMaxBytes != null)
+      'planCacheMaxBytes': settings.planCacheMaxBytes,
+  };
+}
+
+String? _buildOpenOptionsFromPayload({
+  Map<String, Object?>? writeQueue,
+  Map<String, Object?>? databaseOpen,
+}) {
+  final fragments = <String>[];
+  final wqOptions = _writeQueueOpenOptionsFromPayload(writeQueue);
+  if (wqOptions != null) {
+    fragments.add(wqOptions);
+  }
+  final dbOpenSettings = _databaseOpenSettingsFromPayload(databaseOpen);
+  if (dbOpenSettings != null) {
+    fragments.add(dbOpenSettings.toOpenOptionsFragment());
+  }
+  if (fragments.isEmpty) {
+    return null;
+  }
+  return fragments.join(',');
+}
+
 String? _writeQueueOpenOptionsFromPayload(Map<String, Object?>? payload) {
+  final settings = _writeQueueSettingsFromPayload(payload);
+  return settings?.toDecentDbOpenOptions();
+}
+
+WriteQueueSettings? _writeQueueSettingsFromPayload(Map<String, Object?>? payload) {
   if (payload == null) {
     return null;
   }
@@ -1864,7 +1983,21 @@ String? _writeQueueOpenOptionsFromPayload(Map<String, Object?>? payload) {
     maxGroupDelayUs:
         payload['maxGroupDelayUs'] as int? ??
         WriteQueueSettings.defaultMaxGroupDelayUs,
-  ).toDecentDbOpenOptions();
+  );
+}
+
+DatabaseOpenSettings? _databaseOpenSettingsFromPayload(
+  Map<String, Object?>? payload,
+) {
+  if (payload == null) {
+    return null;
+  }
+  final profile = (payload['profile'] as String? ?? 'default').trim();
+  return DatabaseOpenSettings(
+    profile: profile.isEmpty ? 'default' : profile,
+    planCacheEnabled: payload['planCacheEnabled'] as bool? ?? true,
+    planCacheMaxBytes: payload['planCacheMaxBytes'] as int?,
+  );
 }
 
 BridgeFailure _bridgeFailureFromError(Object error) {
@@ -2231,29 +2364,6 @@ Map<String, Object?> _queryOperationalMetricView(
       'truncated': false,
     };
   }
-}
-
-bool _isSysSchemaBoundaryError(String? error) {
-  final normalized = error?.toLowerCase() ?? '';
-  return normalized.contains('schema-qualified objects outside main/temp') &&
-      normalized.contains("schema 'sys'");
-}
-
-Map<String, Object?> _sysInspectionPreparedBoundaryView() {
-  return <String, Object?>{
-    'name': 'decentdb.sys_inspection_views',
-    'label': 'DecentDB sys.* SQL metrics',
-    'query': 'SELECT * FROM sys.*',
-    'available': false,
-    'columns': const <String>[],
-    'rows': const <Map<String, Object?>>[],
-    'error':
-        'Unavailable through the current Dart prepared-statement paging path. '
-        'DecentDB v2.8 exposes these inspection views through direct SQL '
-        'execution, but the Dart binding does not yet expose direct-result '
-        'paging. Native public metrics APIs are shown when available.',
-    'truncated': false,
-  };
 }
 
 String _inlineQueuedWriteParameters(String sql, List<Object?> params) {

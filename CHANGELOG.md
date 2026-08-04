@@ -4,35 +4,150 @@ This file records notable project changes. It follows the
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format and uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.1.0] - 2026-06-22 (Upcoming)
+## [3.0.0] - 2026-08-04
 
-### Added
+### BREAKING — Mandatory database migration
 
-- **Parquet Export:** Streaming cursor-based export to Parquet format (.parquet) with schema fingerprint preservation and progress indicator
-- **Excel Export Enhancement:** Enhanced Office Open XML writer for .xlsx result export with native type metadata preservation
-- **Column Reordering:** Drag-and-drop column reordering in results grid with persistent per-tab state and reset-to-default functionality
-- **Schema browser metadata parity with DecentDB v2.14.0:** Schema browser now surfaces
-  fields that the binding has always exposed but the bridge was previously dropping:
-  table row counts, primary-key column lists, full foreign-key definitions (including
-  composite multi-column FKs), view `sqlText` and view dependency lists, covering
-  index `INCLUDE (...)` columns, index freshness flags, and per-column `autoIncrement`.
-  See ADR-0058.
-- **Structured DecentDB error diagnostics:** `BridgeFailure` now extracts
-  `subcode`, `retryable`, `permanent`, `sqlstate`, and `docAnchor` directly from
-  `DecentDbException.diagnostic`, and translates `DecentDbAbiMismatchException`
-  to `DDB_ERR_ABI_MISMATCH` and `DecentDbNativeLoadException` to
-  `DDB_ERR_NATIVE_LOAD`. See ADR-0059.
+This release pins DecentDB **v2.17.0** and bumps the on-disk database
+format from **13 → 14**. Every existing user database is now refused
+by the engine until migrated. On first open of a legacy file, Decent
+Bench offers a guided **in-place upgrade** that:
 
-### Changed
+1. Copies the source to a temp destination via the official
+   `decentdb-migrate` tool.
+2. Moves the original to `<name>.ddb.v13.bak` (preserved as the
+   explicit rollback handle).
+3. Carries the `.wal` and `.sync-journal` sidecars aside next to the
+   backup; excludes `.coord` so the engine rebuilds fresh
+   coordination state.
+4. Atomically swaps the temp destination into place.
+5. Restores the original from backup if any step fails.
 
-- Updated export feature set to include Parquet format (previously deferred to "Next" in v1.0.0 MVP)
-- **Bumped pinned DecentDB Dart binding/runtime dependency from v2.8.0 to v2.14.0**
-  (commit `e12a9df7`). The DecentDB Dart binding's public surface is unchanged
-  across v2.8.0 → v2.14.0, so this is a drop-in ref bump; the v2.9–v2.14
-  engine changes are performance and executor improvements that flow through
-  automatically. v2.14.0 staging assets for Linux, macOS, and Windows are
-  published on the upstream GitHub releases and consumed by
-  `DecentDbNativeReleaseAsset`.
+**The upgrade is one-way.** Older Decent Bench builds and older DecentDB
+releases will refuse to open the upgraded file. The backup is never
+deleted automatically; users must keep it until they have verified the
+new file.
+
+Headless `bin/headless_import.dart` and `bin/dbench_quality.dart` now
+emit an actionable `decentdb-migrate` invocation hint instead of just
+logging the failure.
+
+See `design/adr/0060-decentdb-2-17-format-14-guided-migration.md`.
+
+### Added — Tier 1 engine features
+
+- **Database performance profile:** New `[database_open]` TOML section
+  exposes `profile` (one of `default`, `low_memory`, `balanced`,
+  `embedded_fast`, `tuned_durable`), `plan_cache_enabled`, and
+  `plan_cache_max_bytes`. Critical ordering: `profile=` is emitted first
+  in the open-options string because selecting a profile resets the
+  entire `DbConfig`. See ADR-0062.
+- **Flush plan cache:** New Tools menu entry runs `PRAGMA flush_plan_cache`
+  against the open database.
+- **8 new `sys.*` operational metrics:** `sys.plan_cache`,
+  `sys.plan_cache_summary`, `sys.doctor_findings`, `sys.fix_plan`,
+  `sys.sync_shapes`, `sys.sync_shape_clients`,
+  `sys.sync_changeset_history`, `sys.sync_relay_sessions` (exact SQL
+  text, no `LIMIT`). The dead-code boundary short-circuit that masked
+  `sys.*` views was removed.
+
+### Added — Doctor / advisor panel
+
+- **Tools → Database Doctor** opens a new panel. Primary path: shell
+  out to `decentdb doctor --db <path> --format json --checks all
+  --include-recommendations=true`. Fallback: in-process
+  `sys.doctor_findings` + `sys.fix_plan` views; the fallback is
+  rendered with a prominent "Degraded results" banner so it cannot be
+  mistaken for a clean bill of health.
+- Forwarded CLI flags: `--verify-indexes`, `--verify-index <name>`,
+  `--max-index-verify`.
+- Non-zero `--fail-on=error` exit is treated as a normal unhealthy
+  database, not as a tool failure. See ADR-0061.
+
+### Added — EXPLAIN + ANALYZE
+
+- Parser now recognises multi-word operators added in v2.15-v2.17:
+  `HASH JOIN`, `INDEXED JOIN`, `STREAMING AGGREGATE`, `VIEW SCAN`,
+  `EXPANDED VIEW`.
+- Renders `est cost=N.NN` chips alongside `est rows` and `actual rows`.
+- `WorkspaceController.runAnalyze({tableName})` issues `ANALYZE` (or
+  `ANALYZE "<table>"` when scoped) and surfaces a success message.
+
+### Added — Schema browser
+
+- Indexes are now badged with per-kind icons: `Btree` (default),
+  `FullText` (manage-search), `Spatial` (public), `Trigram`
+  (text-fields). Non-Btree index kinds were previously indistinguishable.
+
+### Added — Maintenance actions
+
+- `WorkspaceController.saveAs(destPath)` invokes the engine `saveAs`
+  ABI for a compact copy of the open database.
+- `WorkspaceController.evictSharedWal(path)` is exposed but
+  refuses to run while the workspace is open (the engine documents
+  this call as unsafe with open handles).
+
+### Added — Full-text + index vocabulary
+
+- New SQL keywords in autocomplete and formatter: `FULLTEXT`, `BM25`,
+  `INDEXED`, `REBUILD`, `VERIFY`, `USING FULLTEXT`, `USING BTREE`,
+  `USING SPATIAL`, `USING TRIGRAM`, `ALTER INDEX`.
+- New SQL functions: `FULLTEXT_MATCH`, `BM25`, `BM25_SCORE`,
+  `FULLTEXT_RANK`.
+- `ALTER INDEX <name> VERIFY` and `ALTER INDEX <name> REBUILD` are
+  routed through the existing mutating SQL risk-assessment path.
+
+### Changed — Import fast path
+
+- Import pipelines in `import_execution_service.dart`,
+  `excel_import_support.dart`, `sqlite_import_support.dart`, and
+  `sql_dump_import_support.dart` now prefer
+  `Statement.executeBatchTyped(signature, rows)` (v2.16 API) when every
+  column in the table is expressible in the typed-batch signature
+  (`i`=INT64, `f`=FLOAT64, `t`=TEXT) and no column was observed to
+  contain null values (the v2.17 Dart binding rejects `null` for
+  typed-batch slots). Other column types continue to use the existing
+  per-row `bindAll` path.
+- A shared `typed_batch_classification.dart` module owns the column
+  classification so all importers stay in sync.
+- Throughput on a large `test-data/` fixture improved measurably
+  (single-pass C buffer allocation eliminates per-row Dart-to-C
+  marshalling). Existing import fixture matrix still passes
+  row-for-row identically.
+
+### Added — Export, schema, and workspace features
+
+- **Parquet Export:** Streaming cursor-based export to Parquet format
+  (`.parquet`) with schema fingerprint preservation and progress
+  indicator. Previously deferred from the v1.0.0 MVP "Next" list.
+- **Excel Export Enhancement:** Enhanced Office Open XML writer for
+  `.xlsx` result export with native type metadata preservation.
+- **Column Reordering:** Drag-and-drop column reordering in the results
+  grid with persistent per-tab state and reset-to-default functionality.
+- **Schema browser metadata parity with DecentDB v2.14.0:** Schema
+  browser now surfaces fields that the binding has always exposed but
+  the bridge was previously dropping: table row counts, primary-key
+  column lists, full foreign-key definitions (including composite
+  multi-column FKs), view `sqlText` and view dependency lists, covering
+  index `INCLUDE (...)` columns, index freshness flags, and per-column
+  `autoIncrement`. See ADR-0058.
+- **Structured DecentDB error diagnostics:** `BridgeFailure` now
+  extracts `subcode`, `retryable`, `permanent`, `sqlstate`, and
+  `docAnchor` directly from `DecentDbException.diagnostic`, and
+  translates `DecentDbAbiMismatchException` to `DDB_ERR_ABI_MISMATCH`
+  and `DecentDbNativeLoadException` to `DDB_ERR_NATIVE_LOAD`. See
+  ADR-0059.
+
+### Changed — Versioning
+
+- App version bumped to **3.0.0+1** (per `VERSIONING_GUIDE.md`: a change
+  that renders every existing user file unopenable without a
+  migration is a Major bump).
+- The 2.1.0 release line that was previously drafted here was never
+  shipped. Its intended additions (Parquet export, Excel-export
+  enhancements, column reordering, v2.14 schema-browser metadata parity
+  and structured error diagnostics) are consolidated into this v3.0.0
+  release.
 
 ## [2.0.0] - 2026-05-30
 
@@ -338,8 +453,8 @@ are documented here for traceability:
   metadata, bundled theme compatibility ranges, and project documentation with
   that release line.
 
-[unreleased]: https://github.com/sphildreth/decent-bench/compare/v2.1.0...HEAD
-[2.1.0]: https://github.com/sphildreth/decent-bench/releases/tag/v2.1.0
+[unreleased]: https://github.com/sphildreth/decent-bench/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/sphildreth/decent-bench/releases/tag/v3.0.0
 [2.0.0]: https://github.com/sphildreth/decent-bench/releases/tag/v2.0.0
 [1.1.0]: https://github.com/sphildreth/decent-bench/releases/tag/v1.1.0
 [1.0.0]: https://github.com/sphildreth/decent-bench/releases/tag/v1.0.0

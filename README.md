@@ -19,7 +19,7 @@
     <img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square">
   </a>
   <img alt="Flutter desktop" src="https://img.shields.io/badge/Flutter-desktop-02569B?style=flat-square&logo=flutter&logoColor=white">
-  <img alt="DecentDB v2.8.0" src="https://img.shields.io/badge/DecentDB-v2.8.0-6f42c1?style=flat-square">
+  <img alt="DecentDB v2.17.0" src="https://img.shields.io/badge/DecentDB-v2.17.0-6f42c1?style=flat-square">
 </p>
 
 <p align="center">
@@ -64,14 +64,14 @@
 - ⚡ **Performance-Focused:** Background imports, paginated/streamed results grids, and best-effort query cancellation ensure the UI never freezes.
 - 🧭 **Rich Engine Metadata:** Schema browsing is powered by DecentDB's rich
    upstream schema snapshot (tables/views/indexes/triggers, checks, foreign keys,
-   generated columns, temp-object metadata, and canonical DDL), with v2.8.x
+   generated columns, temp-object metadata, and canonical DDL), with v2.17.x
   tooling metadata and query contracts used for schema fingerprints, parameter
   types, and result-column types.
-- 📊 **DecentDB v2.8 Diagnostics:** Database Statistics includes WAL, storage,
+- 📊 **DecentDB v2.17 Diagnostics:** Database Statistics includes WAL, storage,
   write-queue, sync, reactive, relay, process coordination, Lua extension
   inspection surfaces, plus rich structured error diagnostics, optional queued
   inline table edits, and a read-only local Web Console launcher.
-- 🧬 **Native Type Awareness:** DecentDB v2.8.x semantic and spatial types are
+- 🧬 **Native Type Awareness:** DecentDB v2.17.x semantic and spatial types are
   surfaced in schema details, result metadata, autocomplete, snippets, import
   type overrides, copy behavior, and CSV export display values.
 - 📊 **Diagnostics & Visualization:** Column statistics, database statistics,
@@ -94,7 +94,7 @@
 - 🪵 **Operational Visibility:** Open application logs from `Tools -> View Logs`. Structured JSON.CLEF log files are written per session to a configurable log directory (default `logs/` under the app config path).
 - 🧪 **Import Validation:** Blocking failure dialogs and richer import summaries make unsuccessful imports obvious and successful imports easier to verify.
 - 📤 **Typed Exports:** CSV, JSON, NDJSON, and Excel export stream result pages
-  and preserve DecentDB v2.8.x native value metadata where the format supports
+  and preserve DecentDB v2.17.x native value metadata where the format supports
   it. Result charts can be exported as PNG, and ERDs can be exported as PNG/JPG.
 - 📦 **Desktop Native:** Packaged for Linux, macOS, and Windows with a repeatable native-library staging helper.
 
@@ -186,7 +186,7 @@ Want to build from source or contribute? Welcome!
 
 Decent Bench pins the upstream Dart package by Git tag and expects the matching
 DecentDB desktop native library alongside it. CI and release packaging currently
-resolve `v2.8.0` from `apps/decent-bench/pubspec.lock` and download the matching
+resolve the pinned engine tag from `apps/decent-bench/pubspec.lock` and download the matching
 `decentdb-dart-native-<tag>-...` asset from
 [`sphildreth/decentdb` Releases](https://github.com/sphildreth/decentdb/releases).
 

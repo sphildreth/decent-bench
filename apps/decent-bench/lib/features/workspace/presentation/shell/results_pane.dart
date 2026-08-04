@@ -1892,6 +1892,10 @@ class _ExplainPlanTree extends StatelessWidget {
                           _PlanMetadataChip(label: 'index ${node.indexName}'),
                         if (node.estimatedRows != null)
                           _PlanMetadataChip(label: 'est ${node.estimatedRows}'),
+                        if (node.estimatedCost != null)
+                          _PlanMetadataChip(
+                            label: 'cost ${node.estimatedCost!.toStringAsFixed(2)}',
+                          ),
                         if (node.actualRows != null)
                           _PlanMetadataChip(label: 'actual ${node.actualRows}'),
                       ],
@@ -1916,7 +1920,7 @@ class _PlanOperationBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final tokens = context.decentBenchTheme;
     return Container(
-      width: 76,
+      width: 116,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
         color: tokens.colors.accent.withValues(alpha: 0.12),
@@ -1928,9 +1932,9 @@ class _PlanOperationBadge extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-          color: tokens.colors.accent,
-          fontWeight: FontWeight.w700,
-        ),
+              color: tokens.colors.accent,
+              fontWeight: FontWeight.w700,
+            ),
       ),
     );
   }

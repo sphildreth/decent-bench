@@ -1,11 +1,11 @@
-/// Parquet export infrastructure for Decent Bench.
-/// 
-/// This module provides cursor-based streaming export to Parquet format.
-/// The implementation follows the same pattern as CSV and Excel exports,
-/// consuming query pages incrementally to avoid memory issues with large result sets.
-///
-/// TODO: Add apache-arrow or parquet dependency when ready for implementation.
-/// See ADR-0031 (Parquet and Excel Export Dependency Strategy) for details.
+// Parquet export infrastructure for Decent Bench.
+//
+// Cursor-based streaming export to Parquet format. Follows the same pattern as
+// CSV and Excel exports, consuming query pages incrementally to avoid memory
+// issues with large result sets.
+//
+// TODO: Add apache-arrow or parquet dependency when ready for implementation.
+// See ADR-0031 (Parquet and Excel Export Dependency Strategy) for details.
 
 class ParquetExportResult {
   const ParquetExportResult({
