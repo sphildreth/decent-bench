@@ -72,7 +72,7 @@ void main() {
     );
     expect(text, isNotNull);
     expect(text, contains('process writer lock'));
-    expect(text, contains('/mnt/incoming/foo.ddb.ddb.coord'));
+    expect(text, contains('/mnt/incoming/foo.ddb.coord'));
     expect(text, contains('process_coordination_timeout_ms'));
   });
 
