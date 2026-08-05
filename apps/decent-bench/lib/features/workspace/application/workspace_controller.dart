@@ -95,6 +95,7 @@ class WorkspaceController extends ChangeNotifier {
 
   String? databasePath;
   String? engineVersion;
+  String? engineVersionWarning;
   String? nativeLibraryPath;
   String? workspaceError;
   String? workspaceMessage;
@@ -307,6 +308,7 @@ class WorkspaceController extends ChangeNotifier {
       );
       databasePath = session.path;
       engineVersion = session.engineVersion;
+      engineVersionWarning = session.engineVersionWarning;
       config = config.pushRecentFile(session.path);
       await _configStore.save(config);
       final restoredState = await _workspaceStateStore.load(session.path);
@@ -323,6 +325,16 @@ class WorkspaceController extends ChangeNotifier {
           'Opened ${p.basename(session.path)}'
           ' on DecentDB ${session.engineVersion}'
           ' with ${tabs.length} query tab${tabs.length == 1 ? '' : 's'}.';
+      if (engineVersionWarning != null && engineVersionWarning!.isNotEmpty) {
+        workspaceMessage =
+            '${workspaceMessage!}\nEngine version mismatch: ${engineVersionWarning!}';
+        _logger.warning(
+          category: 'workspace',
+          operation: 'open_database',
+          message: engineVersionWarning!,
+          databasePath: session.path,
+        );
+      }
       _logger.info(category: 'workspace', operation: 'open_database', message: 'Opened database successfully.', databasePath: session.path,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         details: <String, Object?>{
@@ -336,6 +348,7 @@ class WorkspaceController extends ChangeNotifier {
     } catch (error) {
       databasePath = null;
       engineVersion = null;
+      engineVersionWarning = null;
       schema = SchemaSnapshot.empty();
       toolingMetadata = null;
       await dataQuality.attachWorkspace(databasePath: null, schema: schema);
@@ -523,6 +536,7 @@ class WorkspaceController extends ChangeNotifier {
     sqliteImportSession = null;
     databasePath = null;
     engineVersion = null;
+    engineVersionWarning = null;
     schema = SchemaSnapshot.empty();
     toolingMetadata = null;
     branch.attachWorkspace(databasePath: null);
@@ -4918,6 +4932,14 @@ class WorkspaceController extends ChangeNotifier {
     if (next.databaseOpen.planCacheMaxBytes != null &&
         next.databaseOpen.planCacheMaxBytes! <= 0) {
       return 'Plan cache size must be a positive integer.';
+    }
+    if (next.databaseOpen.processCoordinationTimeoutMs != null &&
+        next.databaseOpen.processCoordinationTimeoutMs! <= 0) {
+      return 'Process coordination timeout must be a positive integer (milliseconds).';
+    }
+    if (next.databaseOpen.openBridgeTimeoutMs != null &&
+        next.databaseOpen.openBridgeTimeoutMs! <= 0) {
+      return 'Open bridge timeout must be a positive integer (milliseconds).';
     }
 
 

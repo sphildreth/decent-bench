@@ -101,6 +101,57 @@ class DecentDbMigrationService {
         normalized.contains('database is in legacy format version');
   }
 
+  /// True when [message] looks like the engine's `DDB_ERR_TIMEOUT` failure
+  /// on `Database.open`. The engine raises this when its process writer
+  /// lock wait exceeds `process_coordination_timeout_ms` (default 30s),
+  /// which can happen when:
+  ///
+  /// * Another DecentDB-backed process holds the writer lock.
+  /// * The database is on a slow filesystem (network mount, FUSE,
+  ///   encrypted volume) and the lock acquire has not yet completed.
+  /// * A stale `<db>.ddb.coord` sidecar file is present from a previous
+  ///   crash or kill -9 and needs to be cleared.
+  static bool isCoordinationTimeoutMessage(String? message) {
+    final normalized = message?.toLowerCase() ?? '';
+    return normalized.contains('ddb_err_timeout') ||
+        normalized.contains('err_timeout') ||
+        normalized.contains('writer lock') ||
+        normalized.contains('timed out') ||
+        normalized.contains('timeout');
+  }
+
+  /// Human-readable next-steps for a `DDB_ERR_TIMEOUT` on open, suitable
+  /// for showing alongside the raw engine message in the UI. Returned
+  /// only when [message] matches [isCoordinationTimeoutMessage]; otherwise
+  /// returns `null` so callers can fall through to other diagnostics.
+  static String? explainCoordinationTimeout(
+    String? message, {
+    String? databasePath,
+  }) {
+    if (!isCoordinationTimeoutMessage(message)) {
+      return null;
+    }
+    final coordNote = databasePath == null
+        ? 'A stale <database>.ddb.coord file from a previous run can also '
+            'cause this. Closing other DecentDB-backed processes and '
+            'removing the .coord sidecar (it is rebuildable) usually '
+            'clears it. To raise the engine wait, set '
+            'process_coordination_timeout_ms in [database_open] of '
+            'config.toml. If the bridge wrapper times out first, also '
+            'raise open_bridge_timeout_ms (or set the '
+            'DECENT_BENCH_OPEN_TIMEOUT_MS environment variable).'
+        : 'A stale "$databasePath.ddb.coord" sidecar file from a previous '
+            'run can also cause this. Closing other DecentDB-backed '
+            'processes and removing the .coord sidecar (it is rebuildable) '
+            'usually clears it. You can also raise the wait by setting '
+            'process_coordination_timeout_ms in the [database_open] '
+            'section of your config.toml (engine side). If the bridge '
+            'wrapper times out before the engine replies, also raise '
+            'open_bridge_timeout_ms (or DECENT_BENCH_OPEN_TIMEOUT_MS).';
+    return 'DecentDB timed out waiting to acquire its process writer lock '
+        'while opening the database. $coordNote';
+  }
+
   static String migrationToolFileName({bool isWindows = false}) =>
       isWindows ? '$toolBaseName.exe' : toolBaseName;
 

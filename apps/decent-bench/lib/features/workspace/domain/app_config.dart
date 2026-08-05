@@ -201,6 +201,16 @@ class AppConfig {
     if (databaseOpen.planCacheMaxBytes != null) {
       buffer.writeln('plan_cache_max_bytes = ${databaseOpen.planCacheMaxBytes}');
     }
+    if (databaseOpen.processCoordinationTimeoutMs != null) {
+      buffer.writeln(
+        'process_coordination_timeout_ms = ${databaseOpen.processCoordinationTimeoutMs}',
+      );
+    }
+    if (databaseOpen.openBridgeTimeoutMs != null) {
+      buffer.writeln(
+        'open_bridge_timeout_ms = ${databaseOpen.openBridgeTimeoutMs}',
+      );
+    }
 
     final window = windowPlacement?.normalized();
     if (window != null) {
@@ -453,6 +463,26 @@ class AppConfig {
             config = config.copyWith(
               databaseOpen: config.databaseOpen.copyWith(
                 planCacheMaxBytes: parsed,
+              ),
+            );
+          }
+          break;
+        case 'database_open.process_coordination_timeout_ms':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed > 0) {
+            config = config.copyWith(
+              databaseOpen: config.databaseOpen.copyWith(
+                processCoordinationTimeoutMs: parsed,
+              ),
+            );
+          }
+          break;
+        case 'database_open.open_bridge_timeout_ms':
+          final parsed = int.tryParse(value);
+          if (parsed != null && parsed > 0) {
+            config = config.copyWith(
+              databaseOpen: config.databaseOpen.copyWith(
+                openBridgeTimeoutMs: parsed,
               ),
             );
           }

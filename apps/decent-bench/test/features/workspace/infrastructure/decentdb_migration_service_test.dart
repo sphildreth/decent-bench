@@ -26,6 +26,56 @@ void main() {
     );
   });
 
+  test('detects DDB_ERR_TIMEOUT engine messages', () {
+    expect(
+      DecentDbMigrationService.isCoordinationTimeoutMessage(
+        'DecentDBException: DDB_ERR_TIMEOUT (10)',
+      ),
+      isTrue,
+    );
+    expect(
+      DecentDbMigrationService.isCoordinationTimeoutMessage(
+        'ErrTimeout waiting for writer lock',
+      ),
+      isTrue,
+    );
+    expect(
+      DecentDbMigrationService.isCoordinationTimeoutMessage(
+        'process writer lock wait timed out',
+      ),
+      isTrue,
+    );
+    expect(
+      DecentDbMigrationService.isCoordinationTimeoutMessage(
+        'database file is corrupt',
+      ),
+      isFalse,
+    );
+  });
+
+  test('explainCoordinationTimeout returns null for non-matching messages',
+      () {
+    expect(
+      DecentDbMigrationService.explainCoordinationTimeout(
+        'database file is corrupt',
+        databasePath: '/tmp/foo.ddb',
+      ),
+      isNull,
+    );
+  });
+
+  test('explainCoordinationTimeout names the .coord sidecar and the config '
+      'knob to raise', () {
+    final text = DecentDbMigrationService.explainCoordinationTimeout(
+      'DDB_ERR_TIMEOUT',
+      databasePath: '/mnt/incoming/foo.ddb',
+    );
+    expect(text, isNotNull);
+    expect(text, contains('process writer lock'));
+    expect(text, contains('/mnt/incoming/foo.ddb.ddb.coord'));
+    expect(text, contains('process_coordination_timeout_ms'));
+  });
+
   test('suggests a unique migrated destination beside the source', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'decentdb-migration-service-',

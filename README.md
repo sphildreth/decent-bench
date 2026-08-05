@@ -266,6 +266,57 @@ Typical files under that root include:
 - 🧠 [`design/adr/README.md`](design/adr/README.md) — Architecture Decision Records
 - 🤖 [`AGENTS.md`](AGENTS.md) — Agent instructions and guardrails
 
+## 🩺 Troubleshooting
+
+### "DDB_ERR_TIMEOUT" while opening a database
+
+DecentDB acquires a process writer lock while opening a database (the
+`<db>.ddb.coord` sidecar file holds the lock state). If another
+DecentDB-backed process is still holding the lock, or if the `.coord`
+file is stale (left behind by a `kill -9`, crash, or improper close),
+or if the open path is on a slow filesystem (network mount, FUSE,
+encrypted volume), the engine waits up to
+`process_coordination_timeout_ms` (default 30s) and then returns
+`DDB_ERR_TIMEOUT`. The UI now surfaces a dialog explaining the
+cause and the remediation. Typical resolutions:
+
+1. Close any other DecentDB-backed process that might be holding the
+   writer lock.
+2. Remove a stale `<db>.ddb.coord` sidecar file (the engine rebuilds
+   it on the next open — it is not user data).
+3. Raise the engine's process-coordination wait in your `config.toml`:
+
+   ```toml
+   [database_open]
+   process_coordination_timeout_ms = 300000   # 5 minutes (engine side)
+   open_bridge_timeout_ms = 600000            # 10 minutes (bridge side)
+   ```
+
+   The **bridge timeout must be greater than the engine coordination
+   timeout** — otherwise the bridge will outrace the engine and surface a
+   misleading bridge-level timeout instead of the engine's actual
+   response. Defaults: engine 30s, bridge 5 min.
+
+   You can also override the bridge timeout at launch via the
+   `DECENT_BENCH_OPEN_TIMEOUT_MS` environment variable.
+
+### Sidecar files
+
+Each open `.ddb` file may have companion sidecars that are part of
+the on-disk format:
+
+| File | Purpose | Rebuildable? |
+| ---- | ------- | ------------ |
+| `<db>.ddb.wal` | Write-Ahead Log of pending changes | Yes (on close) |
+| `<db>.ddb.sync-journal` | Sync changeset journal | Yes (on close) |
+| `<db>.ddb.coord` | Process writer-lock state | Yes (on next open) |
+
+If you copy a `.ddb` for backup or transfer, copy all sidecars that
+are present. Removing a `.coord` sidecar is safe; removing a `.wal`
+or `.sync-journal` requires running DecentDB's built-in recovery on
+next open (the engine will replay what it can and rebuild state
+from the `.ddb`).
+
 ## 🤝 Contributing
 
 We love contributions! Before making non-trivial changes, please review the [`SPEC.md`](design/SPEC.md) and our [`AGENTS.md`](AGENTS.md) guidelines.

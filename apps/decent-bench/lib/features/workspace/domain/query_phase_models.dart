@@ -184,15 +184,27 @@ class QueryErrorDetails {
 }
 
 class DatabaseSession {
-  const DatabaseSession({required this.path, required this.engineVersion});
+  const DatabaseSession({
+    required this.path,
+    required this.engineVersion,
+    this.engineVersionWarning,
+  });
 
   final String path;
   final String engineVersion;
+
+  /// Non-null when the loaded native library's engine version disagrees
+  /// with the pinned ref in `apps/decent-bench/pubspec.yaml`. Most open
+  /// failures that look like `DDB_ERR_TIMEOUT` are actually caused by a
+  /// stale build loading an old `libdecentdb.so`. UI surfaces this as a
+  /// non-blocking warning when present.
+  final String? engineVersionWarning;
 
   factory DatabaseSession.fromMap(Map<String, Object?> map) {
     return DatabaseSession(
       path: map['path']! as String,
       engineVersion: map['engineVersion']! as String,
+      engineVersionWarning: map['engineVersionWarning'] as String?,
     );
   }
 }

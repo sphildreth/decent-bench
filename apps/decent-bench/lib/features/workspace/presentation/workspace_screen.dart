@@ -3220,6 +3220,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return;
     }
     final openError = widget.controller.workspaceError;
+    if (DecentDbMigrationService.isCoordinationTimeoutMessage(openError)) {
+      await _showCoordinationTimeoutHelp(
+        sourcePath: path,
+        openError: openError ?? 'DDB_ERR_TIMEOUT',
+      );
+      return;
+    }
     if (!DecentDbMigrationService.isUnsupportedFormatVersionMessage(
       openError,
     )) {
@@ -3228,6 +3235,87 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     await _showLegacyDatabaseMigrationOffer(
       sourcePath: path,
       openError: openError ?? 'Unsupported database format version.',
+    );
+  }
+
+  Future<void> _showCoordinationTimeoutHelp({
+    required String sourcePath,
+    required String openError,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+    final isBridgeTimeout =
+        openError.contains('worker request') || openError.contains('BridgeFailure');
+    final explanation = isBridgeTimeout
+        ? 'DecentDB worker timed out waiting for a response from the engine. '
+            'This usually means the engine itself is still working but the '
+            'bridge gave up first. Raise the Dart-side wait by setting '
+            'open_bridge_timeout_ms in the [database_open] section of '
+            'config.toml (default: 5 minutes). The underlying engine wait '
+            'is controlled separately by process_coordination_timeout_ms '
+            'and must always be smaller than the bridge timeout.'
+        : DecentDbMigrationService.explainCoordinationTimeout(
+            openError,
+            databasePath: sourcePath,
+          );
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Database open timed out'),
+        content: SizedBox(
+          width: 600,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                explanation ??
+                    'DecentDB timed out while opening the database. Try '
+                        'closing other DecentDB-backed processes, removing '
+                        'a stale .coord sidecar, or raising '
+                        'process_coordination_timeout_ms (engine) and '
+                        'open_bridge_timeout_ms (bridge) in config.toml.',
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: SelectableText(
+                  sourcePath,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                title: const Text('Engine error'),
+                children: <Widget>[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: SelectableText(
+                      openError,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 

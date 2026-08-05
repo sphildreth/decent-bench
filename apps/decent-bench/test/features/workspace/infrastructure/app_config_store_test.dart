@@ -300,9 +300,29 @@ height = 80
     expect(defaults.profile, 'default');
     expect(defaults.planCacheEnabled, isTrue);
     expect(defaults.planCacheMaxBytes, isNull);
+    expect(defaults.processCoordinationTimeoutMs, isNull);
     expect(
       defaults.toOpenOptionsFragment(),
       'profile=default,plan_cache_enabled=true',
+    );
+  });
+
+  test('process_coordination_timeout_ms round-trips through TOML', () {
+    final config = AppConfig.defaults().copyWith(
+      databaseOpen: const DatabaseOpenSettings(
+        processCoordinationTimeoutMs: 120000,
+      ),
+    );
+
+    final toml = config.toToml();
+    final parsed = AppConfig.fromToml(toml);
+
+    expect(toml, contains('process_coordination_timeout_ms = 120000'));
+    expect(parsed.databaseOpen.processCoordinationTimeoutMs, 120000);
+    expect(
+      parsed.databaseOpen.toOpenOptionsFragment(),
+      'profile=default,plan_cache_enabled=true,'
+          'process_coordination_timeout_ms=120000',
     );
   });
 }
