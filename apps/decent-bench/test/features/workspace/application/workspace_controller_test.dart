@@ -91,7 +91,10 @@ class _TrackingWorkspaceGateway extends FakeWorkspaceGateway {
   final List<List<Object?>> runQueryParamsHistory = <List<Object?>>[];
 
   @override
-  Future<QueryContract> describeQueryContract(String sql) async {
+  Future<QueryContract> describeQueryContract(
+    String sql, {
+    Duration? timeout,
+  }) async {
     lastDescribedQuerySql = sql;
     return queryContract;
   }
@@ -106,6 +109,66 @@ class _TrackingWorkspaceGateway extends FakeWorkspaceGateway {
     runQueryCallCount += 1;
     lastRunParams = <Object?>[...params];
     runQueryParamsHistory.add(<Object?>[...params]);
+    return super.runQuery(sql: sql, params: params, pageSize: pageSize);
+  }
+}
+
+/// Fake gateway whose `describeQueryContract` always raises a bridge
+/// timeout, simulating a wedged worker isolate. `runQuery` still succeeds
+/// so the controller's fallback path can be exercised.
+class _DescribeTimeoutGateway extends FakeWorkspaceGateway {
+  int describeCallCount = 0;
+  int runQueryCallCount = 0;
+
+  @override
+  Future<QueryContract> describeQueryContract(
+    String sql, {
+    Duration? timeout,
+  }) async {
+    describeCallCount += 1;
+    throw const BridgeFailure(
+      'DecentDB worker request "describeQueryContract" timed out after 10s.',
+      code: 'DDB_ERR_TIMEOUT',
+    );
+  }
+
+  @override
+  Future<QueryResultPage> runQuery({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    Duration? timeout,
+  }) async {
+    runQueryCallCount += 1;
+    return super.runQuery(sql: sql, params: params, pageSize: pageSize);
+  }
+}
+
+/// Fake gateway whose `describeQueryContract` reports a busy worker.
+class _DescribeBusyGateway extends FakeWorkspaceGateway {
+  int describeCallCount = 0;
+  int runQueryCallCount = 0;
+
+  @override
+  Future<QueryContract> describeQueryContract(
+    String sql, {
+    Duration? timeout,
+  }) async {
+    describeCallCount += 1;
+    throw const BridgeFailure(
+      'DecentDB worker is busy with another operation.',
+      code: 'DDB_ERR_WORKER_BUSY',
+    );
+  }
+
+  @override
+  Future<QueryResultPage> runQuery({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    Duration? timeout,
+  }) async {
+    runQueryCallCount += 1;
     return super.runQuery(sql: sql, params: params, pageSize: pageSize);
   }
 }
@@ -978,6 +1041,53 @@ void main() {
         gateway.toolingMetadata.schemaFingerprint,
       );
     });
+
+    test(
+      'runTab still executes SQL when describeQueryContract times out',
+      () async {
+        // Regression: a stuck describeQueryContract used to wedge the worker
+        // isolate so that the query never ran and later control requests
+        // (openDatabase/loadSchema) timed out. The controller must fall back
+        // to running the query without a parameter contract when describe
+        // returns a bridge timeout.
+        final dbPath = _tempDbPath();
+        final gateway = _DescribeTimeoutGateway();
+        final controller = _createController(gateway: gateway);
+
+        await controller.initialize();
+        await controller.openDatabase(dbPath, createIfMissing: true);
+        controller.updateActiveSql('SELECT id, title FROM tasks');
+        await controller.runActiveTab();
+
+        expect(gateway.describeCallCount, 1);
+        expect(gateway.runQueryCallCount, greaterThanOrEqualTo(1));
+        expect(controller.activeTab.queryContract, isNull);
+        expect(controller.activeTab.error, isNull);
+        expect(controller.activeTab.phase, QueryPhase.completed);
+        // The query produced result rows despite the describe timeout.
+        expect(controller.activeTab.resultRows, isNotEmpty);
+      },
+    );
+
+    test(
+      'runTab still executes SQL when describeQueryContract reports a busy worker',
+      () async {
+        final dbPath = _tempDbPath();
+        final gateway = _DescribeBusyGateway();
+        final controller = _createController(gateway: gateway);
+
+        await controller.initialize();
+        await controller.openDatabase(dbPath, createIfMissing: true);
+        controller.updateActiveSql('SELECT id, title FROM tasks');
+        await controller.runActiveTab();
+
+        expect(gateway.describeCallCount, 1);
+        expect(gateway.runQueryCallCount, greaterThanOrEqualTo(1));
+        expect(controller.activeTab.queryContract, isNull);
+        expect(controller.activeTab.error, isNull);
+        expect(controller.activeTab.resultRows, isNotEmpty);
+      },
+    );
 
     test(
       'tableEditabilityForTab identifies editable table result sets',

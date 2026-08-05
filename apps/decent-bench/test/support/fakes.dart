@@ -943,7 +943,10 @@ class FakeWorkspaceGateway implements WorkspaceDatabaseGateway {
   }
 
   @override
-  Future<QueryContract> describeQueryContract(String sql) async {
+  Future<QueryContract> describeQueryContract(
+    String sql, {
+    Duration? timeout,
+  }) async {
     lastDescribedQuerySql = sql;
     final error = queryContractError;
     if (error != null) {

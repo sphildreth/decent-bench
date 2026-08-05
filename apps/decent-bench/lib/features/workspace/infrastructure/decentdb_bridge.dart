@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:decentdb/decentdb.dart' hide SchemaSnapshot;
+import 'package:meta/meta.dart';
 
 import '../domain/app_config.dart';
 import '../domain/excel_import_models.dart';
@@ -42,7 +43,7 @@ abstract class SchemaIntrospectionGateway {
   Future<SchemaSnapshot> loadSchema();
   Future<OperationalMetricsSnapshot> loadOperationalMetrics({int maxRows});
   Future<ToolingMetadata> getToolingMetadata();
-  Future<QueryContract> describeQueryContract(String sql);
+  Future<QueryContract> describeQueryContract(String sql, {Duration? timeout});
 }
 
 abstract class QueryExecutionGateway {
@@ -190,12 +191,58 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   ReceivePort? _responses;
   int _nextRequestId = 1;
 
+  /// Number of requests dispatched to the worker that have not yet received
+  /// a reply. Because the worker isolate processes requests **serially** in
+  /// a single `await for` loop, a non-zero count means the worker is busy
+  /// with exactly one native call and every subsequent request is queued
+  /// behind it. Native calls (`Db::open`, `describeQueryContract`,
+  /// `runQuery`, `listBranches`, ...) are synchronous on the isolate and
+  /// cannot be interrupted, so a wedged call blocks *all* later requests
+  /// until it returns — even after the Dart-side `.timeout()` fires.
+  ///
+  /// We track this to (1) short-circuit control requests when the worker is
+  /// already busy with a non-cancelable op, and (2) restart the worker when
+  /// a request times out so the next open/schema load is not queued behind
+  /// the stuck call forever.
+  int _inFlight = 0;
+
+  /// Guards restart so concurrent timeouts (e.g. several queued requests
+  /// all expiring) only tear the worker down once.
+  bool _restarting = false;
+
+  /// Test seam: when non-null, [initialize] skips spawning a real worker
+  /// isolate and instead records this port as the worker port. Lets unit
+  /// tests exercise the busy short-circuit and restart orchestration
+  /// without the real native library.
+  @visibleForTesting
+  SendPort? fakeWorkerPortForTesting;
+
+  /// Test seam: forces the in-flight count so a test can simulate a worker
+  /// that is busy with a non-cancelable op, then assert that a control
+  /// request is short-circuited.
+  @visibleForTesting
+  void setInFlightForTesting(int count) => _inFlight = count;
+
+  /// Test seam: the set of actions treated as control requests that must
+  /// not queue behind a busy worker.
+  @visibleForTesting
+  Set<String> get controlActionsForTesting => _controlActions;
+
   @override
   String? resolvedLibraryPath;
 
   @override
   Future<String> initialize() async {
     if (_workerPort != null && resolvedLibraryPath != null) {
+      return resolvedLibraryPath!;
+    }
+
+    // Test seam: skip the real native library + isolate so unit tests can
+    // exercise the request/timeout/restart orchestration without a worker.
+    if (fakeWorkerPortForTesting != null) {
+      resolvedLibraryPath ??= '<fake-for-testing>';
+      _responses = ReceivePort();
+      _workerPort = fakeWorkerPortForTesting;
       return resolvedLibraryPath!;
     }
 
@@ -230,6 +277,13 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       );
       final requestId = response['id'] as int;
       final completer = _pending.remove(requestId);
+      // Every reply — whether or not someone is still waiting — means the
+      // worker finished one request and is ready for the next. Decrement
+      // here (never in `_request`'s success path) so a late reply for an
+      // already-timed-out request still releases the busy slot.
+      if (_inFlight > 0) {
+        _inFlight--;
+      }
       if (completer == null) {
         return;
       }
@@ -320,10 +374,13 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   }
 
   @override
-  Future<QueryContract> describeQueryContract(String sql) async {
+  Future<QueryContract> describeQueryContract(
+    String sql, {
+    Duration? timeout,
+  }) async {
     final data = await _request('describeQueryContract', <String, Object?>{
       'sql': sql,
-    });
+    }, timeout);
     return QueryContract.fromMap(data);
   }
 
@@ -772,6 +829,23 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
     return Duration(milliseconds: parsed);
   }
 
+  /// Actions that open, close, or introspect the database handle. These
+  /// mutate the worker's `_database` state and must never queue behind a
+  /// long-running query: if the worker is busy with another op, dispatching
+  /// one of these would block until that op finishes (or the bridge timeout
+  /// fires), which is how a stuck `describeQueryContract` wedges a later
+  /// `openDatabase`. When the worker is busy we fail these fast instead.
+  static const Set<String> _controlActions = <String>{
+    'openDatabase',
+    'loadSchema',
+    'loadOperationalMetrics',
+    'getToolingMetadata',
+    'saveAs',
+    'evictSharedWal',
+    'listBranches',
+    'listSnapshots',
+  };
+
   Future<Map<String, Object?>> _request(
     String action, [
     Map<String, Object?> payload = const <String, Object?>{},
@@ -784,9 +858,28 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       throw const BridgeFailure('DecentDB worker isolate is not available.');
     }
 
+    // The worker processes requests serially. If it is already running a
+    // native call, a control request would queue behind it and surface as a
+    // misleading 30-60s timeout. Short-circuit instead so the caller sees a
+    // fast, actionable "worker busy" error rather than blaming the file.
+    if (_inFlight > 0 && _controlActions.contains(action)) {
+      final path = payload['path'];
+      final pathSuffix = path is String && path.isNotEmpty
+          ? ' (path: $path)'
+          : '';
+      throw BridgeFailure(
+        'DecentDB worker is busy with another operation and cannot accept '
+        '"$action" right now$pathSuffix. A previous query or schema request '
+        'has not returned; wait for it to finish or close and reopen the '
+        'workspace.',
+        code: 'DDB_ERR_WORKER_BUSY',
+      );
+    }
+
     final requestId = _nextRequestId++;
     final completer = Completer<Map<String, Object?>>();
     _pending[requestId] = completer;
+    _inFlight++;
 
     workerPort.send(<String, Object?>{
       'id': requestId,
@@ -799,17 +892,27 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
     try {
       return await completer.future.timeout(effectiveTimeout);
     } on TimeoutException {
-      _pending.remove(requestId);
+      final removed = _pending.remove(requestId) != null;
+      // Restart the worker so the stuck native call is abandoned and the
+      // next request (e.g. `openDatabase`) is not queued behind it forever.
+      // The worker owns the engine handle; killing the isolate drops it.
+      // Callers must re-open the database after a restart.
+      if (removed) {
+        await _restartWorker(action: action);
+      }
       final path = payload['path'];
       final hint = switch (action) {
         'openDatabase' =>
-          'The bridge timed out waiting for the worker. The engine may still '
-              'be working — try raising DECENT_BENCH_OPEN_TIMEOUT_MS or the '
+          'The bridge timed out waiting for the worker and restarted the '
+              'worker isolate. The previous operation may have been stuck; '
+              'retry the open. If it persists, try raising '
+              'DECENT_BENCH_OPEN_TIMEOUT_MS or the '
               'process_coordination_timeout_ms key in [database_open] of '
               'config.toml (the engine default is 30s).',
         _ =>
-          'The worker isolate may be unresponsive or the operation is '
-              'taking too long.',
+          'The worker isolate was unresponsive and has been restarted. '
+              'Retry the operation; if it timed out on a query, the previous '
+              'database handle was dropped and must be reopened.',
       };
       final pathSuffix = path is String && path.isNotEmpty
           ? ' (path: $path)'
@@ -819,6 +922,52 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
         '${effectiveTimeout.inSeconds}s$pathSuffix. $hint',
         code: 'DDB_ERR_TIMEOUT',
       );
+    }
+  }
+
+  /// Tear down the current worker isolate and respawn a fresh one. Called
+  /// when a request times out: the native call cannot be interrupted, so
+  /// killing the isolate is the only way to stop a wedged op from blocking
+  /// every subsequent request. After a restart the worker has no open
+  /// database handle — callers must call `openDatabase` again before any
+  /// schema/query op. All pending completers are failed with a clear
+  /// "worker restarted" error.
+  Future<void> _restartWorker({required String action}) async {
+    if (_restarting) {
+      return;
+    }
+    _restarting = true;
+    try {
+      // Fail every other in-flight request: their completers will never
+      // resolve because we are about to kill the isolate that would reply.
+      final victims = _pending.values.toList();
+      _pending.clear();
+      _inFlight = 0;
+      for (final completer in victims) {
+        if (!completer.isCompleted) {
+          completer.completeError(
+            const BridgeFailure(
+              'DecentDB worker was restarted because a previous request '
+              'timed out. The database handle was dropped; reopen the '
+              'workspace before running further queries.',
+              code: 'DDB_ERR_WORKER_RESTARTED',
+            ),
+          );
+        }
+      }
+
+      // Kill the old isolate and close its reply port.
+      _isolate?.kill(priority: Isolate.immediate);
+      _isolate = null;
+      _responses?.close();
+      _responses = null;
+      _workerPort = null;
+
+      // Respawn so the next request has a responsive worker. `initialize`
+      // re-creates the isolate and reply port.
+      await initialize();
+    } finally {
+      _restarting = false;
     }
   }
 

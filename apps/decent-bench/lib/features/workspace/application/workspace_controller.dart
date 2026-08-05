@@ -31,6 +31,16 @@ import '../infrastructure/workspace_state_store.dart';
 class WorkspaceController extends ChangeNotifier {
   static const int _maxMessageHistoryEntries = 80;
 
+  /// Bridge timeout for the pre-execution `describeQueryContract` step.
+  /// Describe is a metadata-only call that should return near-instantly;
+  /// when the worker isolate is wedged by a prior long-running op it will
+  /// instead block the worker for the full request timeout. We cap it
+  /// short so a stuck describe fails fast and `runQuery` proceeds without
+  /// a contract (parameter validation is skipped) rather than wedging the
+  /// whole query — and the worker-restart path in the bridge gets a chance
+  /// to recover before the user's actual query is attempted.
+  static const Duration _describeQueryContractTimeout = Duration(seconds: 10);
+
   WorkspaceController({
     WorkspaceDatabaseGateway? gateway,
     WorkspaceConfigStore? configStore,
@@ -1119,7 +1129,7 @@ class WorkspaceController extends ChangeNotifier {
 
     var branchCreated = false;
     try {
-      final queryContract = await _gateway.describeQueryContract(trimmedSql);
+      final queryContract = await _describeQueryContractSafe(trimmedSql);
       if (!_isCurrentGeneration(tabId, generation)) {
         return;
       }
@@ -1128,11 +1138,14 @@ class WorkspaceController extends ChangeNotifier {
         (current) => current.copyWith(queryContract: queryContract),
         notify: false,
       );
-      if (!_validateQueryContractParameters(
-        tabId: tabId,
-        contract: queryContract,
-        parameterValues: params,
-      )) {
+      // When describe was unavailable (worker busy/restarted), skip
+      // parameter validation and run the query directly.
+      if (queryContract != null &&
+          !_validateQueryContractParameters(
+            tabId: tabId,
+            contract: queryContract,
+            parameterValues: params,
+          )) {
         return;
       }
 
@@ -1357,7 +1370,7 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     try {
-      final queryContract = await _gateway.describeQueryContract(trimmedSql);
+      final queryContract = await _describeQueryContractSafe(trimmedSql);
       if (!_isCurrentGeneration(tabId, generation)) {
         return;
       }
@@ -1366,11 +1379,16 @@ class WorkspaceController extends ChangeNotifier {
         (current) => current.copyWith(queryContract: queryContract),
         notify: false,
       );
-      if (_validateQueryContractParameters(
-        tabId: tabId,
-        contract: queryContract,
-        parameterValues: params,
-      )) {
+      // When describe was unavailable (worker busy/restarted), skip
+      // parameter validation and run the query directly so a stuck
+      // metadata call cannot block the user's actual query.
+      final contractValid = queryContract == null ||
+          _validateQueryContractParameters(
+            tabId: tabId,
+            contract: queryContract,
+            parameterValues: params,
+          );
+      if (contractValid) {
         final page = await _gateway.runQuery(
           sql: trimmedSql,
           params: params,
@@ -4808,6 +4826,38 @@ class WorkspaceController extends ChangeNotifier {
   bool _isCurrentGeneration(String tabId, int generation) {
     final tab = tabById(tabId);
     return tab != null && tab.executionGeneration == generation;
+  }
+
+  /// Attempts to describe a query's contract (parameters + result columns)
+  /// with a short bridge timeout. Returns `null` when describe times out
+  /// or the worker is busy, so the caller can fall back to executing the
+  /// query without parameter validation instead of wedging the worker
+  /// behind a stuck metadata call. Non-timeout errors (e.g. SQL syntax)
+  /// are rethrown so the user sees the real error.
+  Future<QueryContract?> _describeQueryContractSafe(String sql) async {
+    try {
+      return await _gateway.describeQueryContract(
+        sql,
+        timeout: _describeQueryContractTimeout,
+      );
+    } on BridgeFailure catch (error) {
+      if (error.code == 'DDB_ERR_TIMEOUT' ||
+          error.code == 'DDB_ERR_WORKER_BUSY' ||
+          error.code == 'DDB_ERR_WORKER_RESTARTED') {
+        _logger.warning(
+          category: 'query',
+          operation: 'describe_query_contract',
+          message:
+              'describeQueryContract was unavailable ($error); running the '
+              'query without a parameter contract.',
+          databasePath: databasePath,
+          sql: sql,
+          error: error,
+        );
+        return null;
+      }
+      rethrow;
+    }
   }
 
   bool _validateQueryContractParameters({
