@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:path/path.dart' as p;
 
@@ -116,8 +117,8 @@ class DecentDbMigrationService {
     return normalized.contains('ddb_err_timeout') ||
         normalized.contains('err_timeout') ||
         normalized.contains('writer lock') ||
-        normalized.contains('timed out') ||
-        normalized.contains('timeout');
+        normalized.contains('timed out waiting') ||
+        normalized.contains('process_coordination_timeout');
   }
 
   /// Human-readable next-steps for a `DDB_ERR_TIMEOUT` on open, suitable
@@ -131,7 +132,14 @@ class DecentDbMigrationService {
     if (!isCoordinationTimeoutMessage(message)) {
       return null;
     }
-    final coordNote = databasePath == null
+    String? coordPath;
+    if (databasePath != null) {
+      final base = databasePath.endsWith('.ddb')
+          ? databasePath.substring(0, databasePath.length - 4)
+          : databasePath;
+      coordPath = '$base.ddb.coord';
+    }
+    final coordNote = coordPath == null
         ? 'A stale <database>.ddb.coord file from a previous run can also '
             'cause this. Closing other DecentDB-backed processes and '
             'removing the .coord sidecar (it is rebuildable) usually '
@@ -140,7 +148,7 @@ class DecentDbMigrationService {
             'config.toml. If the bridge wrapper times out first, also '
             'raise open_bridge_timeout_ms (or set the '
             'DECENT_BENCH_OPEN_TIMEOUT_MS environment variable).'
-        : 'A stale "$databasePath.ddb.coord" sidecar file from a previous '
+        : 'A stale "$coordPath" sidecar file from a previous '
             'run can also cause this. Closing other DecentDB-backed '
             'processes and removing the .coord sidecar (it is rebuildable) '
             'usually clears it. You can also raise the wait by setting '
@@ -295,9 +303,9 @@ class DecentDbMigrationService {
   }
 
   static String _randomToken() {
-    final mix = DateTime.now().microsecondsSinceEpoch ^
-        DateTime.now().microsecondsSinceEpoch;
-    final hex = mix.toRadixString(16);
+    final rng = Random();
+    final value = rng.nextInt(0xFFFFFFFF) ^ DateTime.now().microsecondsSinceEpoch;
+    final hex = value.toRadixString(16);
     if (hex.length >= 10) {
       return hex.substring(0, 10);
     }

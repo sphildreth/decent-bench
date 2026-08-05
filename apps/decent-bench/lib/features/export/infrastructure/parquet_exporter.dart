@@ -7,48 +7,7 @@
 // TODO: Add apache-arrow or parquet dependency when ready for implementation.
 // See ADR-0031 (Parquet and Excel Export Dependency Strategy) for details.
 
-class ParquetExportResult {
-  const ParquetExportResult({
-    required this.rowCount,
-    required this.path,
-    this.schemaFingerprint,
-    this.warnings = const <String>[],
-    this.duration,
-  });
-
-  final int rowCount;
-  final String path;
-  final String? schemaFingerprint;
-  final List<String> warnings;
-  final Duration? duration;
-
-  Map<String, Object?> toJson() {
-    return <String, Object?>{
-      'rowCount': rowCount,
-      'path': path,
-      'schemaFingerprint': schemaFingerprint,
-      'warnings': warnings,
-      'durationMs': duration?.inMilliseconds ?? 0,
-    };
-  }
-
-  factory ParquetExportResult.fromJson(Map<String, Object?> map) {
-    return ParquetExportResult(
-      rowCount: map['rowCount'] as int,
-      path: map['path'] as String,
-      schemaFingerprint: map['schemaFingerprint'] as String?,
-      warnings: (map['warnings'] as List<dynamic>? ?? [])
-          .whereType<String>()
-          .toList(),
-      duration: Duration(milliseconds: map['durationMs'] as int? ?? 0),
-    );
-  }
-
-  @override
-  String toString() {
-    return 'ParquetExportResult(rowCount: $rowCount, path: $path)';
-  }
-}
+import 'package:decent_bench/features/workspace/domain/query_result_models.dart';
 
 class ParquetExporter {
   /// Creates a new Parquet exporter instance.

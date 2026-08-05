@@ -203,8 +203,23 @@ class DecentDbDoctorService {
       );
     }
 
-    final cliPath =
-        await (_cliPathResolver ?? DecentDbCliResolver().resolve)();
+    final String cliPath;
+    try {
+      cliPath = await (_cliPathResolver ?? DecentDbCliResolver().resolve)();
+    } on DecentDbCliResolutionFailure catch (e) {
+      if (_sysViewRunner != null) {
+        return await _runSysViewFallback(
+          databasePath: normalizedPath,
+          cliPath: '',
+          arguments: const <String>[],
+          stdoutText: '',
+          stderrText: e.toDisplayMessage(),
+          exitCode: -1,
+          elapsed: Duration.zero,
+        );
+      }
+      rethrow;
+    }
     final args = buildDoctorArguments(
       databasePath: normalizedPath,
       checks: checks,

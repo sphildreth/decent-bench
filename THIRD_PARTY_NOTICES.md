@@ -51,7 +51,7 @@ Apache 2.0 distribution. This file tracks attributions and license details.
   - Copyright: Brendan Duncan
   - Source: `https://pub.dev/packages/image`
 
-- `sqlite3` `3.3.3`
+- `sqlite3` `3.5.1`
   - License: MIT
   - Copyright: Simon Binder
   - Source: `https://pub.dev/packages/sqlite3`

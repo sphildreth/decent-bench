@@ -499,8 +499,8 @@ String? _typedBatchSignatureChar(String targetType) =>
     typedBatchSignatureChar(targetType);
 
 /// True when every column in [columns] can be expressed in the typed-batch
-/// signature (i/b/f/t). UUID columns are coerced to the `t` signature so
-/// they can ride the typed path, but require text form in the row values.
+/// signature (i/f/t). UUID and BOOLEAN columns are not supported and will
+/// cause the caller to fall back to the untyped batch path.
 bool _canUseTypedBatch(List<ImportColumnDraft> columns) {
   return canUseTypedBatchForTargets(
     <String>[for (final c in columns) c.targetType],

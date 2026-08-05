@@ -3,28 +3,28 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('INTEGER / DOUBLE / TEXT map to i/f/t; BOOLEAN is excluded in v2.17',
-    () {
-  expect(typedBatchSignatureChar('INTEGER'), 'i');
-  expect(typedBatchSignatureChar('BIGINT'), 'i');
-  expect(
-    typedBatchSignatureChar('BOOLEAN'),
-    isNull,
-    reason:
-        'The Dart binding for v2.17 only accepts i/t/f; BOOLEAN rides the '
-        'bindAll path.',
-  );
-  expect(typedBatchSignatureChar('DOUBLE PRECISION'), 'f');
-  expect(typedBatchSignatureChar('TEXT'), 't');
-  expect(typedBatchSignatureChar('VARCHAR(64)'), 't');
-});
-
-  test('UUID is excluded from the typed batch because UuidValue does not '
-    'fit the t slot', () {
-  expect(typedBatchSignatureChar('UUID'), isNull);
-});
-
-  test('BLOB / DECIMAL / NUMERIC return null (typed-batch unsupported)',
       () {
+    expect(typedBatchSignatureChar('INTEGER'), 'i');
+    expect(typedBatchSignatureChar('BIGINT'), 'i');
+    expect(
+      typedBatchSignatureChar('BOOLEAN'),
+      isNull,
+      reason:
+          'The Dart binding for v2.17 only accepts i/t/f; BOOLEAN rides the '
+          'bindAll path.',
+    );
+    expect(typedBatchSignatureChar('DOUBLE PRECISION'), 'f');
+    expect(typedBatchSignatureChar('TEXT'), 't');
+    expect(typedBatchSignatureChar('VARCHAR(64)'), 't');
+  });
+
+  test(
+      'UUID is excluded from the typed batch because UuidValue does not '
+      'fit the t slot', () {
+    expect(typedBatchSignatureChar('UUID'), isNull);
+  });
+
+  test('BLOB / DECIMAL / NUMERIC return null (typed-batch unsupported)', () {
     expect(typedBatchSignatureChar('BLOB'), isNull);
     expect(typedBatchSignatureChar('DECIMAL(10,2)'), isNull);
     expect(typedBatchSignatureChar('NUMERIC(8,4)'), isNull);
