@@ -122,6 +122,108 @@ class _DecentDbMigrationDialogState extends State<DecentDbMigrationDialog> {
   }
 }
 
+class DecentDbInPlaceMigrationDialog extends StatelessWidget {
+  const DecentDbInPlaceMigrationDialog({
+    super.key,
+    required this.sourcePath,
+    required this.backupPath,
+    required this.openError,
+  });
+
+  final String sourcePath;
+  final String backupPath;
+  final String openError;
+
+  static Future<bool> show({
+    required BuildContext context,
+    required String sourcePath,
+    required String backupPath,
+    required String openError,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => DecentDbInPlaceMigrationDialog(
+        sourcePath: sourcePath,
+        backupPath: backupPath,
+        openError: openError,
+      ),
+    );
+    return result ?? false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Upgrade legacy DecentDB file in place?'),
+      content: SizedBox(
+        width: 580,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              'This database uses an older DecentDB file format. Decent Bench '
+              'can upgrade the file in place using the official decentdb-migrate '
+              'tool. The original file will be kept as a backup so you can roll '
+              'back if anything goes wrong.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            _PathSummary(label: 'Database', path: sourcePath),
+            const SizedBox(height: 8),
+            _PathSummary(label: 'Backup will be at', path: backupPath),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                'The upgrade is one-way. After it completes, older Decent Bench '
+                'builds and older DecentDB releases will refuse to open the '
+                'upgraded file. Keep the .v13.bak backup until you have '
+                'verified the new file works for you.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onErrorContainer,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              title: const Text('Open error'),
+              children: <Widget>[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SelectableText(
+                    openError,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).pop(true),
+          icon: const Icon(Icons.upgrade_outlined),
+          label: const Text('Upgrade in place'),
+        ),
+      ],
+    );
+  }
+}
+
 class DecentDbMigrationProgressDialog extends StatelessWidget {
   const DecentDbMigrationProgressDialog({
     super.key,

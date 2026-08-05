@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:decentdb/decentdb.dart' hide SchemaSnapshot;
+import 'package:meta/meta.dart';
 
 import '../domain/app_config.dart';
 import '../domain/excel_import_models.dart';
@@ -24,7 +25,17 @@ abstract class DatabaseLifecycleGateway {
   Future<DatabaseSession> openDatabase(
     String path, {
     WriteQueueSettings? writeQueue,
+    DatabaseOpenSettings? databaseOpen,
   });
+
+  /// Compact-copy the open database to [destPath] using the engine's
+  /// `db_save_as`. The current handle stays open.
+  Future<void> saveAs(String destPath);
+
+  /// Evict the shared WAL cache entry for [path]. Must only be invoked
+  /// after all handles for that path have been closed.
+  Future<void> evictSharedWal(String path);
+
   Future<void> dispose();
 }
 
@@ -32,7 +43,7 @@ abstract class SchemaIntrospectionGateway {
   Future<SchemaSnapshot> loadSchema();
   Future<OperationalMetricsSnapshot> loadOperationalMetrics({int maxRows});
   Future<ToolingMetadata> getToolingMetadata();
-  Future<QueryContract> describeQueryContract(String sql);
+  Future<QueryContract> describeQueryContract(String sql, {Duration? timeout});
 }
 
 abstract class QueryExecutionGateway {
@@ -81,6 +92,14 @@ abstract class ExportGateway {
     required int pageSize,
     required String path,
     required bool includeHeaders,
+    Duration? timeout,
+  });
+  Future<ParquetExportResult> exportParquet({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    bool includeSchemaFingerprint = true,
     Duration? timeout,
   });
 }
@@ -172,12 +191,58 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   ReceivePort? _responses;
   int _nextRequestId = 1;
 
+  /// Number of requests dispatched to the worker that have not yet received
+  /// a reply. Because the worker isolate processes requests **serially** in
+  /// a single `await for` loop, a non-zero count means the worker is busy
+  /// with exactly one native call and every subsequent request is queued
+  /// behind it. Native calls (`Db::open`, `describeQueryContract`,
+  /// `runQuery`, `listBranches`, ...) are synchronous on the isolate and
+  /// cannot be interrupted, so a wedged call blocks *all* later requests
+  /// until it returns — even after the Dart-side `.timeout()` fires.
+  ///
+  /// We track this to (1) short-circuit control requests when the worker is
+  /// already busy with a non-cancelable op, and (2) restart the worker when
+  /// a request times out so the next open/schema load is not queued behind
+  /// the stuck call forever.
+  int _inFlight = 0;
+
+  /// Guards restart so concurrent timeouts (e.g. several queued requests
+  /// all expiring) only tear the worker down once.
+  bool _restarting = false;
+
+  /// Test seam: when non-null, [initialize] skips spawning a real worker
+  /// isolate and instead records this port as the worker port. Lets unit
+  /// tests exercise the busy short-circuit and restart orchestration
+  /// without the real native library.
+  @visibleForTesting
+  SendPort? fakeWorkerPortForTesting;
+
+  /// Test seam: forces the in-flight count so a test can simulate a worker
+  /// that is busy with a non-cancelable op, then assert that a control
+  /// request is short-circuited.
+  @visibleForTesting
+  void setInFlightForTesting(int count) => _inFlight = count;
+
+  /// Test seam: the set of actions treated as control requests that must
+  /// not queue behind a busy worker.
+  @visibleForTesting
+  Set<String> get controlActionsForTesting => _controlActions;
+
   @override
   String? resolvedLibraryPath;
 
   @override
   Future<String> initialize() async {
     if (_workerPort != null && resolvedLibraryPath != null) {
+      return resolvedLibraryPath!;
+    }
+
+    // Test seam: skip the real native library + isolate so unit tests can
+    // exercise the request/timeout/restart orchestration without a worker.
+    if (fakeWorkerPortForTesting != null) {
+      resolvedLibraryPath ??= '<fake-for-testing>';
+      _responses = ReceivePort();
+      _workerPort = fakeWorkerPortForTesting;
       return resolvedLibraryPath!;
     }
 
@@ -212,6 +277,13 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       );
       final requestId = response['id'] as int;
       final completer = _pending.remove(requestId);
+      // Every reply — whether or not someone is still waiting — means the
+      // worker finished one request and is ready for the next. Decrement
+      // here (never in `_request`'s success path) so a late reply for an
+      // already-timed-out request still releases the busy slot.
+      if (_inFlight > 0) {
+        _inFlight--;
+      }
       if (completer == null) {
         return;
       }
@@ -245,17 +317,43 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   Future<DatabaseSession> openDatabase(
     String path, {
     WriteQueueSettings? writeQueue,
+    DatabaseOpenSettings? databaseOpen,
   }) async {
+    final timeout = _resolveOpenTimeout(databaseOpen);
     final data = await _request('openDatabase', <String, Object?>{
       'path': path,
       if (writeQueue != null) 'writeQueue': _serializeWriteQueue(writeQueue),
-    });
+      if (databaseOpen != null)
+        'databaseOpen': _serializeDatabaseOpen(databaseOpen),
+    }, timeout);
     return DatabaseSession.fromMap(data);
+  }
+
+  /// Resolves the effective bridge timeout for `openDatabase`. Order:
+  /// 1. `databaseOpen.openBridgeTimeoutMs` (per-config knob).
+  /// 2. `DECENT_BENCH_OPEN_TIMEOUT_MS` environment variable.
+  /// 3. The static 5-minute [_openDatabaseTimeout] default.
+  static Duration _resolveOpenTimeout(DatabaseOpenSettings? settings) {
+    final configured = settings?.openBridgeTimeoutMs;
+    if (configured != null && configured > 0) {
+      return Duration(milliseconds: configured);
+    }
+    return resolveOpenDatabaseTimeout();
+  }
+
+  @override
+  Future<void> saveAs(String destPath) async {
+    await _request('saveAs', <String, Object?>{'destPath': destPath});
+  }
+
+  @override
+  Future<void> evictSharedWal(String path) async {
+    await _request('evictSharedWal', <String, Object?>{'path': path});
   }
 
   @override
   Future<SchemaSnapshot> loadSchema() async {
-    final data = await _request('loadSchema', const <String, Object?>{}, const Duration(seconds: 60));
+    final data = await _request('loadSchema', const <String, Object?>{}, _loadSchemaTimeout);
     return SchemaSnapshot.fromMap(data);
   }
 
@@ -276,10 +374,13 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   }
 
   @override
-  Future<QueryContract> describeQueryContract(String sql) async {
+  Future<QueryContract> describeQueryContract(
+    String sql, {
+    Duration? timeout,
+  }) async {
     final data = await _request('describeQueryContract', <String, Object?>{
       'sql': sql,
-    });
+    }, timeout);
     return QueryContract.fromMap(data);
   }
 
@@ -391,6 +492,28 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       'includeHeaders': includeHeaders,
     }, timeout);
     return ExcelExportResult.fromMap(data);
+  }
+
+  @override
+  Future<ParquetExportResult> exportParquet({
+    required String sql,
+    required List<Object?> params,
+    required int pageSize,
+    required String path,
+    bool includeSchemaFingerprint = true,
+    Duration? timeout,
+  }) async {
+    // TODO: Implement Parquet export when apache-arrow or parquet dependency is available.
+    // 
+    // Implementation follows the same pattern as exportExcel:
+    // 1. Execute query and get cursor
+    // 2. Consume pages incrementally via cursor
+    // 3. Write to Parquet file using streaming API
+    // 4. Return result with statistics
+    
+    throw UnimplementedError(
+      'Parquet export is not yet implemented. See ADR-0031 for dependency strategy.',
+    );
   }
 
   @override
@@ -682,6 +805,47 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
   static const Duration _requestTimeout = Duration(seconds: 30);
   static const Duration _branchRequestTimeout = Duration(seconds: 10);
 
+  /// Default bridge-level timeout for `openDatabase` requests. DecentDB's
+  /// own `process_coordination_timeout_ms` defaults to 30s and we default
+  /// the bridge timeout to **5 minutes** so the bridge never outraces the
+  /// engine's own coordination wait. Override at runtime via the
+  /// `DECENT_BENCH_OPEN_TIMEOUT_MS` environment variable.
+  static const Duration _openDatabaseTimeout = Duration(minutes: 5);
+  static const Duration _loadSchemaTimeout = Duration(seconds: 60);
+
+  /// Build the open-database timeout honoring the
+  /// `DECENT_BENCH_OPEN_TIMEOUT_MS` environment variable. Falls back to
+  /// [_openDatabaseTimeout] when unset, empty, or unparseable.
+  static Duration resolveOpenDatabaseTimeout() {
+    final raw = const String.fromEnvironment('DECENT_BENCH_OPEN_TIMEOUT_MS')
+        .trim();
+    if (raw.isEmpty) {
+      return _openDatabaseTimeout;
+    }
+    final parsed = int.tryParse(raw);
+    if (parsed == null || parsed <= 0) {
+      return _openDatabaseTimeout;
+    }
+    return Duration(milliseconds: parsed);
+  }
+
+  /// Actions that open, close, or introspect the database handle. These
+  /// mutate the worker's `_database` state and must never queue behind a
+  /// long-running query: if the worker is busy with another op, dispatching
+  /// one of these would block until that op finishes (or the bridge timeout
+  /// fires), which is how a stuck `describeQueryContract` wedges a later
+  /// `openDatabase`. When the worker is busy we fail these fast instead.
+  static const Set<String> _controlActions = <String>{
+    'openDatabase',
+    'loadSchema',
+    'loadOperationalMetrics',
+    'getToolingMetadata',
+    'saveAs',
+    'evictSharedWal',
+    'listBranches',
+    'listSnapshots',
+  };
+
   Future<Map<String, Object?>> _request(
     String action, [
     Map<String, Object?> payload = const <String, Object?>{},
@@ -694,9 +858,28 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       throw const BridgeFailure('DecentDB worker isolate is not available.');
     }
 
+    // The worker processes requests serially. If it is already running a
+    // native call, a control request would queue behind it and surface as a
+    // misleading 30-60s timeout. Short-circuit instead so the caller sees a
+    // fast, actionable "worker busy" error rather than blaming the file.
+    if (_inFlight > 0 && _controlActions.contains(action)) {
+      final path = payload['path'];
+      final pathSuffix = path is String && path.isNotEmpty
+          ? ' (path: $path)'
+          : '';
+      throw BridgeFailure(
+        'DecentDB worker is busy with another operation and cannot accept '
+        '"$action" right now$pathSuffix. A previous query or schema request '
+        'has not returned; wait for it to finish or close and reopen the '
+        'workspace.',
+        code: 'DDB_ERR_WORKER_BUSY',
+      );
+    }
+
     final requestId = _nextRequestId++;
     final completer = Completer<Map<String, Object?>>();
     _pending[requestId] = completer;
+    _inFlight++;
 
     workerPort.send(<String, Object?>{
       'id': requestId,
@@ -709,12 +892,82 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
     try {
       return await completer.future.timeout(effectiveTimeout);
     } on TimeoutException {
-      _pending.remove(requestId);
+      final removed = _pending.remove(requestId) != null;
+      // Restart the worker so the stuck native call is abandoned and the
+      // next request (e.g. `openDatabase`) is not queued behind it forever.
+      // The worker owns the engine handle; killing the isolate drops it.
+      // Callers must re-open the database after a restart.
+      if (removed) {
+        await _restartWorker(action: action);
+      }
+      final path = payload['path'];
+      final hint = switch (action) {
+        'openDatabase' =>
+          'The bridge timed out waiting for the worker and restarted the '
+              'worker isolate. The previous operation may have been stuck; '
+              'retry the open. If it persists, try raising '
+              'DECENT_BENCH_OPEN_TIMEOUT_MS or the '
+              'process_coordination_timeout_ms key in [database_open] of '
+              'config.toml (the engine default is 30s).',
+        _ =>
+          'The worker isolate was unresponsive and has been restarted. '
+              'Retry the operation; if it timed out on a query, the previous '
+              'database handle was dropped and must be reopened.',
+      };
+      final pathSuffix = path is String && path.isNotEmpty
+          ? ' (path: $path)'
+          : '';
       throw BridgeFailure(
-        'DecentDB worker request "$action" timed out after ${effectiveTimeout.inSeconds}s. '
-        'The worker isolate may be unresponsive or the operation is taking too long.',
+        'DecentDB worker request "$action" timed out after '
+        '${effectiveTimeout.inSeconds}s$pathSuffix. $hint',
         code: 'DDB_ERR_TIMEOUT',
       );
+    }
+  }
+
+  /// Tear down the current worker isolate and respawn a fresh one. Called
+  /// when a request times out: the native call cannot be interrupted, so
+  /// killing the isolate is the only way to stop a wedged op from blocking
+  /// every subsequent request. After a restart the worker has no open
+  /// database handle — callers must call `openDatabase` again before any
+  /// schema/query op. All pending completers are failed with a clear
+  /// "worker restarted" error.
+  Future<void> _restartWorker({required String action}) async {
+    if (_restarting) {
+      return;
+    }
+    _restarting = true;
+    try {
+      // Fail every other in-flight request: their completers will never
+      // resolve because we are about to kill the isolate that would reply.
+      final victims = _pending.values.toList();
+      _pending.clear();
+      _inFlight = 0;
+      for (final completer in victims) {
+        if (!completer.isCompleted) {
+          completer.completeError(
+            const BridgeFailure(
+              'DecentDB worker was restarted because a previous request '
+              'timed out. The database handle was dropped; reopen the '
+              'workspace before running further queries.',
+              code: 'DDB_ERR_WORKER_RESTARTED',
+            ),
+          );
+        }
+      }
+
+      // Kill the old isolate and close its reply port.
+      _isolate?.kill(priority: Isolate.immediate);
+      _isolate = null;
+      _responses?.close();
+      _responses = null;
+      _workerPort = null;
+
+      // Respawn so the next request has a responsive worker. `initialize`
+      // re-creates the isolate and reply port.
+      await initialize();
+    } finally {
+      _restarting = false;
     }
   }
 
@@ -771,6 +1024,22 @@ class DecentDbBridge implements WorkspaceDatabaseGateway {
       await operation.controller.close();
     }
     operation.isolate?.kill(priority: Isolate.immediate);
+  }
+
+  /// Public hook so `main.dart` (and tests) can install the pinned ref
+  /// before any database is opened. The actual comparison logic lives on
+  /// the worker (it owns the engine handle after `Database.open`), so this
+  /// is a static forwarder.
+  static void setPinnedDecentDbTag(String? tag) {
+    _BridgeWorkerState.setPinnedDecentDbTag(tag);
+  }
+
+  /// Returns a human-readable warning when the engine version reported by
+  /// the loaded native library disagrees with the pinned ref. Public for
+  /// tests and for callers that want to display the warning outside the
+  /// standard `openDatabase` flow.
+  static String? engineVersionMismatchWarning(String loadedVersion) {
+    return _BridgeWorkerState.engineVersionMismatchWarning(loadedVersion);
   }
 }
 
@@ -877,6 +1146,10 @@ class _BridgeWorkerState {
     switch (action) {
       case 'openDatabase':
         return _handleOpenDatabase(payload);
+      case 'saveAs':
+        return _handleSaveAs(payload);
+      case 'evictSharedWal':
+        return _handleEvictSharedWal(payload);
       case 'loadSchema':
         return _handleLoadSchema();
       case 'loadOperationalMetrics':
@@ -974,16 +1247,100 @@ class _BridgeWorkerState {
     final writeQueue = (payload['writeQueue'] as Map<Object?, Object?>?)?.map(
       (key, value) => MapEntry(key as String, value),
     );
-    final openOptions = _writeQueueOpenOptionsFromPayload(writeQueue);
+    final databaseOpen = (payload['databaseOpen'] as Map<Object?, Object?>?)
+        ?.map((key, value) => MapEntry(key as String, value));
+    final openOptions = _buildOpenOptionsFromPayload(
+      writeQueue: writeQueue,
+      databaseOpen: databaseOpen,
+    );
     _database = Database.open(
       path,
       libraryPath: _libraryPath,
       options: openOptions,
     );
+    final engineVersion = _database!.engineVersion;
+    final versionMismatch = _engineVersionMismatch(engineVersion);
     return <String, Object?>{
       'path': path,
-      'engineVersion': _database!.engineVersion,
+      'engineVersion': engineVersion,
+      'engineVersionWarning': versionMismatch,
     };
+  }
+
+  /// Returns a non-null human-readable warning when the loaded native
+  /// library's reported engine version disagrees with the pinned ref in
+  /// `apps/decent-bench/pubspec.yaml`. A mismatch is the single most common
+  /// cause of mysterious open failures: the app loads an old
+  /// `libdecentdb.so` from a previous build, the new Dart binding passes a
+  /// format-version field it does not understand, and the engine spins.
+  static String? _engineVersionMismatch(String loadedVersion) {
+    final pinned = _pinnedDecentDbTag;
+    if (pinned == null || pinned.isEmpty) {
+      return null;
+    }
+    final loaded = _semverTriple(loadedVersion);
+    final expected = _semverTriple(pinned);
+    if (loaded == null || expected == null) {
+      return null;
+    }
+    if (loaded.$1 != expected.$1 || loaded.$2 != expected.$2) {
+      return 'Loaded native library reports DecentDB engine version '
+          '$loadedVersion, but apps/decent-bench/pubspec.yaml pins '
+          '$pinned. Rebuild the desktop binary (flutter build linux) or '
+          'clear cached libdecentdb.so files in build/ before opening '
+          'databases — the mismatch can cause DDB_ERR_TIMEOUT and other '
+          'failures because the engine does not understand format '
+          'versions added by the newer build.';
+    }
+    return null;
+  }
+
+  static (int, int, int)? _semverTriple(String raw) {
+    final stripped = raw.startsWith('v') ? raw.substring(1) : raw;
+    final parts = stripped.split('.');
+    if (parts.length < 2) {
+      return null;
+    }
+    final major = int.tryParse(parts[0]);
+    final minor = int.tryParse(parts[1]);
+    final patch = parts.length >= 3 ? int.tryParse(parts[2]) : 0;
+    if (major == null || minor == null) {
+      return null;
+    }
+    return (major, minor, patch ?? 0);
+  }
+
+  static String? _pinnedDecentDbTag;
+
+  /// Public hook so `main.dart` (and tests) can install the pinned ref
+  /// before the worker isolate opens a database. Forwarded to the
+  /// worker's static state so both classes share one source of truth.
+  static void setPinnedDecentDbTag(String? tag) {
+    _pinnedDecentDbTag = tag;
+  }
+
+  static String? engineVersionMismatchWarning(String loadedVersion) {
+    return _engineVersionMismatch(loadedVersion);
+  }
+
+  Future<Map<String, Object?>> _handleSaveAs(
+    Map<String, Object?> payload,
+  ) async {
+    final db = _requireDatabase();
+    final destPath = payload['destPath']! as String;
+    db.saveAs(destPath);
+    return <String, Object?>{'destPath': destPath};
+  }
+
+  Future<Map<String, Object?>> _handleEvictSharedWal(
+    Map<String, Object?> payload,
+  ) async {
+    // The current database handle must be closed first; evictSharedWal
+    // is documented to be unsafe with open handles.
+    await _closeAll();
+    final path = payload['path']! as String;
+    Database.evictSharedWal(path, libraryPath: _libraryPath);
+    return <String, Object?>{'path': path};
   }
 
   Future<Map<String, Object?>> _handleLoadSchema() async {
@@ -1002,6 +1359,9 @@ class _BridgeWorkerState {
           'kind': 'table',
           'temporary': table.temporary,
           'ddl': table.ddl,
+          'rowCount': table.rowCount,
+          'primaryKeyColumns': table.primaryKeyColumns,
+          'foreignKeys': _serializeForeignKeys(table.foreignKeys),
           'columns': _serializeTableColumns(table),
           'checks': _serializeChecks(_allTableChecks(table)),
         },
@@ -1011,6 +1371,8 @@ class _BridgeWorkerState {
           'kind': 'view',
           'temporary': view.temporary,
           'ddl': view.ddl,
+          'sqlText': view.sqlText,
+          'viewDependencies': view.dependencies,
           'columns': _serializeViewColumns(view.columnNames),
         },
     ];
@@ -1032,10 +1394,12 @@ class _BridgeWorkerState {
             'name': index.name,
             'table': index.tableName,
             'columns': index.columns,
+            'includeColumns': index.includeColumns,
             'unique': index.unique,
             'kind': index.kind,
             'temporary': index.temporary,
             'predicateSql': index.predicateSql,
+            'fresh': index.fresh,
             'ddl': index.ddl,
           },
       ],
@@ -1052,13 +1416,7 @@ class _BridgeWorkerState {
     final maxRows = (payload['maxRows'] as int? ?? 20).clamp(1, 200);
     final views = <Map<String, Object?>>[_nativeWriteQueueMetricsView(db)];
     for (final spec in _operationalMetricQueries) {
-      final view = _queryOperationalMetricView(db, spec, maxRows: maxRows);
-      if (!((view['available'] as bool?) ?? false) &&
-          _isSysSchemaBoundaryError(view['error'] as String?)) {
-        views.add(_sysInspectionPreparedBoundaryView());
-        break;
-      }
-      views.add(view);
+      views.add(_queryOperationalMetricView(db, spec, maxRows: maxRows));
     }
     return <String, Object?>{'views': views};
   }
@@ -1797,6 +2155,46 @@ const List<_OperationalMetricQuery> _operationalMetricQueries =
         label: 'Process lock metrics',
         query: 'SELECT * FROM sys.process_lock_metrics',
       ),
+      _OperationalMetricQuery(
+        name: 'sys.plan_cache',
+        label: 'Plan cache',
+        query: 'SELECT * FROM sys.plan_cache',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.plan_cache_summary',
+        label: 'Plan cache summary',
+        query: 'SELECT * FROM sys.plan_cache_summary',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.doctor_findings',
+        label: 'Doctor findings',
+        query: 'SELECT * FROM sys.doctor_findings',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.fix_plan',
+        label: 'Doctor fix plan',
+        query: 'SELECT * FROM sys.fix_plan',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.sync_shapes',
+        label: 'Sync shapes',
+        query: 'SELECT * FROM sys.sync_shapes',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.sync_shape_clients',
+        label: 'Sync shape clients',
+        query: 'SELECT * FROM sys.sync_shape_clients',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.sync_changeset_history',
+        label: 'Sync changeset history',
+        query: 'SELECT * FROM sys.sync_changeset_history',
+      ),
+      _OperationalMetricQuery(
+        name: 'sys.sync_relay_sessions',
+        label: 'Sync relay sessions',
+        query: 'SELECT * FROM sys.sync_relay_sessions',
+      ),
     ];
 
 Map<String, Object?> _serializeWriteQueue(WriteQueueSettings settings) {
@@ -1809,7 +2207,44 @@ Map<String, Object?> _serializeWriteQueue(WriteQueueSettings settings) {
   };
 }
 
+Map<String, Object?> _serializeDatabaseOpen(DatabaseOpenSettings settings) {
+  return <String, Object?>{
+    'profile': settings.profile,
+    'planCacheEnabled': settings.planCacheEnabled,
+    if (settings.planCacheMaxBytes != null)
+      'planCacheMaxBytes': settings.planCacheMaxBytes,
+    if (settings.processCoordinationTimeoutMs != null)
+      'processCoordinationTimeoutMs': settings.processCoordinationTimeoutMs,
+    if (settings.openBridgeTimeoutMs != null)
+      'openBridgeTimeoutMs': settings.openBridgeTimeoutMs,
+  };
+}
+
+String? _buildOpenOptionsFromPayload({
+  Map<String, Object?>? writeQueue,
+  Map<String, Object?>? databaseOpen,
+}) {
+  final fragments = <String>[];
+  final wqOptions = _writeQueueOpenOptionsFromPayload(writeQueue);
+  if (wqOptions != null) {
+    fragments.add(wqOptions);
+  }
+  final dbOpenSettings = _databaseOpenSettingsFromPayload(databaseOpen);
+  if (dbOpenSettings != null) {
+    fragments.add(dbOpenSettings.toOpenOptionsFragment());
+  }
+  if (fragments.isEmpty) {
+    return null;
+  }
+  return fragments.join(',');
+}
+
 String? _writeQueueOpenOptionsFromPayload(Map<String, Object?>? payload) {
+  final settings = _writeQueueSettingsFromPayload(payload);
+  return settings?.toDecentDbOpenOptions();
+}
+
+WriteQueueSettings? _writeQueueSettingsFromPayload(Map<String, Object?>? payload) {
   if (payload == null) {
     return null;
   }
@@ -1827,7 +2262,24 @@ String? _writeQueueOpenOptionsFromPayload(Map<String, Object?>? payload) {
     maxGroupDelayUs:
         payload['maxGroupDelayUs'] as int? ??
         WriteQueueSettings.defaultMaxGroupDelayUs,
-  ).toDecentDbOpenOptions();
+  );
+}
+
+DatabaseOpenSettings? _databaseOpenSettingsFromPayload(
+  Map<String, Object?>? payload,
+) {
+  if (payload == null) {
+    return null;
+  }
+  final profile = (payload['profile'] as String? ?? 'default').trim();
+  final timeoutRaw = payload['processCoordinationTimeoutMs'];
+  final timeoutMs = timeoutRaw is int && timeoutRaw > 0 ? timeoutRaw : null;
+  return DatabaseOpenSettings(
+    profile: profile.isEmpty ? 'default' : profile,
+    planCacheEnabled: payload['planCacheEnabled'] as bool? ?? true,
+    planCacheMaxBytes: payload['planCacheMaxBytes'] as int?,
+    processCoordinationTimeoutMs: timeoutMs,
+  );
 }
 
 BridgeFailure _bridgeFailureFromError(Object error) {
@@ -1835,7 +2287,21 @@ BridgeFailure _bridgeFailureFromError(Object error) {
     return error;
   }
   if (error is DecentDbException) {
-    return BridgeFailure(error.message, code: _decentDbErrorCodeName(error));
+    return _bridgeFailureFromDecentDbException(error);
+  }
+  if (error is DecentDbAbiMismatchException) {
+    return BridgeFailure(
+      error.toString(),
+      code: 'DDB_ERR_ABI_MISMATCH',
+      permanent: true,
+    );
+  }
+  if (error is DecentDbNativeLoadException) {
+    return BridgeFailure(
+      error.toString(),
+      code: 'DDB_ERR_NATIVE_LOAD',
+      permanent: true,
+    );
   }
   final message = error.toString();
   final unknownCodeMatch = RegExp(
@@ -1852,6 +2318,18 @@ BridgeFailure _bridgeFailureFromError(Object error) {
     return parsed;
   }
   return BridgeFailure(message);
+}
+
+BridgeFailure _bridgeFailureFromDecentDbException(DecentDbException error) {
+  final diagnostic = error.diagnostic;
+  return BridgeFailure(
+    error.message,
+    code: _decentDbErrorCodeName(error),
+    subcode: diagnostic?.subcode ?? error.subcode,
+    retryable: diagnostic?.retryable ?? error.retryable ?? false,
+    permanent: diagnostic?.permanent ?? error.permanent ?? false,
+    sqlstate: diagnostic?.sqlstate ?? error.sqlstate,
+  );
 }
 
 BridgeFailure? _tryParseDiagnosticJson(String raw) {
@@ -2168,29 +2646,6 @@ Map<String, Object?> _queryOperationalMetricView(
       'truncated': false,
     };
   }
-}
-
-bool _isSysSchemaBoundaryError(String? error) {
-  final normalized = error?.toLowerCase() ?? '';
-  return normalized.contains('schema-qualified objects outside main/temp') &&
-      normalized.contains("schema 'sys'");
-}
-
-Map<String, Object?> _sysInspectionPreparedBoundaryView() {
-  return <String, Object?>{
-    'name': 'decentdb.sys_inspection_views',
-    'label': 'DecentDB sys.* SQL metrics',
-    'query': 'SELECT * FROM sys.*',
-    'available': false,
-    'columns': const <String>[],
-    'rows': const <Map<String, Object?>>[],
-    'error':
-        'Unavailable through the current Dart prepared-statement paging path. '
-        'DecentDB v2.8 exposes these inspection views through direct SQL '
-        'execution, but the Dart binding does not yet expose direct-result '
-        'paging. Native public metrics APIs are shown when available.',
-    'truncated': false,
-  };
 }
 
 String _inlineQueuedWriteParameters(String sql, List<Object?> params) {
@@ -2572,6 +3027,7 @@ List<Map<String, Object?>> _serializeTableColumns(SchemaTableInfo table) {
       'notNull': !column.nullable,
       'unique': column.unique,
       'primaryKey': column.primaryKey,
+      'autoIncrement': column.autoIncrement,
       'defaultExpr': column.defaultSql,
       'generatedExpr': column.generatedSql,
       'generatedStored': column.generatedStored,
@@ -2582,6 +3038,20 @@ List<Map<String, Object?>> _serializeTableColumns(SchemaTableInfo table) {
     });
   }
   return serialized;
+}
+
+List<Map<String, Object?>> _serializeForeignKeys(List<ForeignKeyInfo> foreignKeys) {
+  return <Map<String, Object?>>[
+    for (final foreignKey in foreignKeys)
+      <String, Object?>{
+        'name': foreignKey.name,
+        'columns': foreignKey.columns,
+        'referencedTable': foreignKey.referencedTable,
+        'referencedColumns': foreignKey.referencedColumns,
+        'onDelete': foreignKey.onDelete,
+        'onUpdate': foreignKey.onUpdate,
+      },
+  ];
 }
 
 ForeignKeyInfo? _foreignKeyForColumn(

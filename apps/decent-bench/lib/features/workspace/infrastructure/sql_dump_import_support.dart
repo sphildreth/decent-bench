@@ -8,6 +8,7 @@ import 'package:decentdb/decentdb.dart';
 
 import '../domain/sql_dump_import_models.dart';
 import '../domain/workspace_models.dart';
+import '../../import/infrastructure/typed_batch_classification.dart';
 
 const int _sqlDumpPreviewRowLimit = 8;
 const int _sqlDumpProgressBatchSize = 200;
@@ -387,23 +388,56 @@ Future<SqlDumpImportSummary> _runSqlDumpImport({
           final sourceIndexes = <String, int>{
             for (var i = 0; i < sourceColumns.length; i++) sourceColumns[i]: i,
           };
+          final targetTypes = <String>[
+            for (final column in tableDraft.columns) column.targetType,
+          ];
+          final useTypedBatch = canUseTypedBatchForTargets(targetTypes) &&
+              tableDraft.rowCount > 1 &&
+              tableDraft.columns.length <= 64;
+          final typedBatch = useTypedBatch ? <List<Object?>>[] : null;
+          final typedSignature = useTypedBatch
+              ? renderTypedBatchSignature(targetTypes)
+              : null;
+          void flushBatch() {
+            if (typedBatch == null || typedBatch.isEmpty) {
+              return;
+            }
+            prepared.executeBatchTyped(typedSignature!, typedBatch);
+            typedBatch.clear();
+          }
 
           for (final row in parsedInsert.rows) {
             _throwIfCancelled(isCancelled);
-            final boundValues = <Object?>[
-              for (final column in tableDraft.columns)
-                _adaptImportValue(
-                  sourceIndexes.containsKey(column.sourceName) &&
-                          sourceIndexes[column.sourceName]! < row.length
-                      ? row[sourceIndexes[column.sourceName]!]
-                      : null,
-                  column.targetType,
-                ),
-            ];
-            prepared.reset();
-            prepared.clearBindings();
-            prepared.bindAll(boundValues);
-            prepared.execute();
+            if (typedBatch != null) {
+              typedBatch.add(<Object?>[
+                for (final column in tableDraft.columns)
+                  normalizeValueForTypedBatch(
+                    _adaptImportValue(
+                      sourceIndexes.containsKey(column.sourceName) &&
+                              sourceIndexes[column.sourceName]! < row.length
+                          ? row[sourceIndexes[column.sourceName]!]
+                          : null,
+                      column.targetType,
+                    ),
+                    column.targetType,
+                  ),
+              ]);
+            } else {
+              final boundValues = <Object?>[
+                for (final column in tableDraft.columns)
+                  _adaptImportValue(
+                    sourceIndexes.containsKey(column.sourceName) &&
+                            sourceIndexes[column.sourceName]! < row.length
+                        ? row[sourceIndexes[column.sourceName]!]
+                        : null,
+                    column.targetType,
+                  ),
+              ];
+              prepared.reset();
+              prepared.clearBindings();
+              prepared.bindAll(boundValues);
+              prepared.execute();
+            }
 
             final copied = (rowsCopied[tableDraft.targetName] ?? 0) + 1;
             rowsCopied[tableDraft.targetName] = copied;
@@ -432,6 +466,7 @@ Future<SqlDumpImportSummary> _runSqlDumpImport({
               await Future<void>.delayed(Duration.zero);
             }
           }
+          flushBatch();
           continue;
         }
 
@@ -464,22 +499,55 @@ Future<SqlDumpImportSummary> _runSqlDumpImport({
           final sourceIndexes = <String, int>{
             for (var i = 0; i < sourceColumns.length; i++) sourceColumns[i]: i,
           };
+          final targetTypes = <String>[
+            for (final column in tableDraft.columns) column.targetType,
+          ];
+          final useTypedBatch = canUseTypedBatchForTargets(targetTypes) &&
+              tableDraft.rowCount > 1 &&
+              tableDraft.columns.length <= 64;
+          final typedBatch = useTypedBatch ? <List<Object?>>[] : null;
+          final typedSignature = useTypedBatch
+              ? renderTypedBatchSignature(targetTypes)
+              : null;
+          void flushBatch() {
+            if (typedBatch == null || typedBatch.isEmpty) {
+              return;
+            }
+            prepared.executeBatchTyped(typedSignature!, typedBatch);
+            typedBatch.clear();
+          }
           for (final row in parsedCopy.rows) {
             _throwIfCancelled(isCancelled);
-            final boundValues = <Object?>[
-              for (final column in tableDraft.columns)
-                _adaptImportValue(
-                  sourceIndexes.containsKey(column.sourceName) &&
-                          sourceIndexes[column.sourceName]! < row.length
-                      ? row[sourceIndexes[column.sourceName]!]
-                      : null,
-                  column.targetType,
-                ),
-            ];
-            prepared.reset();
-            prepared.clearBindings();
-            prepared.bindAll(boundValues);
-            prepared.execute();
+            if (typedBatch != null) {
+              typedBatch.add(<Object?>[
+                for (final column in tableDraft.columns)
+                  normalizeValueForTypedBatch(
+                    _adaptImportValue(
+                      sourceIndexes.containsKey(column.sourceName) &&
+                              sourceIndexes[column.sourceName]! < row.length
+                          ? row[sourceIndexes[column.sourceName]!]
+                          : null,
+                      column.targetType,
+                    ),
+                    column.targetType,
+                  ),
+              ]);
+            } else {
+              final boundValues = <Object?>[
+                for (final column in tableDraft.columns)
+                  _adaptImportValue(
+                    sourceIndexes.containsKey(column.sourceName) &&
+                            sourceIndexes[column.sourceName]! < row.length
+                        ? row[sourceIndexes[column.sourceName]!]
+                        : null,
+                    column.targetType,
+                  ),
+              ];
+              prepared.reset();
+              prepared.clearBindings();
+              prepared.bindAll(boundValues);
+              prepared.execute();
+            }
 
             final copied = (rowsCopied[tableDraft.targetName] ?? 0) + 1;
             rowsCopied[tableDraft.targetName] = copied;
@@ -508,6 +576,7 @@ Future<SqlDumpImportSummary> _runSqlDumpImport({
               await Future<void>.delayed(Duration.zero);
             }
           }
+          flushBatch();
           continue;
         }
 

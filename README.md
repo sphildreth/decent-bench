@@ -19,7 +19,7 @@
     <img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square">
   </a>
   <img alt="Flutter desktop" src="https://img.shields.io/badge/Flutter-desktop-02569B?style=flat-square&logo=flutter&logoColor=white">
-  <img alt="DecentDB v2.8.0" src="https://img.shields.io/badge/DecentDB-v2.8.0-6f42c1?style=flat-square">
+  <img alt="DecentDB v2.17.0" src="https://img.shields.io/badge/DecentDB-v2.17.0-6f42c1?style=flat-square">
 </p>
 
 <p align="center">
@@ -64,14 +64,14 @@
 - ⚡ **Performance-Focused:** Background imports, paginated/streamed results grids, and best-effort query cancellation ensure the UI never freezes.
 - 🧭 **Rich Engine Metadata:** Schema browsing is powered by DecentDB's rich
    upstream schema snapshot (tables/views/indexes/triggers, checks, foreign keys,
-   generated columns, temp-object metadata, and canonical DDL), with v2.8.x
+   generated columns, temp-object metadata, and canonical DDL), with v2.17.x
   tooling metadata and query contracts used for schema fingerprints, parameter
   types, and result-column types.
-- 📊 **DecentDB v2.8 Diagnostics:** Database Statistics includes WAL, storage,
+- 📊 **DecentDB v2.17 Diagnostics:** Database Statistics includes WAL, storage,
   write-queue, sync, reactive, relay, process coordination, Lua extension
   inspection surfaces, plus rich structured error diagnostics, optional queued
   inline table edits, and a read-only local Web Console launcher.
-- 🧬 **Native Type Awareness:** DecentDB v2.8.x semantic and spatial types are
+- 🧬 **Native Type Awareness:** DecentDB v2.17.x semantic and spatial types are
   surfaced in schema details, result metadata, autocomplete, snippets, import
   type overrides, copy behavior, and CSV export display values.
 - 📊 **Diagnostics & Visualization:** Column statistics, database statistics,
@@ -94,7 +94,7 @@
 - 🪵 **Operational Visibility:** Open application logs from `Tools -> View Logs`. Structured JSON.CLEF log files are written per session to a configurable log directory (default `logs/` under the app config path).
 - 🧪 **Import Validation:** Blocking failure dialogs and richer import summaries make unsuccessful imports obvious and successful imports easier to verify.
 - 📤 **Typed Exports:** CSV, JSON, NDJSON, and Excel export stream result pages
-  and preserve DecentDB v2.8.x native value metadata where the format supports
+  and preserve DecentDB v2.17.x native value metadata where the format supports
   it. Result charts can be exported as PNG, and ERDs can be exported as PNG/JPG.
 - 📦 **Desktop Native:** Packaged for Linux, macOS, and Windows with a repeatable native-library staging helper.
 
@@ -186,7 +186,7 @@ Want to build from source or contribute? Welcome!
 
 Decent Bench pins the upstream Dart package by Git tag and expects the matching
 DecentDB desktop native library alongside it. CI and release packaging currently
-resolve `v2.8.0` from `apps/decent-bench/pubspec.lock` and download the matching
+resolve the pinned engine tag from `apps/decent-bench/pubspec.lock` and download the matching
 `decentdb-dart-native-<tag>-...` asset from
 [`sphildreth/decentdb` Releases](https://github.com/sphildreth/decentdb/releases).
 
@@ -265,6 +265,57 @@ Typical files under that root include:
   Future import format backlog and prioritization
 - 🧠 [`design/adr/README.md`](design/adr/README.md) — Architecture Decision Records
 - 🤖 [`AGENTS.md`](AGENTS.md) — Agent instructions and guardrails
+
+## 🩺 Troubleshooting
+
+### "DDB_ERR_TIMEOUT" while opening a database
+
+DecentDB acquires a process writer lock while opening a database (the
+`<db>.ddb.coord` sidecar file holds the lock state). If another
+DecentDB-backed process is still holding the lock, or if the `.coord`
+file is stale (left behind by a `kill -9`, crash, or improper close),
+or if the open path is on a slow filesystem (network mount, FUSE,
+encrypted volume), the engine waits up to
+`process_coordination_timeout_ms` (default 30s) and then returns
+`DDB_ERR_TIMEOUT`. The UI now surfaces a dialog explaining the
+cause and the remediation. Typical resolutions:
+
+1. Close any other DecentDB-backed process that might be holding the
+   writer lock.
+2. Remove a stale `<db>.ddb.coord` sidecar file (the engine rebuilds
+   it on the next open — it is not user data).
+3. Raise the engine's process-coordination wait in your `config.toml`:
+
+   ```toml
+   [database_open]
+   process_coordination_timeout_ms = 300000   # 5 minutes (engine side)
+   open_bridge_timeout_ms = 600000            # 10 minutes (bridge side)
+   ```
+
+   The **bridge timeout must be greater than the engine coordination
+   timeout** — otherwise the bridge will outrace the engine and surface a
+   misleading bridge-level timeout instead of the engine's actual
+   response. Defaults: engine 30s, bridge 5 min.
+
+   You can also override the bridge timeout at launch via the
+   `DECENT_BENCH_OPEN_TIMEOUT_MS` environment variable.
+
+### Sidecar files
+
+Each open `.ddb` file may have companion sidecars that are part of
+the on-disk format:
+
+| File | Purpose | Rebuildable? |
+| ---- | ------- | ------------ |
+| `<db>.ddb.wal` | Write-Ahead Log of pending changes | Yes (on close) |
+| `<db>.ddb.sync-journal` | Sync changeset journal | Yes (on close) |
+| `<db>.ddb.coord` | Process writer-lock state | Yes (on next open) |
+
+If you copy a `.ddb` for backup or transfer, copy all sidecars that
+are present. Removing a `.coord` sidecar is safe; removing a `.wal`
+or `.sync-journal` requires running DecentDB's built-in recovery on
+next open (the engine will replay what it can and rebuild state
+from the `.ddb`).
 
 ## 🤝 Contributing
 

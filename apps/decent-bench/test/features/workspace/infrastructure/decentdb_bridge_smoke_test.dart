@@ -15,6 +15,8 @@ import 'package:decent_bench/features/workspace/infrastructure/decentdb_native_r
 import 'package:decent_bench/features/workspace/infrastructure/native_library_resolver.dart';
 import 'package:excel/excel.dart' as xls;
 import 'package:flutter_test/flutter_test.dart';
+
+import '../../../support/decentdb_test_constants.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
@@ -1195,6 +1197,14 @@ ORDER BY dept
           'sys.process_coordination',
           'sys.process_readers',
           'sys.process_lock_metrics',
+          'sys.plan_cache',
+          'sys.plan_cache_summary',
+          'sys.doctor_findings',
+          'sys.fix_plan',
+          'sys.sync_shapes',
+          'sys.sync_shape_clients',
+          'sys.sync_changeset_history',
+          'sys.sync_relay_sessions',
         ]) {
           final view = metrics.view(name);
           expect(view, isNotNull, reason: name);
@@ -1342,7 +1352,7 @@ ORDER BY dept
     });
 
     test(
-      'exercises v2.8.0 default-fast prepared INSERT, COUNT(*), and integer PK '
+      'exercises $expectedDecentDbVersion default-fast prepared INSERT, COUNT(*), and integer PK '
       'projection lookup',
       skip: skipReason,
       () async {
@@ -1373,7 +1383,7 @@ ORDER BY dept
     );
 
     test(
-      'exercises v2.8.0 covering-index INCLUDE projection reads',
+      'exercises $expectedDecentDbVersion covering-index INCLUDE projection reads',
       skip: skipReason,
       () async {
         await exec(
@@ -1395,7 +1405,7 @@ ORDER BY dept
     );
 
     test(
-      'reports v2.8.0 storage split (database vs WAL) metadata',
+      'reports $expectedDecentDbVersion storage split (database vs WAL) metadata',
       skip: skipReason,
       () async {
         final metrics = await bridge.loadOperationalMetrics();

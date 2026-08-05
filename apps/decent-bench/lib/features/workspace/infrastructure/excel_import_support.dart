@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 
 import '../domain/excel_import_models.dart';
 import '../domain/workspace_models.dart';
+import '../../import/infrastructure/typed_batch_classification.dart';
 import 'excel_source_preparer.dart';
 
 const int _excelPreviewRowLimit = 8;
@@ -528,6 +529,30 @@ Future<int> _copySheetData({
       headerRow: request.headerRow,
       expectedColumnCount: sheet.columns.length,
     );
+    final targetTypes = <String>[
+      for (final column in sheet.columns) column.targetType,
+    ];
+    final useTypedBatch = canUseTypedBatchForTargets(
+      targetTypes,
+      containsNulls: <bool>[
+        for (final column in sheet.columns) column.containsNulls,
+      ],
+    ) &&
+        sheet.rowCount > 1 &&
+        sheet.columns.length <= 64;
+    final typedBatch = useTypedBatch ? <List<Object?>>[] : null;
+    final typedSignature = useTypedBatch
+        ? renderTypedBatchSignature(targetTypes)
+        : null;
+    const flushBatchSize = 256;
+    void flushBatch() {
+      if (typedBatch == null || typedBatch.isEmpty) {
+        return;
+      }
+      targetStatement.executeBatchTyped(typedSignature!, typedBatch);
+      typedBatch.clear();
+    }
+
     for (
       var rowIndex = bounds.dataStartRow;
       rowIndex < sheetRows.length;
@@ -548,19 +573,30 @@ Future<int> _copySheetData({
           );
           formulaWarningAdded = true;
         }
+        final adapted = _adaptImportValue(
+          _normalizeExcelCellValue(cellValue),
+          column.targetType,
+        );
         values.add(
-          _adaptImportValue(
-            _normalizeExcelCellValue(cellValue),
-            column.targetType,
-          ),
+          typedBatch != null
+              ? normalizeValueForTypedBatch(adapted, column.targetType)
+              : adapted,
         );
       }
 
-      targetStatement.reset();
-      targetStatement.clearBindings();
-      targetStatement.bindAll(values);
-      targetStatement.execute();
-      copied++;
+      if (typedBatch != null) {
+        typedBatch.add(values);
+        copied++;
+        if (typedBatch.length >= flushBatchSize) {
+          flushBatch();
+        }
+      } else {
+        targetStatement.reset();
+        targetStatement.clearBindings();
+        targetStatement.bindAll(values);
+        targetStatement.execute();
+        copied++;
+      }
 
       if (copied == 1 ||
           copied % _excelProgressBatchSize == 0 ||
@@ -584,6 +620,7 @@ Future<int> _copySheetData({
         await Future<void>.delayed(Duration.zero);
       }
     }
+    flushBatch();
   } finally {
     targetStatement.dispose();
   }

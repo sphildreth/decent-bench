@@ -3,6 +3,8 @@ import 'package:decent_bench/features/workspace/domain/sdk_generation.dart';
 import 'package:decent_bench/features/workspace/domain/workspace_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../../support/decentdb_test_constants.dart';
+
 void main() {
   test('builds TypeScript SDK declarations from schema and saved queries', () {
     final schema = _schema();
@@ -85,7 +87,7 @@ void main() {
     ]);
     expect(ir.savedQueries.single.typescriptName, 'ActiveAccounts');
     expect(ir.savedQueries.single.warnings, isEmpty);
-    expect(source, contains("export const engineVersion = '2.8.0';"));
+    expect(source, contains("export const engineVersion = '$expectedDecentDbVersion';"));
     expect(source, contains('export interface AccountsRow {'));
     expect(source, contains('id: number;'));
     expect(source, contains("status?: 'active' | 'paused' | null;"));
@@ -228,7 +230,7 @@ SchemaSnapshot _schema() {
 ToolingMetadata _metadata({required String fingerprint}) {
   return ToolingMetadata(
     metadataVersion: 1,
-    engineVersion: '2.8.0',
+    engineVersion: expectedDecentDbVersion,
     databaseFormatVersion: 8,
     schemaCookie: 1,
     tempSchemaCookie: 0,

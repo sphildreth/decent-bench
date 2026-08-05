@@ -1,5 +1,5 @@
 ## Pinned DecentDB SQL Capability Baseline
-**Date:** 2026-03-09
+**Date:** 2026-03-09 (updated 2026-08-04)
 **Status:** Accepted
 
 ### Decision
@@ -7,7 +7,8 @@
 Decent Bench treats the official SQL reference for the pinned DecentDB
 compatibility line as the normative SQL capability contract.
 
-Current project compatibility line: **DecentDB v2.x**.
+Current project compatibility line: **DecentDB v2.17.0** (upgraded from
+v2.14.0 in 2026-08; see ADR-0060 for the migration contract).
 
 The app may phase dedicated UI affordances and schema-browser coverage over
 time, but it should not intentionally narrow the SQL surface below what the

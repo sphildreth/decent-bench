@@ -10,6 +10,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 import '../domain/sqlite_import_models.dart';
 import '../domain/workspace_models.dart';
+import '../../import/infrastructure/typed_batch_classification.dart';
 
 Future<SqliteImportInspection> inspectSqliteSourceInBackground(
   String sourcePath,
@@ -588,20 +589,56 @@ Future<int> _copyTableData({
   var copied = 0;
   try {
     final cursor = sourceStatement.selectCursor();
+    final targetTypes = <String>[
+      for (final column in insertedColumns) column.targetType,
+    ];
+    final useTypedBatch = insertedColumns.isNotEmpty &&
+        canUseTypedBatchForTargets(targetTypes) &&
+        table.rowCount > 1 &&
+        insertedColumns.length <= 64;
+    final typedBatch = useTypedBatch ? <List<Object?>>[] : null;
+    final typedSignature = useTypedBatch
+        ? renderTypedBatchSignature(targetTypes)
+        : null;
+    const flushBatchSize = 256;
+    void flushBatch() {
+      if (typedBatch == null || typedBatch.isEmpty) {
+        return;
+      }
+      targetStatement.executeBatchTyped(typedSignature!, typedBatch);
+      typedBatch.clear();
+    }
+
     while (cursor.moveNext()) {
       _throwIfCancelled(isCancelled);
       final row = cursor.current;
-      final values = <Object?>[
-        for (final column in insertedColumns)
-          _adaptImportValue(row[column.sourceName], column.targetType),
-      ];
-      targetStatement.reset();
-      targetStatement.clearBindings();
-      if (insertedColumns.isNotEmpty) {
-        targetStatement.bindAll(values);
+final values = <Object?>[
+          for (final column in insertedColumns)
+            typedBatch != null
+                ? normalizeValueForTypedBatch(
+                    _adaptImportValue(
+                        row[column.sourceName], column.targetType),
+                    column.targetType,
+                  )
+                : _adaptImportValue(
+                    row[column.sourceName], column.targetType,
+                  ),
+        ];
+      if (typedBatch != null) {
+        typedBatch.add(values);
+        copied++;
+        if (typedBatch.length >= flushBatchSize) {
+          flushBatch();
+        }
+      } else {
+        targetStatement.reset();
+        targetStatement.clearBindings();
+        if (insertedColumns.isNotEmpty) {
+          targetStatement.bindAll(values);
+        }
+        targetStatement.execute();
+        copied++;
       }
-      targetStatement.execute();
-      copied++;
 
       if (copied == 1 || copied % 200 == 0 || copied == table.rowCount) {
         sendUpdate(
@@ -623,6 +660,7 @@ Future<int> _copyTableData({
         await Future<void>.delayed(Duration.zero);
       }
     }
+    flushBatch();
   } finally {
     targetStatement.dispose();
     sourceStatement.close();

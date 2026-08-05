@@ -254,7 +254,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
                             for (final index in filteredIndexes)
                               _LeafNode(
                                 nodeId: 'index:${index.name}',
-                                icon: Icons.label_outline,
+                                icon: _iconForIndexKind(index.kind),
                                 label: _indexLabel(index),
                                 selected:
                                     widget.selectedNodeId ==
@@ -382,7 +382,7 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
                 for (final index in relatedIndexes)
                   _LeafNode(
                     nodeId: 'index:${index.name}',
-                    icon: Icons.label_outline,
+                    icon: _iconForIndexKind(index.kind),
                     label: _indexLabel(index),
                     selected: widget.selectedNodeId == 'index:${index.name}',
                     onTap: widget.onSelectNode,
@@ -791,6 +791,9 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
     if (column.primaryKey) {
       parts.add('PK');
     }
+    if (column.autoIncrement) {
+      parts.add('AUTOINCREMENT');
+    }
     if (column.notNull) {
       parts.add('NOT NULL');
     }
@@ -818,6 +821,21 @@ class _SchemaExplorerPaneState extends State<SchemaExplorerPane> {
       if (index.temporary) 'TEMP',
     ];
     return parts.join(' ');
+  }
+
+  IconData _iconForIndexKind(String kind) {
+    final normalized = kind.toLowerCase();
+    switch (normalized) {
+      case 'fulltext':
+        return Icons.manage_search_outlined;
+      case 'spatial':
+        return Icons.public_outlined;
+      case 'trigram':
+        return Icons.text_fields_outlined;
+      case 'btree':
+      default:
+        return Icons.label_outline;
+    }
   }
 
   String _triggerLabel(TriggerSummary trigger) {

@@ -26,6 +26,56 @@ void main() {
     );
   });
 
+  test('detects DDB_ERR_TIMEOUT engine messages', () {
+    expect(
+      DecentDbMigrationService.isCoordinationTimeoutMessage(
+        'DecentDBException: DDB_ERR_TIMEOUT (10)',
+      ),
+      isTrue,
+    );
+    expect(
+      DecentDbMigrationService.isCoordinationTimeoutMessage(
+        'ErrTimeout waiting for writer lock',
+      ),
+      isTrue,
+    );
+    expect(
+      DecentDbMigrationService.isCoordinationTimeoutMessage(
+        'process writer lock wait timed out',
+      ),
+      isTrue,
+    );
+    expect(
+      DecentDbMigrationService.isCoordinationTimeoutMessage(
+        'database file is corrupt',
+      ),
+      isFalse,
+    );
+  });
+
+  test('explainCoordinationTimeout returns null for non-matching messages',
+      () {
+    expect(
+      DecentDbMigrationService.explainCoordinationTimeout(
+        'database file is corrupt',
+        databasePath: '/tmp/foo.ddb',
+      ),
+      isNull,
+    );
+  });
+
+  test('explainCoordinationTimeout names the .coord sidecar and the config '
+      'knob to raise', () {
+    final text = DecentDbMigrationService.explainCoordinationTimeout(
+      'DDB_ERR_TIMEOUT',
+      databasePath: '/mnt/incoming/foo.ddb',
+    );
+    expect(text, isNotNull);
+    expect(text, contains('process writer lock'));
+    expect(text, contains('/mnt/incoming/foo.ddb.coord'));
+    expect(text, contains('process_coordination_timeout_ms'));
+  });
+
   test('suggests a unique migrated destination beside the source', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'decentdb-migration-service-',
@@ -150,5 +200,130 @@ void main() {
             ),
       ),
     );
+  });
+
+  group('migrateInPlace', () {
+    test('moves original aside, swaps migrated temp into place, and backs up '
+        'the source WAL sidecar', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'decentdb-migration-service-in-place-',
+      );
+      addTearDown(() async {
+        if (tempDir.existsSync()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      final sourcePath = p.join(tempDir.path, 'legacy.ddb');
+      final walPath = '$sourcePath.wal';
+      final sourceBytes = 'legacy-database-bytes';
+      await File(sourcePath).writeAsString(sourceBytes);
+      await File(walPath).writeAsString('legacy-wal-bytes');
+
+      final service = DecentDbMigrationService(
+        toolPathResolver: () async => '/tmp/decentdb-migrate',
+        processRunner: (toolPath, args) async {
+          final destIndex = args.indexOf('--dest');
+          final tempDestination = args[destIndex + 1];
+          await File(tempDestination).writeAsString('migrated-database-bytes');
+          return ProcessResult(12, 0, 'Migration complete', '');
+        },
+      );
+
+      final result = await service.migrateInPlace(sourcePath: sourcePath);
+
+      expect(result.originalPath, sourcePath);
+      expect(result.finalPath, sourcePath);
+      expect(result.backupPath, '$sourcePath.v13.bak');
+      expect(result.carryForwardSidecars, <String>['$sourcePath.wal.v13.bak']);
+      expect(await File(result.backupPath).readAsString(), sourceBytes);
+      expect(await File('$sourcePath.wal.v13.bak').readAsString(),
+          'legacy-wal-bytes');
+      expect(
+        (await File(sourcePath).readAsString()),
+        'migrated-database-bytes',
+      );
+      expect(await File(walPath).exists(), isFalse,
+          reason: 'rebuildable sidecar should be gone, engine will recreate');
+    });
+
+    test('cleans up the temp destination when the tool returns zero but '
+        'produces no output file', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'decentdb-migration-service-in-place-no-output-',
+      );
+      addTearDown(() async {
+        if (tempDir.existsSync()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      final sourcePath = p.join(tempDir.path, 'legacy.ddb');
+      await File(sourcePath).writeAsString('legacy');
+
+      final service = DecentDbMigrationService(
+        toolPathResolver: () async => '/tmp/decentdb-migrate',
+        processRunner: (_, _) async {
+          return ProcessResult(12, 0, '', '');
+        },
+      );
+
+      await expectLater(
+        service.migrateInPlace(sourcePath: sourcePath),
+        throwsA(isA<DecentDbMigrationFailure>()),
+      );
+      expect(await File(sourcePath).exists(), isTrue);
+      expect(await File(sourcePath).readAsString(), 'legacy');
+    });
+
+    test('propagates migration process failure without modifying the original',
+        () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'decentdb-migration-service-in-place-tool-fail-',
+      );
+      addTearDown(() async {
+        if (tempDir.existsSync()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      final sourcePath = p.join(tempDir.path, 'legacy.ddb');
+      await File(sourcePath).writeAsString('legacy');
+
+      final service = DecentDbMigrationService(
+        toolPathResolver: () async => '/tmp/decentdb-migrate',
+        processRunner: (_, _) async {
+          return ProcessResult(12, 7, '', 'tool missing');
+        },
+      );
+
+      await expectLater(
+        service.migrateInPlace(sourcePath: sourcePath),
+        throwsA(isA<DecentDbMigrationFailure>()),
+      );
+      expect(await File(sourcePath).exists(), isTrue);
+      expect(await File(sourcePath).readAsString(), 'legacy');
+      expect(await File('$sourcePath.v13.bak').exists(), isFalse);
+    });
+
+    test('rejects when a backup already exists at the expected location',
+        () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'decentdb-migration-service-in-place-backup-exists-',
+      );
+      addTearDown(() async {
+        if (tempDir.existsSync()) {
+          await tempDir.delete(recursive: true);
+        }
+      });
+      final sourcePath = p.join(tempDir.path, 'legacy.ddb');
+      await File(sourcePath).writeAsString('legacy');
+      await File('$sourcePath.v13.bak').writeAsString('existing');
+
+      final service = DecentDbMigrationService(
+        toolPathResolver: () async => '/tmp/decentdb-migrate',
+      );
+      await expectLater(
+        service.migrateInPlace(sourcePath: sourcePath),
+        throwsA(isA<DecentDbMigrationFailure>()),
+      );
+    });
   });
 }

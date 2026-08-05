@@ -111,3 +111,31 @@ class ExcelExportResult {
     );
   }
 }
+
+class ParquetExportResult {
+  const ParquetExportResult({
+    required this.rowCount,
+    required this.path,
+    this.schemaFingerprint,
+    this.warnings = const <String>[],
+    this.duration,
+  });
+
+  final int rowCount;
+  final String path;
+  final String? schemaFingerprint;
+  final List<String> warnings;
+  final Duration? duration;
+
+  factory ParquetExportResult.fromMap(Map<String, Object?> map) {
+    return ParquetExportResult(
+      rowCount: map['rowCount']! as int,
+      path: map['path']! as String,
+      schemaFingerprint: map['schemaFingerprint'] as String?,
+      warnings: (map['warnings'] as List<dynamic>? ?? [])
+          .whereType<String>()
+          .toList(),
+      duration: Duration(milliseconds: map['durationMs'] as int? ?? 0),
+    );
+  }
+}

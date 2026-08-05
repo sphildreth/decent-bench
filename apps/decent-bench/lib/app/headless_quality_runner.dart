@@ -7,6 +7,7 @@ import '../features/workspace/infrastructure/data_quality_report_writer.dart';
 import '../features/workspace/infrastructure/data_quality_repository.dart';
 import '../features/workspace/infrastructure/data_quality_runner.dart';
 import '../features/workspace/infrastructure/decentdb_bridge.dart';
+import '../features/workspace/infrastructure/decentdb_migration_service.dart';
 import '../features/workspace/infrastructure/native_library_resolver.dart';
 import 'startup_launch_options.dart';
 
@@ -118,6 +119,16 @@ Future<int> runHeadlessQualityCli(
       await gateway.openDatabase(databasePath);
     } catch (error) {
       writeStderr('Could not open database: $error');
+      if (DecentDbMigrationService.isUnsupportedFormatVersionMessage(
+        error.toString(),
+      )) {
+        writeStderr(
+          'This file uses a legacy DecentDB on-disk format. Run the official '
+          'decentdb-migrate tool to upgrade it in place, then re-run this '
+          'command. For example: decentdb-migrate --source <db> '
+          '--dest <db>.upgraded.ddb',
+        );
+      }
       return 3;
     }
 

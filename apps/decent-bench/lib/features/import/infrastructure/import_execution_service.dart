@@ -18,6 +18,7 @@ import 'ods_import_support.dart';
 import 'spreadsheetml_import_support.dart';
 import 'structured_import_support.dart';
 import 'type_inference_service.dart';
+import 'typed_batch_classification.dart';
 
 class ImportExecutionService {
   ImportExecutionService({
@@ -486,6 +487,27 @@ Future<GenericImportSummary> _runGenericImport({
   }
 }
 
+String _buildCreateIndexSql(_ResolvedImportTable table) {
+  final foreignKey = table.foreignKey!;
+  final indexName = 'idx_${table.targetName}_${foreignKey.childTargetColumn}';
+  return 'CREATE INDEX ${_quoteIdentifier(indexName)} '
+      'ON ${_quoteIdentifier(table.targetName)} '
+      '(${_quoteIdentifier(foreignKey.childTargetColumn)})';
+}
+
+String? _typedBatchSignatureChar(String targetType) =>
+    typedBatchSignatureChar(targetType);
+
+/// True when every column in [columns] can be expressed in the typed-batch
+/// signature (i/f/t). UUID and BOOLEAN columns are not supported and will
+/// cause the caller to fall back to the untyped batch path.
+bool _canUseTypedBatch(List<ImportColumnDraft> columns) {
+  return canUseTypedBatchForTargets(
+    <String>[for (final c in columns) c.targetType],
+    containsNulls: <bool>[for (final c in columns) c.containsNulls],
+  );
+}
+
 Future<int> _copyTableData({
   required Database database,
   required _ResolvedImportTable table,
@@ -509,41 +531,98 @@ Future<int> _copyTableData({
 
   var copied = 0;
   try {
-    for (final row in table.rows) {
-      _throwIfCancelled(isCancelled);
-      final values = <Object?>[
-        for (final column in table.columns)
-          typeInferenceService.coerceValue(
-            row[column.sourceName],
-            column.targetType,
-          ),
-      ];
-      statement.reset();
-      statement.clearBindings();
-      statement.bindAll(values);
-      statement.execute();
-      copied++;
-      if (copied == 1 ||
-          copied % genericImportProgressBatchSize == 0 ||
-          copied == table.rows.length) {
-        sendUpdate(
-          GenericImportUpdate(
-            kind: GenericImportUpdateKind.progress,
-            jobId: request.jobId,
-            progress: GenericImportProgress(
-              jobId: request.jobId,
-              currentTable: table.targetName,
-              completedTables: completedTables,
-              totalTables: totalTables,
-              currentTableRowsCopied: copied,
-              currentTableRowCount: table.rows.length,
-              totalRowsCopied: priorRowsCopied + copied,
-              message:
-                  'Imported $copied of ${table.rows.length} row${table.rows.length == 1 ? '' : 's'} into ${table.targetName}.',
+    final useTypedBatch = _canUseTypedBatch(table.columns) &&
+        table.rows.length > 1 &&
+        table.columns.length <= 64;
+    if (useTypedBatch) {
+      final signature = StringBuffer();
+      for (final column in table.columns) {
+        signature.write(_typedBatchSignatureChar(column.targetType));
+      }
+      final batch = <List<Object?>>[];
+      final flushBatchSize = 256;
+      for (final row in table.rows) {
+        _throwIfCancelled(isCancelled);
+        final values = <Object?>[
+          for (final column in table.columns)
+            normalizeValueForTypedBatch(
+              typeInferenceService.coerceValue(
+                row[column.sourceName],
+                column.targetType,
+              ),
+              column.targetType,
             ),
-          ),
-        );
-        await Future<void>.delayed(Duration.zero);
+        ];
+        batch.add(values);
+        copied++;
+        if (batch.length >= flushBatchSize) {
+          statement.executeBatchTyped(signature.toString(), batch);
+          batch.clear();
+        }
+        if (copied == 1 ||
+            copied % genericImportProgressBatchSize == 0 ||
+            copied == table.rows.length) {
+          sendUpdate(
+            GenericImportUpdate(
+              kind: GenericImportUpdateKind.progress,
+              jobId: request.jobId,
+              progress: GenericImportProgress(
+                jobId: request.jobId,
+                currentTable: table.targetName,
+                completedTables: completedTables,
+                totalTables: totalTables,
+                currentTableRowsCopied: copied,
+                currentTableRowCount: table.rows.length,
+                totalRowsCopied: priorRowsCopied + copied,
+                message:
+                    'Imported $copied of ${table.rows.length} row${table.rows.length == 1 ? '' : 's'} into ${table.targetName}.',
+              ),
+            ),
+          );
+          await Future<void>.delayed(Duration.zero);
+        }
+      }
+      if (batch.isNotEmpty) {
+        statement.executeBatchTyped(signature.toString(), batch);
+        batch.clear();
+      }
+    } else {
+      for (final row in table.rows) {
+        _throwIfCancelled(isCancelled);
+        final values = <Object?>[
+          for (final column in table.columns)
+            typeInferenceService.coerceValue(
+              row[column.sourceName],
+              column.targetType,
+            ),
+        ];
+        statement.reset();
+        statement.clearBindings();
+        statement.bindAll(values);
+        statement.execute();
+        copied++;
+        if (copied == 1 ||
+            copied % genericImportProgressBatchSize == 0 ||
+            copied == table.rows.length) {
+          sendUpdate(
+            GenericImportUpdate(
+              kind: GenericImportUpdateKind.progress,
+              jobId: request.jobId,
+              progress: GenericImportProgress(
+                jobId: request.jobId,
+                currentTable: table.targetName,
+                completedTables: completedTables,
+                totalTables: totalTables,
+                currentTableRowsCopied: copied,
+                currentTableRowCount: table.rows.length,
+                totalRowsCopied: priorRowsCopied + copied,
+                message:
+                    'Imported $copied of ${table.rows.length} row${table.rows.length == 1 ? '' : 's'} into ${table.targetName}.',
+              ),
+            ),
+          );
+          await Future<void>.delayed(Duration.zero);
+        }
       }
     }
   } finally {
@@ -581,14 +660,6 @@ String _buildCreateColumnSql(
       ..write('(${_quoteIdentifier(foreignKey.parentTargetColumn)})');
   }
   return buffer.toString();
-}
-
-String _buildCreateIndexSql(_ResolvedImportTable table) {
-  final foreignKey = table.foreignKey!;
-  final indexName = 'idx_${table.targetName}_${foreignKey.childTargetColumn}';
-  return 'CREATE INDEX ${_quoteIdentifier(indexName)} '
-      'ON ${_quoteIdentifier(table.targetName)} '
-      '(${_quoteIdentifier(foreignKey.childTargetColumn)})';
 }
 
 String? _resolveTargetColumnName(

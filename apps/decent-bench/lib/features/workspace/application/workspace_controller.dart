@@ -23,12 +23,23 @@ import '../infrastructure/app_config_store.dart';
 import '../infrastructure/data_quality_repository.dart';
 import '../infrastructure/data_quality_runner.dart';
 import '../infrastructure/decentdb_bridge.dart';
+import '../infrastructure/decentdb_doctor_service.dart';
 import '../infrastructure/layout_persistence_service.dart';
 import '../infrastructure/saved_query_library_store.dart';
 import '../infrastructure/workspace_state_store.dart';
 
 class WorkspaceController extends ChangeNotifier {
   static const int _maxMessageHistoryEntries = 80;
+
+  /// Bridge timeout for the pre-execution `describeQueryContract` step.
+  /// Describe is a metadata-only call that should return near-instantly;
+  /// when the worker isolate is wedged by a prior long-running op it will
+  /// instead block the worker for the full request timeout. We cap it
+  /// short so a stuck describe fails fast and `runQuery` proceeds without
+  /// a contract (parameter validation is skipped) rather than wedging the
+  /// whole query — and the worker-restart path in the bridge gets a chance
+  /// to recover before the user's actual query is attempted.
+  static const Duration _describeQueryContractTimeout = Duration(seconds: 10);
 
   WorkspaceController({
     WorkspaceDatabaseGateway? gateway,
@@ -94,6 +105,7 @@ class WorkspaceController extends ChangeNotifier {
 
   String? databasePath;
   String? engineVersion;
+  String? engineVersionWarning;
   String? nativeLibraryPath;
   String? workspaceError;
   String? workspaceMessage;
@@ -302,9 +314,11 @@ class WorkspaceController extends ChangeNotifier {
       final session = await _gateway.openDatabase(
         normalized,
         writeQueue: config.writeQueue,
+        databaseOpen: config.databaseOpen,
       );
       databasePath = session.path;
       engineVersion = session.engineVersion;
+      engineVersionWarning = session.engineVersionWarning;
       config = config.pushRecentFile(session.path);
       await _configStore.save(config);
       final restoredState = await _workspaceStateStore.load(session.path);
@@ -321,6 +335,16 @@ class WorkspaceController extends ChangeNotifier {
           'Opened ${p.basename(session.path)}'
           ' on DecentDB ${session.engineVersion}'
           ' with ${tabs.length} query tab${tabs.length == 1 ? '' : 's'}.';
+      if (engineVersionWarning != null && engineVersionWarning!.isNotEmpty) {
+        workspaceMessage =
+            '${workspaceMessage!}\nEngine version mismatch: ${engineVersionWarning!}';
+        _logger.warning(
+          category: 'workspace',
+          operation: 'open_database',
+          message: engineVersionWarning!,
+          databasePath: session.path,
+        );
+      }
       _logger.info(category: 'workspace', operation: 'open_database', message: 'Opened database successfully.', databasePath: session.path,
         elapsedNanos: _durationToNanos(stopwatch.elapsed),
         details: <String, Object?>{
@@ -334,6 +358,7 @@ class WorkspaceController extends ChangeNotifier {
     } catch (error) {
       databasePath = null;
       engineVersion = null;
+      engineVersionWarning = null;
       schema = SchemaSnapshot.empty();
       toolingMetadata = null;
       await dataQuality.attachWorkspace(databasePath: null, schema: schema);
@@ -521,6 +546,7 @@ class WorkspaceController extends ChangeNotifier {
     sqliteImportSession = null;
     databasePath = null;
     engineVersion = null;
+    engineVersionWarning = null;
     schema = SchemaSnapshot.empty();
     toolingMetadata = null;
     branch.attachWorkspace(databasePath: null);
@@ -1103,7 +1129,7 @@ class WorkspaceController extends ChangeNotifier {
 
     var branchCreated = false;
     try {
-      final queryContract = await _gateway.describeQueryContract(trimmedSql);
+      final queryContract = await _describeQueryContractSafe(trimmedSql);
       if (!_isCurrentGeneration(tabId, generation)) {
         return;
       }
@@ -1112,11 +1138,14 @@ class WorkspaceController extends ChangeNotifier {
         (current) => current.copyWith(queryContract: queryContract),
         notify: false,
       );
-      if (!_validateQueryContractParameters(
-        tabId: tabId,
-        contract: queryContract,
-        parameterValues: params,
-      )) {
+      // When describe was unavailable (worker busy/restarted), skip
+      // parameter validation and run the query directly.
+      if (queryContract != null &&
+          !_validateQueryContractParameters(
+            tabId: tabId,
+            contract: queryContract,
+            parameterValues: params,
+          )) {
         return;
       }
 
@@ -1341,7 +1370,7 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     try {
-      final queryContract = await _gateway.describeQueryContract(trimmedSql);
+      final queryContract = await _describeQueryContractSafe(trimmedSql);
       if (!_isCurrentGeneration(tabId, generation)) {
         return;
       }
@@ -1350,11 +1379,16 @@ class WorkspaceController extends ChangeNotifier {
         (current) => current.copyWith(queryContract: queryContract),
         notify: false,
       );
-      if (_validateQueryContractParameters(
-        tabId: tabId,
-        contract: queryContract,
-        parameterValues: params,
-      )) {
+      // When describe was unavailable (worker busy/restarted), skip
+      // parameter validation and run the query directly so a stuck
+      // metadata call cannot block the user's actual query.
+      final contractValid = queryContract == null ||
+          _validateQueryContractParameters(
+            tabId: tabId,
+            contract: queryContract,
+            parameterValues: params,
+          );
+      if (contractValid) {
         final page = await _gateway.runQuery(
           sql: trimmedSql,
           params: params,
@@ -4794,6 +4828,38 @@ class WorkspaceController extends ChangeNotifier {
     return tab != null && tab.executionGeneration == generation;
   }
 
+  /// Attempts to describe a query's contract (parameters + result columns)
+  /// with a short bridge timeout. Returns `null` when describe times out
+  /// or the worker is busy, so the caller can fall back to executing the
+  /// query without parameter validation instead of wedging the worker
+  /// behind a stuck metadata call. Non-timeout errors (e.g. SQL syntax)
+  /// are rethrown so the user sees the real error.
+  Future<QueryContract?> _describeQueryContractSafe(String sql) async {
+    try {
+      return await _gateway.describeQueryContract(
+        sql,
+        timeout: _describeQueryContractTimeout,
+      );
+    } on BridgeFailure catch (error) {
+      if (error.code == 'DDB_ERR_TIMEOUT' ||
+          error.code == 'DDB_ERR_WORKER_BUSY' ||
+          error.code == 'DDB_ERR_WORKER_RESTARTED') {
+        _logger.warning(
+          category: 'query',
+          operation: 'describe_query_contract',
+          message:
+              'describeQueryContract was unavailable ($error); running the '
+              'query without a parameter contract.',
+          databasePath: databasePath,
+          sql: sql,
+          error: error,
+        );
+        return null;
+      }
+      rethrow;
+    }
+  }
+
   bool _validateQueryContractParameters({
     required String tabId,
     required QueryContract contract,
@@ -4910,6 +4976,22 @@ class WorkspaceController extends ChangeNotifier {
     if (next.writeQueue.maxGroupDelayUs < 0) {
       return 'Write queue group delay cannot be negative.';
     }
+    if (!kDatabaseProfiles.contains(next.databaseOpen.profile)) {
+      return 'Database profile must be one of: ${kDatabaseProfiles.join(', ')}.';
+    }
+    if (next.databaseOpen.planCacheMaxBytes != null &&
+        next.databaseOpen.planCacheMaxBytes! <= 0) {
+      return 'Plan cache size must be a positive integer.';
+    }
+    if (next.databaseOpen.processCoordinationTimeoutMs != null &&
+        next.databaseOpen.processCoordinationTimeoutMs! <= 0) {
+      return 'Process coordination timeout must be a positive integer (milliseconds).';
+    }
+    if (next.databaseOpen.openBridgeTimeoutMs != null &&
+        next.databaseOpen.openBridgeTimeoutMs! <= 0) {
+      return 'Open bridge timeout must be a positive integer (milliseconds).';
+    }
+
 
     final snippetIds = <String>{};
     final snippetTriggers = <String>{};
@@ -4935,6 +5017,150 @@ class WorkspaceController extends ChangeNotifier {
     }
 
     return null;
+  }
+
+  /// Flushes the engine plan cache by issuing `PRAGMA flush_plan_cache` on the
+  /// open database. Returns `false` if no database is open.
+  Future<bool> flushPlanCache() async {
+    if (databasePath == null || databasePath!.isEmpty) {
+      workspaceMessage = 'No database is open; plan cache not flushed.';
+      _safeNotify();
+      return false;
+    }
+    try {
+      await _gateway.runQuery(
+        sql: 'PRAGMA flush_plan_cache',
+        params: const <Object?>[],
+        pageSize: 1,
+      );
+      workspaceMessage = 'Plan cache flushed.';
+      workspaceError = null;
+      _safeNotify();
+      return true;
+    } catch (error) {
+      _setWorkspaceError('Failed to flush plan cache: $error');
+      return false;
+    }
+  }
+
+  /// Issues `ANALYZE` on the open database to refresh persisted statistics
+  /// the planner uses for cost estimates. Pass an explicit [tableName] to
+  /// collect stats for a single table; omit it to analyze every table.
+  Future<bool> runAnalyze({String? tableName}) async {
+    if (databasePath == null || databasePath!.isEmpty) {
+      workspaceMessage = 'No database is open; nothing to analyze.';
+      _safeNotify();
+      return false;
+    }
+    final trimmed = tableName?.trim() ?? '';
+    final sql = trimmed.isEmpty ? 'ANALYZE' : 'ANALYZE "$trimmed"';
+    try {
+      await _gateway.runQuery(
+        sql: sql,
+        params: const <Object?>[],
+        pageSize: 1,
+      );
+      workspaceMessage = trimmed.isEmpty
+          ? 'Analyzed all tables. Statistics refreshed.'
+          : 'Analyzed $trimmed. Statistics refreshed.';
+      workspaceError = null;
+      _safeNotify();
+      return true;
+    } catch (error) {
+      _setWorkspaceError('Failed to run ANALYZE: $error');
+      return false;
+    }
+  }
+
+  /// Compact-copy the open database to [destPath] via the engine's
+  /// `saveAs` ABI. The current handle stays open. The destination file
+  /// will be a clean v2.17-format copy suitable for archival or transfer.
+  Future<bool> saveAs(String destPath) async {
+    final trimmed = destPath.trim();
+    if (trimmed.isEmpty) {
+      _setWorkspaceError('Choose a destination path for the compact copy.');
+      return false;
+    }
+    if (databasePath == null || databasePath!.isEmpty) {
+      _setWorkspaceError('No database is open.');
+      return false;
+    }
+    try {
+      await _gateway.saveAs(trimmed);
+      workspaceMessage = 'Wrote compact copy to ${p.basename(trimmed)}.';
+      workspaceError = null;
+      _safeNotify();
+      return true;
+    } catch (error) {
+      _setWorkspaceError('saveAs failed: $error');
+      return false;
+    }
+  }
+
+  /// Evict the shared WAL cache entry for [path]. The caller must
+  /// guarantee that all handles for that path are closed before this
+  /// runs — the engine documents that this call is unsafe with open
+  /// handles. Returns false if invoked while the workspace is open.
+  Future<bool> evictSharedWal(String path) async {
+    if (databasePath != null &&
+        databasePath!.isNotEmpty &&
+        path == databasePath) {
+      _setWorkspaceError(
+          'Cannot evict shared WAL while the workspace is open. Close the '
+          'workspace first.');
+      return false;
+    }
+    try {
+      await _gateway.evictSharedWal(path);
+      workspaceMessage =
+          'Evicted shared WAL entry for ${p.basename(path)}.';
+      workspaceError = null;
+      _safeNotify();
+      return true;
+    } catch (error) {
+      _setWorkspaceError('evictSharedWal failed: $error');
+      return false;
+    }
+  }
+
+  /// Runs the DecentDB doctor over the open database. Returns a report
+  /// via the supplied service. The controller does not own the service
+  /// itself — callers (UI / tests) inject it. This keeps the controller
+  /// testable without spinning up a CLI process.
+  Future<DecentDbDoctorReport> runDatabaseDoctor({
+    required DecentDbDoctorService service,
+    List<String> checks = const <String>[],
+    bool verifyAllIndexes = false,
+    List<String> verifyIndexes = const <String>[],
+    int? maxIndexVerify,
+  }) async {
+    final path = databasePath;
+    if (path == null || path.isEmpty) {
+      throw const DecentDbDoctorFailure(
+        message: 'No database is open.',
+        cliPath: '',
+        arguments: <String>[],
+        exitCode: -1,
+        stdoutText: '',
+        stderrText: '',
+      );
+    }
+    return service.runDoctor(
+      databasePath: path,
+      checks: checks,
+      verifyAllIndexes: verifyAllIndexes,
+      verifyIndexes: verifyIndexes,
+      maxIndexVerify: maxIndexVerify,
+    );
+  }
+
+  Future<List<Map<String, Object?>>> querySysView(String sql) async {
+    final page = await _gateway.runQuery(
+      sql: sql,
+      params: const <Object?>[],
+      pageSize: 200,
+    );
+    return page.rows;
   }
 
   Future<void> _persistConfig([String? statusMessage]) async {

@@ -1,5 +1,5 @@
 ## DecentDB Git Dependency Rationale
-**Date:** 2026-04-21
+**Date:** 2026-04-21 (updated 2026-08-04)
 **Status:** Accepted
 
 ### Decision
@@ -12,8 +12,14 @@ decentdb:
   git:
     url: https://github.com/sphildreth/decentdb
     path: bindings/dart/dart
-    ref: v2.6.0
+    ref: v2.17.0
 ```
+
+This ADR documents the dependency strategy, not the pinned version. The
+current pinned ref lives in `apps/decent-bench/pubspec.yaml` and is locked in
+`apps/decent-bench/pubspec.lock`. Bumping the ref within the `v2.x`
+compatibility line does not require an ADR update; cross-line upgrades do
+(see ADR-0060 for the v2.14.0 → v2.17.0 migration contract).
 
 ### Rationale
 

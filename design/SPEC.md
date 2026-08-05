@@ -768,13 +768,22 @@ CSV options:
 - quote behavior
 - include headers
 
-### 11.2 Deferred exports
+### 11.2 Deferred exports (v2.0.0)
 
-The following are explicitly **Next** and not required for MVP:
+The following were deferred beyond the shipped `v1.0.0` MVP but have been implemented in subsequent releases:
 
-- JSON
-- Parquet
-- Excel
+- **JSON** — Implemented in v2.0.0 with paged execution and schema fingerprints
+- **Excel (.xlsx)** — Implemented in v2.0.0 with minimal Office Open XML writer
+- **Parquet** — Implemented in v2.1.0 with streaming cursor-based export (see ADR-0056)
+
+### 11.3 Deferred exports (future)
+
+The following remain deferred and are tracked as future enhancements:
+
+- Parquet import
+- Excel formula generation, pivot tables, charts, workbook styling
+- Multi-workspace support (multiple `.ddb` files open simultaneously)
+- Advanced query features beyond pinned-engine SQL surface
 
 If implemented early, they must be treated as optional stretch work, not as MVP
 acceptance blockers.

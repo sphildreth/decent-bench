@@ -269,4 +269,60 @@ height = 80
       isFalse,
     );
   });
+
+  test('databaseOpen settings round-trip through TOML', () {
+    final config = AppConfig.defaults().copyWith(
+      databaseOpen: const DatabaseOpenSettings(
+        profile: 'embedded_fast',
+        planCacheEnabled: false,
+        planCacheMaxBytes: 5_242_880,
+      ),
+    );
+
+    final toml = config.toToml();
+    final parsed = AppConfig.fromToml(toml);
+
+    expect(toml, contains('[database_open]'));
+    expect(toml, contains('profile = "embedded_fast"'));
+    expect(toml, contains('plan_cache_enabled = false'));
+    expect(toml, contains('plan_cache_max_bytes = 5242880'));
+    expect(parsed.databaseOpen.profile, 'embedded_fast');
+    expect(parsed.databaseOpen.planCacheEnabled, isFalse);
+    expect(parsed.databaseOpen.planCacheMaxBytes, 5_242_880);
+    expect(
+      parsed.databaseOpen.toOpenOptionsFragment(),
+      'profile=embedded_fast,plan_cache_enabled=false,plan_cache_max_bytes=5242880',
+    );
+  });
+
+  test('databaseOpen defaults render a valid baseline fragment', () {
+    final defaults = DatabaseOpenSettings.defaults();
+    expect(defaults.profile, 'default');
+    expect(defaults.planCacheEnabled, isTrue);
+    expect(defaults.planCacheMaxBytes, isNull);
+    expect(defaults.processCoordinationTimeoutMs, isNull);
+    expect(
+      defaults.toOpenOptionsFragment(),
+      'profile=default,plan_cache_enabled=true',
+    );
+  });
+
+  test('process_coordination_timeout_ms round-trips through TOML', () {
+    final config = AppConfig.defaults().copyWith(
+      databaseOpen: const DatabaseOpenSettings(
+        processCoordinationTimeoutMs: 120000,
+      ),
+    );
+
+    final toml = config.toToml();
+    final parsed = AppConfig.fromToml(toml);
+
+    expect(toml, contains('process_coordination_timeout_ms = 120000'));
+    expect(parsed.databaseOpen.processCoordinationTimeoutMs, 120000);
+    expect(
+      parsed.databaseOpen.toOpenOptionsFragment(),
+      'profile=default,plan_cache_enabled=true,'
+          'process_coordination_timeout_ms=120000',
+    );
+  });
 }

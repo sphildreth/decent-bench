@@ -38,10 +38,12 @@ import '../domain/sql_risk_assessment.dart';
 import '../domain/workspace_file_entry.dart';
 import '../domain/workspace_models.dart';
 import '../infrastructure/app_lifecycle_service.dart';
+import '../infrastructure/decentdb_doctor_service.dart';
 import '../infrastructure/decentdb_migration_service.dart';
 import '../infrastructure/decentdb_web_console_service.dart';
 import '../infrastructure/shortcut_config_service.dart';
 import 'about_dialog.dart';
+import 'decentdb_doctor_dialog.dart';
 import 'decentdb_migration_dialog.dart';
 import 'excel_import_dialog.dart';
 import 'export_results_csv_dialog.dart';
@@ -816,6 +818,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           MapEntry('Indexes', '${indexes.length}'),
           MapEntry('Triggers', '${triggers.length}'),
           MapEntry('Temporary', object.temporary ? 'Yes' : 'No'),
+          if (object.isTable && object.rowCount != null)
+            MapEntry('Rows', '${object.rowCount}'),
+          if (object.isTable &&
+              object.primaryKeyColumns.isNotEmpty)
+            MapEntry('Primary key', object.primaryKeyColumns.join(', ')),
+          if (object.isTable && object.foreignKeys.isNotEmpty)
+            MapEntry('Foreign keys', '${object.foreignKeys.length}'),
+          if (object.isView && object.viewDependencies.isNotEmpty)
+            MapEntry('Depends on', object.viewDependencies.join(', ')),
           MapEntry(
             'Definition',
             object.ddl == null || object.ddl!.trim().isEmpty
@@ -827,6 +838,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           ...object.exposedConstraintSummaries,
           for (final trigger in triggers)
             'Trigger ${trigger.name}: ${trigger.timing.toUpperCase()} ${trigger.events.join(", ")}',
+          if (object.isView &&
+              object.sqlText != null &&
+              object.sqlText!.trim().isNotEmpty)
+            'SQL text: ${object.sqlText}',
           ...controller.schemaNotesForObject(object),
         ],
       );
@@ -849,10 +864,18 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               MapEntry('Unique', index.unique ? 'Yes' : 'No'),
               MapEntry('Temporary', index.temporary ? 'Yes' : 'No'),
               MapEntry('Columns', index.columns.join(', ')),
+              if (index.includeColumns.isNotEmpty)
+                MapEntry(
+                  'Includes',
+                  index.includeColumns.join(', '),
+                ),
+              MapEntry('Fresh', index.fresh ? 'Yes' : 'No'),
               if (index.predicateSql != null && index.predicateSql!.isNotEmpty)
                 MapEntry('Predicate', index.predicateSql!),
             ],
             notes: <String>[
+              if (!index.fresh)
+                'Index needs rebuild — call ALTER INDEX ... REBUILD.',
               if (index.ddl == null || index.ddl!.trim().isEmpty)
                 'Canonical index DDL is unavailable for this index.',
             ],
@@ -1661,6 +1684,21 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _showDatabaseDoctorDashboard() async {
+    final databasePath = widget.controller.databasePath;
+    if (databasePath == null || databasePath.trim().isEmpty) {
+      return;
+    }
+    final service = DecentDbDoctorService(
+      sysViewRunner: (sql) => widget.controller.querySysView(sql),
+    );
+    final future = widget.controller.runDatabaseDoctor(service: service);
+    if (!mounted) {
+      return;
+    }
+    await DecentDbDoctorDialog.show(context: context, future: future);
   }
 
   Future<void> _openWebConsole() async {
@@ -3027,6 +3065,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           enabled: controller.hasOpenDatabase,
         ),
         command(
+          id: 'tools_database_doctor',
+          label: 'Database Doctor',
+          icon: Icons.medical_services_outlined,
+          onInvoke: _showDatabaseDoctorDashboard,
+          enabled: controller.hasOpenDatabase,
+        ),
+        command(
           id: 'tools_open_web_console',
           label: 'Open Web Console',
           icon: Icons.open_in_browser_outlined,
@@ -3175,6 +3220,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return;
     }
     final openError = widget.controller.workspaceError;
+    if (DecentDbMigrationService.isCoordinationTimeoutMessage(openError)) {
+      await _showCoordinationTimeoutHelp(
+        sourcePath: path,
+        openError: openError ?? 'DDB_ERR_TIMEOUT',
+      );
+      return;
+    }
     if (!DecentDbMigrationService.isUnsupportedFormatVersionMessage(
       openError,
     )) {
@@ -3186,70 +3238,153 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
+  Future<void> _showCoordinationTimeoutHelp({
+    required String sourcePath,
+    required String openError,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+    final isBridgeTimeout =
+        openError.contains('worker request') || openError.contains('BridgeFailure');
+    final explanation = isBridgeTimeout
+        ? 'DecentDB worker timed out waiting for a response from the engine. '
+            'This usually means the engine itself is still working but the '
+            'bridge gave up first. Raise the Dart-side wait by setting '
+            'open_bridge_timeout_ms in the [database_open] section of '
+            'config.toml (default: 5 minutes). The underlying engine wait '
+            'is controlled separately by process_coordination_timeout_ms '
+            'and must always be smaller than the bridge timeout.'
+        : DecentDbMigrationService.explainCoordinationTimeout(
+            openError,
+            databasePath: sourcePath,
+          );
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Database open timed out'),
+        content: SizedBox(
+          width: 600,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                explanation ??
+                    'DecentDB timed out while opening the database. Try '
+                        'closing other DecentDB-backed processes, removing '
+                        'a stale .coord sidecar, or raising '
+                        'process_coordination_timeout_ms (engine) and '
+                        'open_bridge_timeout_ms (bridge) in config.toml.',
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: SelectableText(
+                  sourcePath,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                title: const Text('Engine error'),
+                children: <Widget>[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: SelectableText(
+                      openError,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showLegacyDatabaseMigrationOffer({
     required String sourcePath,
     required String openError,
   }) async {
-    final suggestedDestination = await _migrationService.suggestDestinationPath(
-      sourcePath,
-    );
     if (!mounted) {
       return;
     }
-    final migrationRequest = await showDialog<DecentDbMigrationDialogResult>(
+    final backupPath = DecentDbMigrationService.backupPathFor(sourcePath);
+    final proceed = await DecentDbInPlaceMigrationDialog.show(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => DecentDbMigrationDialog(
-        sourcePath: sourcePath,
-        initialDestinationPath: suggestedDestination,
-        openError: openError,
-        onBrowse: (currentPath) => browseDecentDbMigrationDestination(
-          currentPath: currentPath,
-          fallbackPath: suggestedDestination,
-        ),
-      ),
+      sourcePath: sourcePath,
+      backupPath: backupPath,
+      openError: openError,
     );
-    if (migrationRequest == null || !mounted) {
+    if (!proceed || !mounted) {
       return;
     }
-
-    final migrationResult = await _showMigrationProgressDialog(
+    final inPlaceResult = await _showInPlaceMigrationProgressDialog(
       sourcePath: sourcePath,
-      destinationPath: migrationRequest.destinationPath,
     );
-    if (migrationResult == null || !mounted) {
+    if (inPlaceResult == null || !mounted) {
       return;
     }
     await _openDatabaseWithMigrationOffer(
-      migrationResult.destinationPath,
+      inPlaceResult.finalPath,
       allowMigrationOffer: false,
     );
   }
 
-  Future<DecentDbMigrationResult?> _showMigrationProgressDialog({
+  Future<DecentDbInPlaceMigrationResult?>
+      _showInPlaceMigrationProgressDialog({
     required String sourcePath,
-    required String destinationPath,
   }) {
-    final migrationFuture = _migrationService.migrate(
+    final migrationFuture = _migrationService.migrateInPlace(
       sourcePath: sourcePath,
-      destinationPath: destinationPath,
     );
-    return showDialog<DecentDbMigrationResult>(
+    return showDialog<DecentDbInPlaceMigrationResult>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        return FutureBuilder<DecentDbMigrationResult>(
+        return FutureBuilder<DecentDbInPlaceMigrationResult>(
           future: migrationFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return DecentDbMigrationProgressDialog(
-                sourcePath: sourcePath,
-                destinationPath: destinationPath,
+              return AlertDialog(
+                title: const Text('Upgrading DecentDB file'),
+                content: SizedBox(
+                  width: 460,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      const LinearProgressIndicator(),
+                      const SizedBox(height: 16),
+                      Text('Database: ${p.basename(sourcePath)}'),
+                      const Text(
+                        'Migrating to the current format in place…',
+                      ),
+                    ],
+                  ),
+                ),
               );
             }
             if (snapshot.hasError) {
               return AlertDialog(
-                title: const Text('Migration failed'),
+                title: const Text('Upgrade failed'),
                 content: SizedBox(
                   width: 560,
                   child: SelectableText(snapshot.error.toString()),
@@ -3268,9 +3403,20 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 Navigator.of(dialogContext).pop(result);
               }
             });
-            return DecentDbMigrationProgressDialog(
-              sourcePath: sourcePath,
-              destinationPath: destinationPath,
+            return AlertDialog(
+              title: const Text('Upgrading DecentDB file'),
+              content: SizedBox(
+                width: 460,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    const LinearProgressIndicator(),
+                    const SizedBox(height: 16),
+                    Text('Database: ${p.basename(sourcePath)}'),
+                  ],
+                ),
+              ),
             );
           },
         );

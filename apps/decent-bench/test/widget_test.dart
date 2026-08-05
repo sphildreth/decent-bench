@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/decentdb_test_constants.dart';
 import 'support/fakes.dart';
 
 void _configureDesktopViewport(WidgetTester tester) {
@@ -499,7 +500,7 @@ void main() {
       );
       final metadata = ToolingMetadata(
         metadataVersion: 1,
-        engineVersion: '2.8.0',
+        engineVersion: expectedDecentDbVersion,
         databaseFormatVersion: 8,
         schemaCookie: 12,
         tempSchemaCookie: 2,
@@ -566,7 +567,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Engine 2.8.0'), findsOneWidget);
+      expect(find.text('Engine $expectedDecentDbVersion'), findsOneWidget);
       expect(find.text('Branch analysis'), findsOneWidget);
       expect(find.text('Schema abcdef012345'), findsOneWidget);
       expect(find.text('Temporary'), findsOneWidget);
@@ -739,7 +740,7 @@ void main() {
                     activeResultsTab: ResultsPaneTab.executionPlan,
                     verticalScrollController: verticalScrollController,
                     horizontalScrollController: horizontalScrollController,
-                    interactionState: const ResultsGridInteractionState(),
+                    interactionState: const ResultsGridInteractionState(selectedRows: <int>{}),
                     onResultsTabChanged: (_) {},
                     onLoadNextPage: () {},
                     onSelectCell: (_, _) {},
@@ -798,7 +799,7 @@ void main() {
                     activeResultsTab: ResultsPaneTab.results,
                     verticalScrollController: verticalScrollController,
                     horizontalScrollController: horizontalScrollController,
-                    interactionState: const ResultsGridInteractionState(),
+                    interactionState: const ResultsGridInteractionState(selectedRows: <int>{}),
                     onResultsTabChanged: (_) {},
                     onLoadNextPage: () {},
                     onSelectCell: (_, _) {},
@@ -870,7 +871,7 @@ void main() {
                     activeResultsTab: ResultsPaneTab.chart,
                     verticalScrollController: verticalScrollController,
                     horizontalScrollController: horizontalScrollController,
-                    interactionState: const ResultsGridInteractionState(),
+                    interactionState: const ResultsGridInteractionState(selectedRows: <int>{}),
                     onResultsTabChanged: (_) {},
                     onLoadNextPage: () {},
                     onSelectCell: (_, _) {},
@@ -937,7 +938,7 @@ void main() {
                     activeResultsTab: ResultsPaneTab.results,
                     verticalScrollController: verticalScrollController,
                     horizontalScrollController: horizontalScrollController,
-                    interactionState: const ResultsGridInteractionState(),
+                    interactionState: const ResultsGridInteractionState(selectedRows: <int>{}),
                     onResultsTabChanged: (_) {},
                     onLoadNextPage: () {},
                     onSelectCell: (_, _) {},

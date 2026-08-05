@@ -55,6 +55,11 @@ const Set<String> decentDbSqlKeywords = <String>{
   'IN',
   'INET',
   'INDEX',
+  'INDEXED',
+  'FULLTEXT',
+  'BM25',
+  'REBUILD',
+  'VERIFY',
   'INNER',
   'INSERT',
   'INSTEAD',
@@ -209,6 +214,10 @@ const Set<String> decentDbSqlFunctions = <String>{
   'TRIM',
   'UPPER',
   'decentdb_exec_sql',
+  'FULLTEXT_MATCH',
+  'BM25',
+  'BM25_SCORE',
+  'FULLTEXT_RANK',
 };
 
 class BuiltInSqlSnippetTemplate {
@@ -239,6 +248,7 @@ const List<BuiltInSqlSnippetTemplate> decentDbBuiltInSqlSnippets =
 
 const Set<String> formatterClauseKeywords = <String>{
   'ALTER',
+  'ALTER INDEX',
   'BEGIN',
   'COMMIT',
   'CREATE',
@@ -267,4 +277,8 @@ const Set<String> formatterClauseKeywords = <String>{
   'VALUES',
   'WHERE',
   'WITH',
+  'USING FULLTEXT',
+  'USING BTREE',
+  'USING SPATIAL',
+  'USING TRIGRAM',
 };

@@ -10,6 +10,7 @@ class SchemaColumn {
     this.defaultExpr,
     this.generatedExpr,
     this.generatedStored = false,
+    this.autoIncrement = false,
     required this.refTable,
     required this.refColumn,
     required this.refOnDelete,
@@ -24,6 +25,7 @@ class SchemaColumn {
   final String? defaultExpr;
   final String? generatedExpr;
   final bool generatedStored;
+  final bool autoIncrement;
   final String? refTable;
   final String? refColumn;
   final String? refOnDelete;
@@ -39,6 +41,7 @@ class SchemaColumn {
       defaultExpr: map['defaultExpr'] as String?,
       generatedExpr: map['generatedExpr'] as String?,
       generatedStored: map['generatedStored'] as bool? ?? false,
+      autoIncrement: map['autoIncrement'] as bool? ?? false,
       refTable: map['refTable'] as String?,
       refColumn: map['refColumn'] as String?,
       refOnDelete: map['refOnDelete'] as String?,
@@ -91,6 +94,50 @@ class SchemaCheckConstraint {
       name.isEmpty ? 'CHECK ($exprSql)' : 'CHECK $name ($exprSql)';
 }
 
+class SchemaForeignKey {
+  const SchemaForeignKey({
+    this.name,
+    required this.columns,
+    required this.referencedTable,
+    required this.referencedColumns,
+    this.onDelete,
+    this.onUpdate,
+  });
+
+  final String? name;
+  final List<String> columns;
+  final String referencedTable;
+  final List<String> referencedColumns;
+  final String? onDelete;
+  final String? onUpdate;
+
+  factory SchemaForeignKey.fromMap(Map<String, Object?> map) {
+    return SchemaForeignKey(
+      name: map['name'] as String?,
+      columns: ((map['columns'] as List?) ?? const <Object?>[]).cast<String>(),
+      referencedTable: map['referencedTable']! as String,
+      referencedColumns:
+          ((map['referencedColumns'] as List?) ?? const <Object?>[]).cast<String>(),
+      onDelete: map['onDelete'] as String?,
+      onUpdate: map['onUpdate'] as String?,
+    );
+  }
+
+  String get summary {
+    final label = name == null || name!.isEmpty
+        ? 'FK'
+        : 'FK $name';
+    final local = columns.join(', ');
+    final referenced = referencedColumns.join(', ');
+    final actions = <String>[
+      if (onDelete != null && onDelete!.isNotEmpty) 'ON DELETE $onDelete',
+      if (onUpdate != null && onUpdate!.isNotEmpty) 'ON UPDATE $onUpdate',
+    ].join(' ');
+    return '$label ($local) REFERENCES $referencedTable($referenced)'
+        '${actions.isEmpty ? '' : ' $actions'}';
+  }
+}
+
 class SchemaObjectSummary {
   const SchemaObjectSummary({
     required this.name,
@@ -99,23 +146,48 @@ class SchemaObjectSummary {
     this.temporary = false,
     this.checks = const <SchemaCheckConstraint>[],
     this.ddl,
+    this.rowCount,
+    this.primaryKeyColumns = const <String>[],
+    this.foreignKeys = const <SchemaForeignKey>[],
+    this.sqlText,
+    this.viewDependencies = const <String>[],
   });
 
   final String name;
   final SchemaObjectKind kind;
   final bool temporary;
   final String? ddl;
+  final int? rowCount;
+  final List<String> primaryKeyColumns;
+  final List<SchemaForeignKey> foreignKeys;
   final List<SchemaColumn> columns;
   final List<SchemaCheckConstraint> checks;
+  final String? sqlText;
+  final List<String> viewDependencies;
+
+  bool get isTable => kind == SchemaObjectKind.table;
+  bool get isView => kind == SchemaObjectKind.view;
 
   factory SchemaObjectSummary.fromMap(Map<String, Object?> map) {
+    final kind = (map['kind'] as String) == 'view'
+        ? SchemaObjectKind.view
+        : SchemaObjectKind.table;
     return SchemaObjectSummary(
       name: map['name']! as String,
-      kind: (map['kind'] as String) == 'view'
-          ? SchemaObjectKind.view
-          : SchemaObjectKind.table,
+      kind: kind,
       temporary: map['temporary'] as bool? ?? false,
       ddl: map['ddl'] as String?,
+      rowCount: (map['rowCount'] as num?)?.toInt(),
+      primaryKeyColumns:
+          ((map['primaryKeyColumns'] as List?) ?? const <Object?>[]).cast<String>(),
+      foreignKeys: ((map['foreignKeys'] as List?) ?? const <Object?>[])
+          .cast<Map<Object?, Object?>>()
+          .map(
+            (foreignKey) => SchemaForeignKey.fromMap(
+              foreignKey.map((key, value) => MapEntry(key as String, value)),
+            ),
+          )
+          .toList(),
       columns: ((map['columns'] as List?) ?? const <Object?>[])
           .cast<Map<Object?, Object?>>()
           .map(
@@ -132,6 +204,9 @@ class SchemaObjectSummary {
             ),
           )
           .toList(),
+      sqlText: map['sqlText'] as String?,
+      viewDependencies:
+          ((map['viewDependencies'] as List?) ?? const <Object?>[]).cast<String>(),
     );
   }
 
@@ -141,6 +216,7 @@ class SchemaObjectSummary {
         for (final constraint in column.constraintSummaries)
           '${column.name}: $constraint',
       for (final check in checks) check.summary,
+      for (final foreignKey in foreignKeys) foreignKey.summary,
     ];
   }
 }
@@ -155,12 +231,16 @@ class IndexSummary {
     this.temporary = false,
     this.predicateSql,
     this.ddl,
+    this.includeColumns = const <String>[],
+    this.fresh = true,
   });
 
   final String name;
   final String table;
   final List<String> columns;
+  final List<String> includeColumns;
   final bool unique;
+  final bool fresh;
   final String kind;
   final bool temporary;
   final String? predicateSql;
@@ -171,11 +251,14 @@ class IndexSummary {
       name: map['name']! as String,
       table: map['table']! as String,
       columns: ((map['columns'] as List?) ?? const <Object?>[]).cast<String>(),
+      includeColumns:
+          ((map['includeColumns'] as List?) ?? const <Object?>[]).cast<String>(),
       unique: map['unique']! as bool,
       kind: map['kind']! as String,
       temporary: map['temporary'] as bool? ?? false,
       predicateSql: map['predicateSql'] as String?,
       ddl: map['ddl'] as String?,
+      fresh: map['fresh'] as bool? ?? true,
     );
   }
 }
